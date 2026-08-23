@@ -1,0 +1,11 @@
+require('dotenv/config')
+const { Client } = require('pg')
+const cs = process.env.DATABASE_URL.replace(/([?&])sslmode=[^&]*/i,'$1').replace(/[?&]$/,'')
+const db = new Client({ connectionString: cs, ssl: { rejectUnauthorized: false } })
+;(async () => {
+  await db.connect()
+  // Terminate all OTHER connections (including the running server's idle pool clients)
+  const r = await db.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND pid <> pg_backend_pid()")
+  console.log('terminated backend connections:', r.rowCount)
+  await db.end()
+})().catch(e => console.log('ERR', e.message))
