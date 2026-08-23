@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+/* Manual dark mode: toggled via a `dark` class on <html> (see lib/theme.ts),
+   not just OS preference, so the button actually controls it. */
+@custom-variant dark (&:where(.dark, .dark *));
