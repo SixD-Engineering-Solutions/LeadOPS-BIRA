@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
 import type { Lead, EmployeeUser } from '../lib/api'
+import LeadDetailModal from '../components/LeadDetailModal'
 
 // Fixed status options.
 const STATUSES = ['Submitted', 'In Process', 'Dead'] as const
@@ -14,7 +15,7 @@ const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? '
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', city: '', contactName: '', contactEmail: '', verticalName: '', sectorName: '', assignedToName: '', remark: '', statusName: 'Submitted' }
+const emptyForm = { plantName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', assignedToName: '', remark: '', statusName: 'Submitted' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
@@ -67,10 +68,11 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   }, [])
 
   // Employees, for the assignment dropdown — keyed by email so two people who
-  // happen to share a name can never be confused with each other.
+  // happen to share a name can never be confused with each other. Admins are
+  // excluded: leads are worked by employees, not assigned to admin accounts.
   useEffect(() => {
     api<{ users: EmployeeUser[] }>('/users', { auth: true })
-      .then(({ users }) => setEmployees(users))
+      .then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin')))
       .catch(() => {})
   }, [])
   const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
@@ -161,6 +163,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
           {field('City', 'city', 'e.g. Bhilai')}
           {field('Contact', 'contactName', 'Contact person name')}
           {field('Contact email', 'contactEmail', 'e.g. name@gmail.com', '', 'email')}
+          {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
           {field('Vertical', 'verticalName', 'e.g. AI Automation')}
           {field('Sector', 'sectorName', 'e.g. Steel')}
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -265,92 +268,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       </div>
 
       {/* detail modal */}
-      {selectedLead && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
-          onClick={() => setSelectedLead(null)}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-gray-100 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
-          >
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{selectedLead.plant?.plantName ?? 'Lead details'}</h3>
-                <span className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(selectedLead.status?.statusName)}`}>
-                  {selectedLead.status?.statusName ?? 'Submitted'}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedLead(null)}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-base leading-none"
-                aria-label="Close"
-              >✕</button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-4">
-              <DetailSection title="Plant">
-                <DetailRow label="Name" value={selectedLead.plant?.plantName} />
-                <DetailRow label="Company" value={selectedLead.plant?.companyName} />
-                <DetailRow label="Plant code" value={selectedLead.plant?.plantCode} />
-                <DetailRow label="City" value={selectedLead.plant?.location?.city} />
-                <DetailRow label="State" value={selectedLead.plant?.location?.state} />
-                <DetailRow label="Country" value={selectedLead.plant?.location?.country} />
-                <DetailRow label="Address" value={selectedLead.plant?.location?.address} />
-              </DetailSection>
-
-              <DetailSection title="Contact person">
-                <DetailRow label="Name" value={selectedLead.contact?.contactPersonName} />
-                <DetailRow label="Designation" value={selectedLead.contact?.designation} />
-                <DetailRow label="Email" value={selectedLead.contact?.mailId} isEmail />
-                <DetailRow label="Phone" value={selectedLead.contact?.contactPersonNumber} />
-                <DetailRow label="Alternate phone" value={selectedLead.contact?.alternateNumber} />
-                <DetailRow label="Primary contact" value={selectedLead.contact ? (selectedLead.contact.isPrimaryContact ? 'Yes' : 'No') : undefined} />
-              </DetailSection>
-
-              <DetailSection title="Classification">
-                <DetailRow label="Vertical" value={selectedLead.vertical?.verticalName} />
-                <DetailRow label="Sector" value={selectedLead.sector?.sectorName} />
-              </DetailSection>
-
-              <DetailSection title="Ownership">
-                <DetailRow label="Assigned to" value={selectedLead.assignedToUser ? (selectedLead.assignedToUser.userName || selectedLead.assignedToUser.email) : undefined} />
-                <DetailRow label="Assigned by" value={selectedLead.assignedByUser ? (selectedLead.assignedByUser.userName || selectedLead.assignedByUser.email) : undefined} />
-                <DetailRow label="Created by" value={selectedLead.createdByUser ? (selectedLead.createdByUser.userName || selectedLead.createdByUser.email) : undefined} />
-              </DetailSection>
-
-              <DetailSection title="Notes & timeline" last>
-                <DetailRow label="Remark" value={selectedLead.remark} />
-                <DetailRow label="Created" value={fmt(selectedLead.createdAt)} />
-                <DetailRow label="Updated" value={fmt(selectedLead.updatedAt)} />
-              </DetailSection>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function DetailSection({ title, children, last = false }: { title: string; children: React.ReactNode; last?: boolean }) {
-  return (
-    <div className={`${last ? '' : 'mb-4 border-b border-gray-50 pb-4 dark:border-gray-800/60'}`}>
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{title}</p>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  )
-}
-
-function DetailRow({ label, value, isEmail = false }: { label: string; value?: string | null; isEmail?: boolean }) {
-  if (!value) return null
-  return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="shrink-0 text-gray-500 dark:text-gray-400">{label}</span>
-      {isEmail ? (
-        <a href={`mailto:${value}`} className="truncate text-right font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">{value}</a>
-      ) : (
-        <span className="truncate text-right font-medium text-gray-900 dark:text-gray-100">{value}</span>
-      )}
+      {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
     </div>
   )
 }

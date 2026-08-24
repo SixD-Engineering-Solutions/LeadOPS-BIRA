@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../lib/api'
+import { api, LEAD_SYNC_EVENT } from '../lib/api'
 import type { AuthUser, EmployeeUser, Lead } from '../lib/api'
 import Leads from './leads'
 import Reports from './reports'
 import Team from './team'
+import Tasks from './tasks'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
+import LeadDetailModal from '../components/LeadDetailModal'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,11 +64,11 @@ const CORE_MODULES: Module[] = [
   { key: 'lead-gen', title: 'Lead Generation', desc: 'Discover, capture and qualify new prospects.', icon: icons.leadGen, action: 'Open', accent: 'from-rose-400 to-orange-400', glow: 'rgba(251,146,60,0.45)' },
   { key: 'leads', title: 'My Leads', desc: 'Track and nurture your assigned leads.', icon: icons.leads, action: 'Open', accent: 'from-sky-400 to-indigo-400', glow: 'rgba(56,189,248,0.45)' },
   { key: 'campaigns', title: 'Campaigns', desc: 'Launch and monitor outreach campaigns.', icon: icons.campaigns, action: 'Explore', accent: 'from-violet-400 to-fuchsia-400', glow: 'rgba(167,139,250,0.45)' },
-  { key: 'reports', title: 'Reports', desc: 'Pipeline, conversion and activity analytics.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
   { key: 'tasks', title: 'Tasks', desc: 'Your follow-ups and to-dos in one place.', icon: icons.tasks, action: 'Open', accent: 'from-amber-400 to-orange-400', glow: 'rgba(251,191,36,0.45)' },
 ]
 
 const ADMIN_MODULES: Module[] = [
+  { key: 'reports', title: 'Reports', desc: 'Pipeline, conversion and activity analytics.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
   { key: 'team', title: 'Team Management', desc: 'Manage members, roles and permissions.', icon: icons.team, action: 'Manage', accent: 'from-rose-400 to-pink-400', glow: 'rgba(251,113,133,0.45)' },
   { key: 'settings', title: 'Workspace Settings', desc: 'Configure your organization workspace.', icon: icons.settings, action: 'Configure', accent: 'from-slate-400 to-gray-500', glow: 'rgba(148,163,184,0.5)' },
 ]
@@ -137,8 +139,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { key: 'lead-gen', label: 'Lead Generation', icon: icons.leadGen },
     { key: 'leads', label: 'My Leads', icon: icons.leads },
     { key: 'campaigns', label: 'Campaigns', icon: icons.campaigns },
-    { key: 'reports', label: 'Reports', icon: icons.reports },
-    ...(isAdmin ? [{ key: 'team', label: 'Team', icon: icons.team }, { key: 'settings', label: 'Settings', icon: icons.settings }] : []),
+    { key: 'tasks', label: 'Tasks', icon: icons.tasks },
+    ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }, { key: 'settings', label: 'Settings', icon: icons.settings }] : []),
   ]
 
   // Remember the current tab across page refreshes — sessionStorage, scoped to
@@ -166,9 +168,10 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const [allLeads, setAllLeads] = useState<Lead[]>([])
   const [employees, setEmployees] = useState<EmployeeUser[]>([])
   const [showAssignments, setShowAssignments] = useState(false)
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    Promise.all([
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+
+  function refreshStats() {
+    return Promise.all([
       api<{ leads: Lead[] }>('/leads', { auth: true }),
       isAdmin ? api<{ users: EmployeeUser[] }>('/users', { auth: true }) : Promise.resolve({ users: [] as EmployeeUser[] }),
     ])
@@ -207,6 +210,23 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         total: 0, active: 0, conversion: 0, converted: 0, weekAdded: 0,
         spark: [], counts: { submitted: 0, inProcess: 0, dead: 0 }, loaded: false,
       }))
+  }
+  useEffect(() => {
+    if (active !== 'dashboard') return
+    refreshStats()
+  }, [active, isAdmin])
+
+  // Live updates — a lead created/updated/deleted anywhere (by this admin on
+  // another tab, or by anyone else) pings every connected client over SSE (see
+  // NotificationBell). Re-pull the stats so the tiles don't go stale while the
+  // dashboard is sitting open.
+  useEffect(() => {
+    function onLeadSync() {
+      if (active !== 'dashboard') return
+      refreshStats()
+    }
+    window.addEventListener(LEAD_SYNC_EVENT, onLeadSync)
+    return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
   }, [active, isAdmin])
 
   // Assigned leads grouped by whoever they're currently assigned to, for the
@@ -228,7 +248,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
@@ -338,10 +358,12 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
         {active === 'lead-gen' || active === 'leads' ? (
           <Leads isAdmin={isAdmin} />
-        ) : active === 'reports' ? (
+        ) : active === 'reports' && isAdmin ? (
           <Reports />
         ) : active === 'team' ? (
           <Team />
+        ) : active === 'tasks' ? (
+          <Tasks isAdmin={isAdmin} />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (
@@ -353,16 +375,17 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
           {/* stat tiles */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {/* Total Leads — upward sparkline. Click to see who each lead is assigned to. */}
+            {/* Total Leads — upward sparkline. Click to see who each lead is
+                assigned to (admin), or the details of your own leads (employee). */}
             <button
               type="button"
-              onClick={() => isAdmin && stats.loaded && setShowAssignments(true)}
-              disabled={!isAdmin || !stats.loaded}
+              onClick={() => stats.loaded && setShowAssignments(true)}
+              disabled={!stats.loaded}
               className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Leads</p>
-                {isAdmin && stats.loaded && (
+                {stats.loaded && (
                   <svg className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
@@ -444,8 +467,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         )}
       </main>
 
-      {/* ── Lead assignment breakdown modal ───────────────────────────────── */}
-      {isAdmin && showAssignments && (
+      {/* ── Lead assignment breakdown modal (admin), or "my leads" list (employee) ── */}
+      {showAssignments && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
           onClick={() => setShowAssignments(false)}
@@ -456,10 +479,10 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           >
             <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
               <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Lead Assignments</h3>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{isAdmin ? 'Lead Assignments' : 'My Leads'}</h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {stats.total} lead{stats.total === 1 ? '' : 's'} total
-                  {unassignedLeads.length > 0 ? ` · ${unassignedLeads.length} unassigned` : ''}
+                  {isAdmin && unassignedLeads.length > 0 ? ` · ${unassignedLeads.length} unassigned` : ''}
                 </p>
               </div>
               <button
@@ -470,7 +493,29 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             </div>
 
             <div className="overflow-y-auto px-5 py-3">
-              {assignmentGroups.length === 0 && unassignedLeads.length === 0 ? (
+              {!isAdmin ? (
+                allLeads.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No leads assigned to you yet.</p>
+                ) : (
+                  <ul className="space-y-1.5 py-1">
+                    {allLeads.map(lead => (
+                      <li
+                        key={lead.id}
+                        onClick={() => setSelectedLead(lead)}
+                        className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                      >
+                        <span className="truncate text-gray-700 dark:text-gray-300">{lead.plant?.plantName ?? '—'}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
+                          <span className={`rounded-full px-2 py-0.5 font-semibold ${statusStyle(lead.status?.statusName)}`}>
+                            {lead.status?.statusName ?? 'Submitted'}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : assignmentGroups.length === 0 && unassignedLeads.length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No leads yet.</p>
               ) : (
                 <>
@@ -492,7 +537,11 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
                         </div>
                         <ul className="mt-2 ml-9 space-y-1.5">
                           {userLeads.map(lead => (
-                            <li key={lead.id} className="flex items-center justify-between gap-3 text-xs">
+                            <li
+                              key={lead.id}
+                              onClick={() => setSelectedLead(lead)}
+                              className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                            >
                               <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.plantName ?? '—'}</span>
                               <span className="flex shrink-0 items-center gap-2">
                                 <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
@@ -521,7 +570,11 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
                       </div>
                       <ul className="mt-2 ml-9 space-y-1.5">
                         {unassignedLeads.map(lead => (
-                          <li key={lead.id} className="flex items-center justify-between gap-3 text-xs">
+                          <li
+                            key={lead.id}
+                            onClick={() => setSelectedLead(lead)}
+                            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                          >
                             <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.plantName ?? '—'}</span>
                             <span className="flex shrink-0 items-center gap-2">
                               <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
@@ -540,6 +593,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           </div>
         </div>
       )}
+
+      {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
     </div>
   )
 }

@@ -6,7 +6,7 @@ export interface AuthRequest extends Request {
   userId?: string
 }
 
-export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
+export async function authenticate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Missing or invalid authorization header.' })
@@ -14,6 +14,14 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   }
   try {
     const payload = verifyAccessToken(header.slice(7))
+    // Re-checked on every request (not just at login) so a removed employee's
+    // still-valid token stops working immediately, instead of staying good
+    // until it expires.
+    const user = await prisma.user.findUnique({ where: { id: payload.sub }, select: { isActive: true } })
+    if (!user?.isActive) {
+      res.status(401).json({ error: 'Invalid or expired token.' })
+      return
+    }
     req.userId = payload.sub
     next()
   } catch {

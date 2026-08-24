@@ -40,3 +40,11 @@ export function broadcastLeadUpdate(leadId: string): void {
     for (const res of sockets) res.write(payload)
   }
 }
+
+/** Same idea as broadcastLeadUpdate, for tasks — lets any open Tasks list resync live. */
+export function broadcastTaskUpdate(taskId: string): void {
+  const payload = `event: task-update\ndata: ${JSON.stringify({ taskId })}\n\n`
+  for (const sockets of clients.values()) {
+    for (const res of sockets) res.write(payload)
+  }
+}

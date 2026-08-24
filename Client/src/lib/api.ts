@@ -38,6 +38,21 @@ export type Lead = {
   deletedAt: string | null
 }
 
+// ─── Task (admin-assigned to-do, independent of any lead) ───────────────────
+export type Task = {
+  id: string
+  title: string
+  description: string | null
+  deadline: string
+  status: string
+  assignedToUserId: string
+  assignedToUser?: { id: string; userName: string | null; email: string }
+  assignedByUserId: string
+  assignedByUser?: { id: string; userName: string | null; email: string }
+  createdAt: string
+  updatedAt: string
+}
+
 // Base URL of the backend. Override with VITE_API_URL in a .env file if needed.
 export const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
@@ -49,6 +64,9 @@ export type Notification = { id: string; userId: string; leadId: string | null; 
 // stream (see NotificationBell) — so any open leads list can resync that one
 // lead without the viewer refreshing. detail: { leadId: string }
 export const LEAD_SYNC_EVENT = 'leadops:lead-sync'
+
+// Same idea as LEAD_SYNC_EVENT, for tasks. detail: { taskId: string }
+export const TASK_SYNC_EVENT = 'leadops:task-sync'
 
 const TOKEN_KEY = 'leadops_token'
 

@@ -27,6 +27,8 @@ model User {
   assignedByMeLeads  Lead[] @relation("AssignedBy")
   createdLeads       Lead[] @relation("CreatedBy")
   notifications      Notification[]
+  assignedTasks      Task[] @relation("TaskAssignedTo")
+  assignedByMeTasks  Task[] @relation("TaskAssignedBy")
 
   @@map("users")
 }
@@ -182,4 +184,26 @@ model Lead {
   @@index([statusId])
   @@index([deletedAt])
   @@map("leads")
+}
+
+// ─── Tasks ───────────────────────────────────────────────────────────────
+// A to-do an admin hands to an employee, independent of any lead. Deadline is
+// required — that's the point of a task vs. a lead's freeform remark.
+model Task {
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  deadline         DateTime
+  status           String    @default("Pending")
+  assignedToUserId String    @map("assigned_to_user_id")
+  assignedToUser   User      @relation("TaskAssignedTo", fields: [assignedToUserId], references: [id])
+  assignedByUserId String    @map("assigned_by_user_id")
+  assignedByUser   User      @relation("TaskAssignedBy", fields: [assignedByUserId], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  @@index([assignedToUserId])
+  @@index([deletedAt])
+  @@map("tasks")
 }

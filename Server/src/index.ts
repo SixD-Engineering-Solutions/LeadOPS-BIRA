@@ -3,6 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import authRoutes from './routes/auth'
 import leadRoutes from './routes/leads'
+import taskRoutes from './routes/tasks'
 import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
 
@@ -37,6 +38,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/auth', authRoutes)
 app.use('/leads', leadRoutes)
+app.use('/tasks', taskRoutes)
 app.use('/notifications', notificationRoutes)
 app.use('/', referenceRoutes)
 

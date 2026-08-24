@@ -76,13 +76,15 @@ async function forePlant(name: string, locationId: string | null) {
   }
   return prisma.plant.create({ data: { plantName: name, locationId } })
 }
-async function foreContact(name: string, plantId: string, email: string | null) {
+async function foreContact(name: string, plantId: string, email: string | null, phone: string | null) {
   const existing = await prisma.contact.findFirst({ where: { plantId, contactPersonName: ci(name) } })
   if (existing) {
-    if (email && !existing.mailId) return prisma.contact.update({ where: { id: existing.id }, data: { mailId: email } })
-    return existing
+    const data: { mailId?: string; contactPersonNumber?: string } = {}
+    if (email && !existing.mailId) data.mailId = email
+    if (phone && !existing.contactPersonNumber) data.contactPersonNumber = phone
+    return Object.keys(data).length ? prisma.contact.update({ where: { id: existing.id }, data }) : existing
   }
-  return prisma.contact.create({ data: { plantId, contactPersonName: name, mailId: email } })
+  return prisma.contact.create({ data: { plantId, contactPersonName: name, mailId: email, contactPersonNumber: phone } })
 }
 async function foreVertical(name: string) {
   return (await prisma.vertical.findFirst({ where: { verticalName: ci(name) } })) ?? prisma.vertical.create({ data: { verticalName: name } })
@@ -110,6 +112,7 @@ const createSchema = z.object({
   city: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
+  contactNumber: z.string().optional(),
   verticalName: z.string().optional(),
   sectorName: z.string().optional(),
   assignedToName: z.string().optional(),
@@ -128,10 +131,14 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const location = clean(d.city) ? await foreLocation(clean(d.city)) : null
     const plant = await forePlant(clean(d.plantName), location?.id ?? null)
-    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null) : null
+    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null) : null
     const vertical = clean(d.verticalName) ? await foreVertical(clean(d.verticalName)) : null
     const sector = clean(d.sectorName) ? await foreSector(clean(d.sectorName)) : null
     const assigned = clean(d.assignedToName) ? await foreUser(clean(d.assignedToName)) : null
+    if (assigned?.role === 'admin') {
+      res.status(400).json({ error: 'Leads cannot be assigned to an admin user.' })
+      return
+    }
     const status = await foreStatus(clean(d.statusName) || 'Submitted')
 
     const lead = await prisma.lead.create({
@@ -181,6 +188,13 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const data: { statusId?: string; assignedToUserId?: string | null; assignedByUserId?: string | null; remark?: string | null } = {}
   if (parse.data.statusName?.trim()) data.statusId = (await foreStatus(parse.data.statusName.trim())).id
   if ('assignedToUserId' in parse.data) {
+    if (parse.data.assignedToUserId) {
+      const target = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { role: true } })
+      if (target?.role === 'admin') {
+        res.status(400).json({ error: 'Leads cannot be assigned to an admin user.' })
+        return
+      }
+    }
     data.assignedToUserId = parse.data.assignedToUserId ?? null
     // Whoever performs the (re)assignment becomes "assigned by" — clearing the
     // assignee (unassigning) clears this too, since no one is assigning it anymore.
