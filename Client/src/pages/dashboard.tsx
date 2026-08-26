@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, LEAD_SYNC_EVENT } from '../lib/api'
-import type { AuthUser, EmployeeUser, Lead } from '../lib/api'
+import { api, LEAD_SYNC_EVENT, TASK_SYNC_EVENT } from '../lib/api'
+import type { AuthUser, EmployeeUser, Lead, Task } from '../lib/api'
 import Leads from './leads'
 import Reports from './reports'
 import Team from './team'
 import Tasks from './tasks'
+import { taskStatusStyle, fmtTaskDeadline, isTaskOverdue } from '../lib/taskDisplay'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
 import LeadDetailModal from '../components/LeadDetailModal'
@@ -70,7 +71,6 @@ const CORE_MODULES: Module[] = [
 const ADMIN_MODULES: Module[] = [
   { key: 'reports', title: 'Reports', desc: 'Pipeline, conversion and activity analytics.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
   { key: 'team', title: 'Team Management', desc: 'Manage members, roles and permissions.', icon: icons.team, action: 'Manage', accent: 'from-rose-400 to-pink-400', glow: 'rgba(251,113,133,0.45)' },
-  { key: 'settings', title: 'Workspace Settings', desc: 'Configure your organization workspace.', icon: icons.settings, action: 'Configure', accent: 'from-slate-400 to-gray-500', glow: 'rgba(148,163,184,0.5)' },
 ]
 
 // ─── stat-tile micro-visualizations ────────────────────────────────────────────
@@ -140,7 +140,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { key: 'leads', label: 'My Leads', icon: icons.leads },
     { key: 'campaigns', label: 'Campaigns', icon: icons.campaigns },
     { key: 'tasks', label: 'Tasks', icon: icons.tasks },
-    ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }, { key: 'settings', label: 'Settings', icon: icons.settings }] : []),
+    ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }] : []),
   ]
 
   // Remember the current tab across page refreshes — sessionStorage, scoped to
@@ -227,6 +227,27 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     }
     window.addEventListener(LEAD_SYNC_EVENT, onLeadSync)
     return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
+  }, [active, isAdmin])
+
+  // This employee's own assigned tasks, for the "Tasks" section on the
+  // dashboard home. Admins are never assignable (enforced server-side), so
+  // this stays empty — and hidden — for admin accounts.
+  const [myTasks, setMyTasks] = useState<Task[]>([])
+  function refreshMyTasks() {
+    if (isAdmin) return
+    api<{ tasks: Task[] }>('/tasks', { auth: true }).then(({ tasks }) => setMyTasks(tasks)).catch(() => {})
+  }
+  useEffect(() => {
+    if (active !== 'dashboard') return
+    refreshMyTasks()
+  }, [active, isAdmin])
+  useEffect(() => {
+    function onTaskSync() {
+      if (active !== 'dashboard') return
+      refreshMyTasks()
+    }
+    window.addEventListener(TASK_SYNC_EVENT, onTaskSync)
+    return () => window.removeEventListener(TASK_SYNC_EVENT, onTaskSync)
   }, [active, isAdmin])
 
   // Assigned leads grouped by whoever they're currently assigned to, for the
@@ -433,6 +454,34 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
               <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">Connect revenue tracking</p>
             </div>
           </div>
+
+          {/* tasks — only appears once something has actually been assigned */}
+          {!isAdmin && myTasks.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  Tasks <span className="text-gray-400 dark:text-gray-500">({myTasks.length})</span>
+                </h3>
+                <button onClick={() => openModule({ key: 'tasks', label: 'Tasks' })} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">View all</button>
+              </div>
+              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
+                {myTasks.map(task => (
+                  <li key={task.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{task.title}</p>
+                      {task.description && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{task.description}</p>}
+                      <p className={`mt-1 text-xs font-medium ${isTaskOverdue(task) ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>
+                        Due {fmtTaskDeadline(task.deadline)}{isTaskOverdue(task) ? ' · overdue' : ''}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${taskStatusStyle(task.status)}`}>
+                      {task.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* modules */}
           <div className="mt-8 mb-3 flex items-center justify-between">

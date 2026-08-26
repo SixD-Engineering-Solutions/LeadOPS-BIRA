@@ -19,7 +19,7 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
   const { email } = parse.data
 
   const existing = await prisma.user.findUnique({ where: { email } })
-  if (existing) {
+  if (existing && existing.isActive) {
     res.status(409).json({ error: 'An account with this email already exists.' })
     return
   }
@@ -93,14 +93,17 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
     return
   }
 
+  const passwordHash = await bcrypt.hash(parse.data.password, 12)
+
   const existing = await prisma.user.findUnique({ where: { email } })
-  if (existing) {
+  if (existing && existing.isActive) {
     res.status(409).json({ error: 'An account with this email already exists.' })
     return
   }
 
-  const passwordHash = await bcrypt.hash(parse.data.password, 12)
-  const user = await prisma.user.create({ data: { email, passwordHash } })
+  const user = existing
+    ? await prisma.user.update({ where: { id: existing.id }, data: { passwordHash, isActive: true } })
+    : await prisma.user.create({ data: { email, passwordHash } })
 
   const accessToken = signAccessToken(user.id)
   res.status(201).json({ accessToken, user: { id: user.id, email: user.email, role: user.role } })

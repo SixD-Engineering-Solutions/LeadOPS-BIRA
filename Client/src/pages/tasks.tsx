@@ -1,18 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api, TASK_SYNC_EVENT } from '../lib/api'
 import type { Task, EmployeeUser } from '../lib/api'
+import { taskStatusStyle as statusStyle, fmtTaskDeadline as fmtDeadline, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
 
 const STATUSES = ['Pending', 'In Progress', 'Done'] as const
 
-const STATUS_STYLES: Record<string, string> = {
-  Pending: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800',
-  'In Progress': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800',
-  Done: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800',
-}
-const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? ''] ?? 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-const fmtDeadline = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-const isOverdue = (t: Task) => t.status !== 'Done' && new Date(t.deadline).getTime() < Date.now()
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { title: '', description: '', deadline: '', assignedToUserId: '' }
