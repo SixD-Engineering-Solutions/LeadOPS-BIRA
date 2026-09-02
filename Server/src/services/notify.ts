@@ -48,3 +48,35 @@ export function broadcastTaskUpdate(taskId: string): void {
     for (const res of sockets) res.write(payload)
   }
 }
+
+/** Same idea as broadcastLeadUpdate, for activities — lets an open lead's timeline/follow-ups resync live. */
+export function broadcastActivityUpdate(leadId: string): void {
+  const payload = `event: activity-update\ndata: ${JSON.stringify({ leadId })}\n\n`
+  for (const sockets of clients.values()) {
+    for (const res of sockets) res.write(payload)
+  }
+}
+
+/** Same idea as broadcastLeadUpdate, for proposals — lets any open Proposals list/lead modal resync live. */
+export function broadcastProposalUpdate(proposalId: string): void {
+  const payload = `event: proposal-update\ndata: ${JSON.stringify({ proposalId })}\n\n`
+  for (const sockets of clients.values()) {
+    for (const res of sockets) res.write(payload)
+  }
+}
+
+/** Same idea as broadcastLeadUpdate, for projects — lets any open Projects list resync live. */
+export function broadcastProjectUpdate(projectId: string): void {
+  const payload = `event: project-update\ndata: ${JSON.stringify({ projectId })}\n\n`
+  for (const sockets of clients.values()) {
+    for (const res of sockets) res.write(payload)
+  }
+}
+
+/** Same idea as broadcastLeadUpdate, for invoices — lets any open Invoices list resync live. */
+export function broadcastInvoiceUpdate(invoiceId: string): void {
+  const payload = `event: invoice-update\ndata: ${JSON.stringify({ invoiceId })}\n\n`
+  for (const sockets of clients.values()) {
+    for (const res of sockets) res.write(payload)
+  }
+}

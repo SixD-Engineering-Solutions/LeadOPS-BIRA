@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
-import type { Lead, EmployeeUser } from '../lib/api'
+import type { Lead, EmployeeUser, Event } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 
 // Fixed status options.
@@ -15,7 +15,7 @@ const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? '
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', assignedToName: '', remark: '', statusName: 'Submitted' }
+const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', eventId: '', assignedToName: '', remark: '', statusName: 'Submitted' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
@@ -23,6 +23,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [employees, setEmployees] = useState<EmployeeUser[]>([])
+  const [events, setEvents] = useState<Event[]>([])
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
@@ -76,6 +77,10 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       .catch(() => {})
   }, [])
   const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
+
+  useEffect(() => {
+    api<{ events: Event[] }>('/events', { auth: true }).then(({ events }) => setEvents(events)).catch(() => {})
+  }, [])
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
@@ -159,6 +164,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       <form onSubmit={createLead} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">New lead</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {field('Client', 'clientName', 'e.g. SAIL')}
           {field('Plant *', 'plantName', 'e.g. Bhilai Steel Plant')}
           {field('City', 'city', 'e.g. Bhilai')}
           {field('Contact', 'contactName', 'Contact person name')}
@@ -166,6 +172,15 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
           {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
           {field('Vertical', 'verticalName', 'e.g. AI Automation')}
           {field('Sector', 'sectorName', 'e.g. Steel')}
+          {field('Source', 'sourceName', 'e.g. Expo / Reference / Website')}
+          {field('Service type', 'serviceTypeName', 'e.g. Laser scanning / BIM')}
+          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+            Event (expo/visit)
+            <select value={form.eventId} onChange={set('eventId')} className={inputCls}>
+              <option value="">None</option>
+              {events.map(e => <option key={e.id} value={e.id}>{e.eventName}</option>)}
+            </select>
+          </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
             Assign to
             <select value={form.assignedToName} onChange={set('assignedToName')} className={inputCls}>
@@ -225,7 +240,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
                   >
                     <td className="px-5 py-3">
                       <p className="font-semibold text-gray-900 dark:text-gray-100">{lead.plant?.plantName ?? '—'}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{lead.contact?.contactPersonName ?? 'No contact'}{lead.plant?.location ? ` · ${lead.plant.location.city}` : ''}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{lead.plant?.client?.clientName ? `${lead.plant.client.clientName} · ` : ''}{lead.contact?.contactPersonName ?? 'No contact'}{lead.plant?.location ? ` · ${lead.plant.location.city}` : ''}</p>
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
                       <p>{lead.vertical?.verticalName ?? '—'}</p>

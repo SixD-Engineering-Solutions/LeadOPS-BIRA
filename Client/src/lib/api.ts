@@ -6,22 +6,35 @@ export type AuthResponse = { accessToken: string; user: AuthUser }
 
 // ─── Reference / lookup entities ─────────────────────────────────────────────
 export type Location = { id: string; city: string; state: string | null; country: string | null; address: string | null; createdAt: string; updatedAt: string }
-export type Plant = { id: string; plantName: string; companyName: string | null; locationId: string; plantCode: string | null; isActive: boolean; location?: { id: string; city: string; state: string | null }; createdAt: string; updatedAt: string }
+export type ClientCategory = { id: string; categoryName: string; description: string | null; isActive: boolean }
+export type Client = { id: string; clientName: string; industryType: string | null; website: string | null; linkedIn: string | null; categoryId: string | null; category?: { id: string; categoryName: string } | null; country: string | null; region: string | null; isActive: boolean }
+export type Plant = { id: string; plantName: string; companyName: string | null; clientId: string | null; client?: { id: string; clientName: string } | null; locationId: string; plantCode: string | null; isActive: boolean; location?: { id: string; city: string; state: string | null }; createdAt: string; updatedAt: string }
 export type Contact = { id: string; plantId: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean; createdAt: string; updatedAt: string }
 export type Vertical = { id: string; verticalName: string; description: string | null; isActive: boolean }
 export type Sector = { id: string; sectorName: string; description: string | null; isActive: boolean }
+export type LeadSource = { id: string; sourceName: string; description: string | null; isActive: boolean }
+export type ServiceType = { id: string; serviceTypeName: string; description: string | null; isActive: boolean }
 export type LeadStatus = { id: string; statusName: string; statusCategory: string | null; displayOrder: number; isActive: boolean }
+export const EVENT_TYPES = ['Expo', 'Visit'] as const
+export type EventType = (typeof EVENT_TYPES)[number]
+export type Event = { id: string; eventName: string; eventType: string; eventDate: string | null; leadsGenerated: number; createdAt: string }
 export type EmployeeUser = { id: string; userName: string | null; email: string; role: string; department: string | null; phoneNumber: string | null; isActive: boolean }
 
 // ─── Lead (main entity, with joined display data) ────────────────────────────
 export type Lead = {
   id: string
   plantId: string
-  plant?: { id: string; plantName: string; companyName: string | null; plantCode: string | null; location?: { id: string; city: string; state: string | null; country: string | null; address: string | null } }
+  plant?: { id: string; plantName: string; companyName: string | null; plantCode: string | null; client?: { id: string; clientName: string } | null; location?: { id: string; city: string; state: string | null; country: string | null; address: string | null } }
   verticalId: string | null
   vertical?: { id: string; verticalName: string } | null
   sectorId: string | null
   sector?: { id: string; sectorName: string } | null
+  sourceId: string | null
+  source?: { id: string; sourceName: string } | null
+  serviceTypeId: string | null
+  serviceType?: { id: string; serviceTypeName: string } | null
+  eventId: string | null
+  event?: { id: string; eventName: string } | null
   contactId: string | null
   contact?: { id: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean } | null
   assignedToUserId: string | null
@@ -36,6 +49,138 @@ export type Lead = {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+}
+
+// ─── Activity (call/visit/meeting/mail logged against a lead) ───────────────
+export const ACTIVITY_TYPES = ['Call', 'Visit', 'Meeting', 'Mail', 'Proposal'] as const
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
+export type Activity = {
+  id: string
+  leadId: string
+  lead?: { id: string; plant?: { id: string; plantName: string } }
+  userId: string
+  user?: { id: string; userName: string | null; email: string }
+  activityType: string
+  activityDate: string
+  notes: string | null
+  nextActionDate: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+// ─── Proposal (a quoted opportunity raised against a lead) ──────────────────
+export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
+export type Proposal = {
+  id: string
+  proposalNumber: string
+  leadId: string
+  lead?: { id: string; plant?: { id: string; plantName: string; client?: { id: string; clientName: string } | null } }
+  projectName: string | null
+  value: number | null
+  submissionDate: string | null
+  status: string
+  probabilityPct: number | null
+  expectedOrderDate: string | null
+  createdByUserId: string
+  createdByUser?: { id: string; userName: string | null; email: string }
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+// ─── Project / Work Order (post-order execution tracking) ───────────────────
+export const PROJECT_STATUSES = ['Not Started', 'In Progress', 'On Hold', 'Completed'] as const
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number]
+export const BILLING_STAGES = ['Not Started', 'Advance Received', 'Partial Billing', 'Final Billing', 'Fully Billed'] as const
+export type BillingStage = (typeof BILLING_STAGES)[number]
+export type Project = {
+  id: string
+  workOrderNo: string
+  proposalId: string | null
+  proposal?: { id: string; proposalNumber: string } | null
+  leadId: string
+  lead?: { id: string; plant?: { id: string; plantName: string; client?: { id: string; clientName: string } | null } }
+  projectName: string
+  locationId: string | null
+  location?: { id: string; city: string; state: string | null } | null
+  startDate: string | null
+  completionDate: string | null
+  responsibleUserId: string | null
+  responsibleUser?: { id: string; userName: string | null; email: string } | null
+  status: string
+  billingStage: string
+  createdByUserId: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+// ─── Document (a PDF uploaded against a lead, stored on the server's local disk) ──
+export type LeadDocument = {
+  id: string
+  leadId: string
+  fileName: string
+  fileSize: number
+  createdAt: string
+  uploadedByUser?: { id: string; userName: string | null; email: string }
+}
+
+// ─── Invoice / Payment (billing against a project) ───────────────────────────
+export const INVOICE_STATUSES = ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue'] as const
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
+export type Payment = {
+  id: string
+  invoiceId: string
+  amountReceived: number
+  paymentDate: string
+  notes: string | null
+  recordedByUser?: { id: string; userName: string | null; email: string }
+  createdAt: string
+}
+export type Invoice = {
+  id: string
+  invoiceNumber: string
+  projectId: string
+  project?: { id: string; workOrderNo: string; projectName: string; lead?: { id: string; plant?: { id: string; plantName: string; client?: { id: string; clientName: string } | null } } }
+  amount: number
+  invoiceDate: string | null
+  dueDate: string | null
+  status: string
+  payments: Payment[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ─── Empanelment / Tender (client-relationship-level, not tied to a lead) ────
+export const EMPANELMENT_STATUSES = ['Applied', 'Under Review', 'Empanelled', 'Rejected', 'Expired'] as const
+export type EmpanelmentStatus = (typeof EMPANELMENT_STATUSES)[number]
+export type Empanelment = {
+  id: string
+  clientId: string
+  client?: { id: string; clientName: string }
+  serviceTypeId: string | null
+  serviceType?: { id: string; serviceTypeName: string } | null
+  status: string
+  renewalDate: string | null
+  createdByUser?: { id: string; userName: string | null; email: string }
+  createdAt: string
+  updatedAt: string
+}
+
+export const TENDER_STATUSES = ['Identified', 'Preparing', 'Submitted', 'Under Evaluation', 'Won', 'Lost'] as const
+export type TenderStatus = (typeof TENDER_STATUSES)[number]
+export type Tender = {
+  id: string
+  tenderNo: string
+  clientId: string
+  client?: { id: string; clientName: string }
+  submissionDate: string | null
+  value: number | null
+  status: string
+  createdByUser?: { id: string; userName: string | null; email: string }
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Task (admin-assigned to-do, independent of any lead) ───────────────────
@@ -67,6 +212,18 @@ export const LEAD_SYNC_EVENT = 'leadops:lead-sync'
 
 // Same idea as LEAD_SYNC_EVENT, for tasks. detail: { taskId: string }
 export const TASK_SYNC_EVENT = 'leadops:task-sync'
+
+// Same idea as LEAD_SYNC_EVENT, for activities. detail: { leadId: string }
+export const ACTIVITY_SYNC_EVENT = 'leadops:activity-sync'
+
+// Same idea as LEAD_SYNC_EVENT, for proposals. detail: { proposalId: string }
+export const PROPOSAL_SYNC_EVENT = 'leadops:proposal-sync'
+
+// Same idea as LEAD_SYNC_EVENT, for projects. detail: { projectId: string }
+export const PROJECT_SYNC_EVENT = 'leadops:project-sync'
+
+// Same idea as LEAD_SYNC_EVENT, for invoices. detail: { invoiceId: string }
+export const INVOICE_SYNC_EVENT = 'leadops:invoice-sync'
 
 const TOKEN_KEY = 'leadops_token'
 
@@ -141,4 +298,38 @@ export async function api<T = unknown>(
     throw new Error((data as { error?: string }).error ?? 'Something went wrong. Please try again.')
   }
   return data as T
+}
+
+// Multipart upload — bypasses `api()`'s JSON body since the browser needs to
+// set its own multipart boundary in Content-Type.
+export async function uploadDocument(leadId: string, file: File): Promise<LeadDocument> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('leadId', leadId)
+  formData.append('file', file)
+  const res = await fetch(`${BASE_URL}/documents`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? 'Could not upload document.')
+  return (data as { document: LeadDocument }).document
+}
+
+// Fetches the PDF as a blob (auth header required) and triggers a browser
+// download with the document's original filename.
+export async function downloadDocument(id: string, fileName: string): Promise<void> {
+  const token = getToken()
+  const res = await fetch(`${BASE_URL}/documents/${id}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
+  if (!res.ok) throw new Error('Could not download document.')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = window.document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  URL.revokeObjectURL(url)
 }

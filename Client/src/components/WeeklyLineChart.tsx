@@ -10,20 +10,23 @@ type Props = {
   xKey: string
   series: Series[]
   height?: number
+  /** Prefix before the x-axis label in the tooltip, e.g. "Week of" or "Month of". */
+  periodLabel?: string
 }
 
 // Custom tooltip: reads each series value by key (dedupes the Area+Line pair).
-function ChartTooltip({ active, payload, label, series }: {
+function ChartTooltip({ active, payload, label, series, periodLabel }: {
   active?: boolean
   payload?: { dataKey?: string | number; value?: number }[]
   label?: string
   series: Series[]
+  periodLabel: string
 }) {
   if (!active || !payload?.length) return null
   const valueOf = (k: string) => payload.find(p => p.dataKey === k)?.value
   return (
     <div className="rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500">Week of {label}</p>
+      <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500">{periodLabel} {label}</p>
       {series.map(s => (
         <p key={s.key} className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
@@ -40,7 +43,7 @@ function ChartTooltip({ active, payload, label, series }: {
  * drop-shadow "lift" and gradient area fills for a little depth. Two hues
  * validated for colorblind separation; a legend labels the series.
  */
-export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300 }: Props) {
+export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300, periodLabel = 'Week of' }: Props) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
   const tickColor = isDark ? '#6b7280' : '#9ca3af'
@@ -81,7 +84,7 @@ export default function WeeklyLineChart({ title, subtitle, data, xKey, series, h
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
           <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} />
           <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} width={30} />
-          <Tooltip cursor={{ stroke: cursorColor, strokeWidth: 1 }} content={<ChartTooltip series={series} />} />
+          <Tooltip cursor={{ stroke: cursorColor, strokeWidth: 1 }} content={<ChartTooltip series={series} periodLabel={periodLabel} />} />
           {/* gradient fills under each line */}
           {series.map(s => (
             <Area key={`a-${s.key}`} type="monotone" dataKey={s.key} stroke="none" fill={`url(#fill-${s.key})`} isAnimationActive={false} />

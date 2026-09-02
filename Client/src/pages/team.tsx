@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import type { EmployeeUser, Lead } from '../lib/api'
+import LeadDetailModal from '../components/LeadDetailModal'
 
 /** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
 function displayName(email: string): string {
@@ -28,6 +29,8 @@ export default function Team() {
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -58,6 +61,21 @@ export default function Team() {
       setError(e instanceof Error ? e.message : 'Could not remove employee.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function removeLead(id: string) {
+    if (!confirm('Delete this lead? This cannot be undone.')) return
+    setDeletingLeadId(id)
+    try {
+      await api(`/leads/${id}`, { method: 'DELETE', auth: true })
+      setLeads(prev => prev.filter(l => l.id !== id))
+      setSelectedLead(prev => (prev && prev.id === id ? null : prev))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete lead.')
+    } finally {
+      setDeletingLeadId(null)
     }
   }
 
@@ -153,14 +171,28 @@ export default function Team() {
                   {isExpanded && assigned.length > 0 && (
                     <ul className="border-t border-gray-100 bg-gray-50/60 px-5 py-2 dark:border-gray-800 dark:bg-gray-800/30">
                       {assigned.map(lead => (
-                        <li key={lead.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                        <li
+                          key={lead.id}
+                          onClick={() => setSelectedLead(lead)}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-lg py-2 px-2 -mx-2 text-sm transition hover:bg-gray-100 dark:hover:bg-gray-800/60"
+                        >
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-800 dark:text-gray-200">{lead.plant?.plantName ?? '—'}</p>
                             <p className="truncate text-xs text-gray-400 dark:text-gray-500">Updated {fmt(lead.updatedAt)}</p>
                           </div>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
-                            {lead.status?.statusName ?? 'Submitted'}
-                          </span>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
+                              {lead.status?.statusName ?? 'Submitted'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); removeLead(lead.id) }}
+                              disabled={deletingLeadId === lead.id}
+                              className="text-xs font-medium text-red-400 hover:text-red-600 disabled:opacity-50 dark:text-red-500 dark:hover:text-red-400"
+                            >
+                              {deletingLeadId === lead.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -171,6 +203,8 @@ export default function Team() {
           </ul>
         </div>
       )}
+
+      {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
     </div>
   )
 }

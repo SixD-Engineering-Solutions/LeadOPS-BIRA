@@ -1,0 +1,65 @@
+- generic [ref=e3]:
+  - button "Switch to dark mode" [ref=e5]
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e12]:
+        - heading "LeadOps Control Center" [level=3] [ref=e13]
+        - paragraph [ref=e14]: Turn incoming opportunities into visible execution.
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - heading "Welcome Back" [level=1] [ref=e18]
+          - paragraph [ref=e19]: Sign in to access your LeadOps dashboard
+        - generic [ref=e20]:
+          - generic [ref=e21]:
+            - generic [ref=e22]: Email
+            - textbox "Email" [ref=e24]:
+              - /placeholder: you@example.com
+          - generic [ref=e25]:
+            - generic [ref=e26]: Password
+            - generic [ref=e27]:
+              - textbox "Password" [ref=e28]:
+                - /placeholder: ••••••••
+              - button "Show password" [ref=e30] [cursor=pointer]
+          - generic [ref=e33]:
+            - generic [ref=e34] [cursor=pointer]:
+              - checkbox "Remember me" [ref=e35]
+              - text: Remember me
+            - link "Forgot Password?" [ref=e36] [cursor=pointer]:
+              - /url: "#"
+          - button "Sign In" [ref=e37]
+        - generic [ref=e38]: Or Continue With
+        - button "Google" [ref=e42]
+        - paragraph [ref=e49]:
+          - text: Don't have an account?
+          - button "Sign up" [ref=e50] [cursor=pointer]
+    - generic [ref=e51]:
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - heading "Create Account" [level=1] [ref=e55]
+          - paragraph [ref=e56]: Start your journey with LeadOps
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]: Email
+            - generic [ref=e60]:
+              - textbox [ref=e64]:
+                - /placeholder: you@example.com
+              - button "Send OTP" [ref=e65]
+          - generic [ref=e66]:
+            - generic [ref=e67]: Password
+            - generic [ref=e68]:
+              - textbox "Password" [ref=e69]:
+                - /placeholder: ••••••••
+              - button [ref=e71] [cursor=pointer]
+          - generic [ref=e74]:
+            - generic [ref=e75]: Confirm Password
+            - generic [ref=e76]:
+              - textbox "Confirm Password" [ref=e77]:
+                - /placeholder: ••••••••
+              - button [ref=e79] [cursor=pointer]
+          - button "Create Account" [ref=e82]
+        - paragraph [ref=e83]:
+          - text: Already have an account?
+          - button "Sign in" [ref=e84] [cursor=pointer]
+      - generic [ref=e86]:
+        - heading "LeadOps Control Center" [level=3] [ref=e87]
+        - paragraph [ref=e88]: Turn incoming opportunities into visible execution.

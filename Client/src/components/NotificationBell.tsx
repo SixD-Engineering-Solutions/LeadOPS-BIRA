@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, getToken, BASE_URL, LEAD_SYNC_EVENT, TASK_SYNC_EVENT } from '../lib/api'
+import { api, getToken, BASE_URL, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
 import type { Notification } from '../lib/api'
 
 const bellPath = 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9'
@@ -59,6 +59,22 @@ export default function NotificationBell() {
       es.addEventListener('task-update', ev => {
         const { taskId } = JSON.parse((ev as MessageEvent).data) as { taskId: string }
         window.dispatchEvent(new CustomEvent(TASK_SYNC_EVENT, { detail: { taskId } }))
+      })
+      es.addEventListener('activity-update', ev => {
+        const { leadId } = JSON.parse((ev as MessageEvent).data) as { leadId: string }
+        window.dispatchEvent(new CustomEvent(ACTIVITY_SYNC_EVENT, { detail: { leadId } }))
+      })
+      es.addEventListener('proposal-update', ev => {
+        const { proposalId } = JSON.parse((ev as MessageEvent).data) as { proposalId: string }
+        window.dispatchEvent(new CustomEvent(PROPOSAL_SYNC_EVENT, { detail: { proposalId } }))
+      })
+      es.addEventListener('project-update', ev => {
+        const { projectId } = JSON.parse((ev as MessageEvent).data) as { projectId: string }
+        window.dispatchEvent(new CustomEvent(PROJECT_SYNC_EVENT, { detail: { projectId } }))
+      })
+      es.addEventListener('invoice-update', ev => {
+        const { invoiceId } = JSON.parse((ev as MessageEvent).data) as { invoiceId: string }
+        window.dispatchEvent(new CustomEvent(INVOICE_SYNC_EVENT, { detail: { invoiceId } }))
       })
       es.onerror = () => {
         es?.close()

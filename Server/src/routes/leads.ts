@@ -9,9 +9,12 @@ router.use(authenticate)
 
 // Related data attached to every lead we return, with only display-relevant fields.
 const leadInclude = {
-  plant: { select: { id: true, plantName: true, companyName: true, plantCode: true, location: { select: { id: true, city: true, state: true, country: true, address: true } } } },
+  plant: { select: { id: true, plantName: true, companyName: true, plantCode: true, client: { select: { id: true, clientName: true } }, location: { select: { id: true, city: true, state: true, country: true, address: true } } } },
   vertical: { select: { id: true, verticalName: true } },
   sector: { select: { id: true, sectorName: true } },
+  source: { select: { id: true, sourceName: true } },
+  serviceType: { select: { id: true, serviceTypeName: true } },
+  event: { select: { id: true, eventName: true } },
   contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true, isPrimaryContact: true } },
   assignedToUser: { select: { id: true, userName: true, email: true } },
   assignedByUser: { select: { id: true, userName: true, email: true } },
@@ -68,13 +71,18 @@ const ci = (value: string) => ({ equals: value, mode: 'insensitive' as const })
 async function foreLocation(city: string) {
   return (await prisma.location.findFirst({ where: { city: ci(city) } })) ?? prisma.location.create({ data: { city } })
 }
-async function forePlant(name: string, locationId: string | null) {
+async function foreClient(name: string) {
+  return (await prisma.client.findFirst({ where: { clientName: ci(name) } })) ?? prisma.client.create({ data: { clientName: name } })
+}
+async function forePlant(name: string, locationId: string | null, clientId: string | null) {
   const found = await prisma.plant.findFirst({ where: { plantName: ci(name) } })
   if (found) {
-    if (locationId && !found.locationId) return prisma.plant.update({ where: { id: found.id }, data: { locationId } })
-    return found
+    const data: { locationId?: string; clientId?: string } = {}
+    if (locationId && !found.locationId) data.locationId = locationId
+    if (clientId && !found.clientId) data.clientId = clientId
+    return Object.keys(data).length ? prisma.plant.update({ where: { id: found.id }, data }) : found
   }
-  return prisma.plant.create({ data: { plantName: name, locationId } })
+  return prisma.plant.create({ data: { plantName: name, locationId, clientId } })
 }
 async function foreContact(name: string, plantId: string, email: string | null, phone: string | null) {
   const existing = await prisma.contact.findFirst({ where: { plantId, contactPersonName: ci(name) } })
@@ -91,6 +99,12 @@ async function foreVertical(name: string) {
 }
 async function foreSector(name: string) {
   return (await prisma.sector.findFirst({ where: { sectorName: ci(name) } })) ?? prisma.sector.create({ data: { sectorName: name } })
+}
+async function foreSource(name: string) {
+  return (await prisma.leadSource.findFirst({ where: { sourceName: ci(name) } })) ?? prisma.leadSource.create({ data: { sourceName: name } })
+}
+async function foreServiceType(name: string) {
+  return (await prisma.serviceType.findFirst({ where: { serviceTypeName: ci(name) } })) ?? prisma.serviceType.create({ data: { serviceTypeName: name } })
 }
 const STATUS_CATEGORY: Record<string, string> = { submitted: 'Open', 'in process': 'In Progress', dead: 'Closed Lost' }
 async function foreStatus(name: string) {
@@ -109,12 +123,16 @@ async function foreUser(input: string) {
 // POST /leads — accepts typed names; reuses or creates the linked records.
 const createSchema = z.object({
   plantName: z.string().min(1, 'Plant is required.'),
+  clientName: z.string().optional(),
   city: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   verticalName: z.string().optional(),
   sectorName: z.string().optional(),
+  sourceName: z.string().optional(),
+  serviceTypeName: z.string().optional(),
+  eventId: z.string().optional(),
   assignedToName: z.string().optional(),
   statusName: z.string().optional(),
   remark: z.string().optional(),
@@ -130,10 +148,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const d = parse.data
   try {
     const location = clean(d.city) ? await foreLocation(clean(d.city)) : null
-    const plant = await forePlant(clean(d.plantName), location?.id ?? null)
+    const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
+    const plant = await forePlant(clean(d.plantName), location?.id ?? null, client?.id ?? null)
     const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null) : null
     const vertical = clean(d.verticalName) ? await foreVertical(clean(d.verticalName)) : null
     const sector = clean(d.sectorName) ? await foreSector(clean(d.sectorName)) : null
+    const source = clean(d.sourceName) ? await foreSource(clean(d.sourceName)) : null
+    const serviceType = clean(d.serviceTypeName) ? await foreServiceType(clean(d.serviceTypeName)) : null
     const assigned = clean(d.assignedToName) ? await foreUser(clean(d.assignedToName)) : null
     if (assigned?.role === 'admin') {
       res.status(400).json({ error: 'Leads cannot be assigned to an admin user.' })
@@ -147,6 +168,9 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         contactId: contact?.id ?? null,
         verticalId: vertical?.id ?? null,
         sectorId: sector?.id ?? null,
+        sourceId: source?.id ?? null,
+        serviceTypeId: serviceType?.id ?? null,
+        eventId: clean(d.eventId) || null,
         assignedToUserId: assigned?.id ?? null,
         assignedByUserId: assigned?.id ? req.userId! : null,
         statusId: status.id,

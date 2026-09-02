@@ -21,11 +21,63 @@ router.post('/locations', async (req, res) => {
   res.status(201).json({ location: await prisma.location.create({ data: p.data }) })
 })
 
+// ─── Client categories ──────────────────────────────────────────────────────
+router.get('/client-categories', async (_req, res) => {
+  res.json({ clientCategories: await prisma.clientCategory.findMany({ where: { isActive: true }, orderBy: { categoryName: 'asc' } }) })
+})
+const clientCategorySchema = z.object({ categoryName: z.string().min(1), description: z.string().optional() })
+router.post('/client-categories', async (req, res) => {
+  const p = clientCategorySchema.safeParse(req.body)
+  if (!p.success) return void bad(res, 'categoryName is required.')
+  res.status(201).json({ clientCategory: await prisma.clientCategory.create({ data: p.data }) })
+})
+
+// ─── Clients ────────────────────────────────────────────────────────────────
+router.get('/clients', async (_req, res) => {
+  res.json({ clients: await prisma.client.findMany({ where: { isActive: true }, include: { category: { select: { id: true, categoryName: true } } }, orderBy: { clientName: 'asc' } }) })
+})
+const clientSchema = z.object({ clientName: z.string().min(1), industryType: z.string().optional(), website: z.string().optional(), linkedIn: z.string().optional(), categoryId: z.string().optional(), country: z.string().optional(), region: z.string().optional() })
+router.post('/clients', async (req, res) => {
+  const p = clientSchema.safeParse(req.body)
+  if (!p.success) return void bad(res, 'clientName is required.')
+  res.status(201).json({ client: await prisma.client.create({ data: p.data }) })
+})
+const clientUpdateSchema = clientSchema.partial()
+router.patch('/clients/:id', async (req, res) => {
+  const p = clientUpdateSchema.safeParse(req.body)
+  if (!p.success) return void bad(res, 'Invalid client data.')
+  try {
+    res.json({ client: await prisma.client.update({ where: { id: String(req.params.id) }, data: p.data }) })
+  } catch { bad(res, 'Client not found.') }
+})
+
+// ─── Lead sources ───────────────────────────────────────────────────────────
+router.get('/lead-sources', async (_req, res) => {
+  res.json({ leadSources: await prisma.leadSource.findMany({ where: { isActive: true }, orderBy: { sourceName: 'asc' } }) })
+})
+const leadSourceSchema = z.object({ sourceName: z.string().min(1), description: z.string().optional() })
+router.post('/lead-sources', async (req, res) => {
+  const p = leadSourceSchema.safeParse(req.body)
+  if (!p.success) return void bad(res, 'sourceName is required.')
+  res.status(201).json({ leadSource: await prisma.leadSource.create({ data: p.data }) })
+})
+
+// ─── Service types ──────────────────────────────────────────────────────────
+router.get('/service-types', async (_req, res) => {
+  res.json({ serviceTypes: await prisma.serviceType.findMany({ where: { isActive: true }, orderBy: { serviceTypeName: 'asc' } }) })
+})
+const serviceTypeSchema = z.object({ serviceTypeName: z.string().min(1), description: z.string().optional() })
+router.post('/service-types', async (req, res) => {
+  const p = serviceTypeSchema.safeParse(req.body)
+  if (!p.success) return void bad(res, 'serviceTypeName is required.')
+  res.status(201).json({ serviceType: await prisma.serviceType.create({ data: p.data }) })
+})
+
 // ─── Plants ─────────────────────────────────────────────────────────────────
 router.get('/plants', async (_req, res) => {
-  res.json({ plants: await prisma.plant.findMany({ include: { location: { select: { id: true, city: true, state: true } } }, orderBy: { plantName: 'asc' } }) })
+  res.json({ plants: await prisma.plant.findMany({ include: { location: { select: { id: true, city: true, state: true } }, client: { select: { id: true, clientName: true } } }, orderBy: { plantName: 'asc' } }) })
 })
-const plantSchema = z.object({ plantName: z.string().min(1), companyName: z.string().optional(), locationId: z.string().min(1), plantCode: z.string().optional(), isActive: z.boolean().optional() })
+const plantSchema = z.object({ plantName: z.string().min(1), companyName: z.string().optional(), clientId: z.string().optional(), locationId: z.string().min(1), plantCode: z.string().optional(), isActive: z.boolean().optional() })
 router.post('/plants', async (req, res) => {
   const p = plantSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'plantName and locationId are required.')

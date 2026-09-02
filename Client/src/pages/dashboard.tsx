@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, LEAD_SYNC_EVENT, TASK_SYNC_EVENT } from '../lib/api'
-import type { AuthUser, EmployeeUser, Lead, Task } from '../lib/api'
+import { api, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
+import type { AuthUser, EmployeeUser, Lead, Task, Activity, Proposal, Invoice } from '../lib/api'
 import Leads from './leads'
 import Reports from './reports'
 import Team from './team'
 import Tasks from './tasks'
+import Proposals from './proposals'
+import Projects from './projects'
+import Invoices from './invoices'
+import Empanelments from './empanelments'
+import Tenders from './tenders'
 import { taskStatusStyle, fmtTaskDeadline, isTaskOverdue } from '../lib/taskDisplay'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
@@ -45,6 +50,11 @@ const icons = {
   leadGen: 'M12 3v3m0 12v3m9-9h-3M6 12H3m14.5-5.5L15 9m-6 6l-2.5 2.5m11 0L15 15m-6-6L6.5 6.5M12 8a4 4 0 100 8 4 4 0 000-8z',
   leads: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-2a3 3 0 10-2.5-4.5',
   campaigns: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z',
+  proposals: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  projects: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
+  invoices: 'M9 14l2 2 4-4m5-6v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5z',
+  empanelments: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  tenders: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l7-3 7 3z',
   reports: 'M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z',
   tasks: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
   team: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
@@ -64,7 +74,11 @@ type Module = { key: string; title: string; desc: string; icon: string; action: 
 const CORE_MODULES: Module[] = [
   { key: 'lead-gen', title: 'Lead Generation', desc: 'Discover, capture and qualify new prospects.', icon: icons.leadGen, action: 'Open', accent: 'from-rose-400 to-orange-400', glow: 'rgba(251,146,60,0.45)' },
   { key: 'leads', title: 'My Leads', desc: 'Track and nurture your assigned leads.', icon: icons.leads, action: 'Open', accent: 'from-sky-400 to-indigo-400', glow: 'rgba(56,189,248,0.45)' },
-  { key: 'campaigns', title: 'Campaigns', desc: 'Launch and monitor outreach campaigns.', icon: icons.campaigns, action: 'Explore', accent: 'from-violet-400 to-fuchsia-400', glow: 'rgba(167,139,250,0.45)' },
+  { key: 'proposals', title: 'Proposals', desc: 'Quote value and probability, track to Won or Lost.', icon: icons.proposals, action: 'Open', accent: 'from-violet-400 to-fuchsia-400', glow: 'rgba(167,139,250,0.45)' },
+  { key: 'projects', title: 'Projects', desc: 'Work orders and execution tracking after order.', icon: icons.projects, action: 'Open', accent: 'from-teal-400 to-emerald-400', glow: 'rgba(45,212,191,0.45)' },
+  { key: 'invoices', title: 'Invoices', desc: 'Bill a project and track payments received.', icon: icons.invoices, action: 'Open', accent: 'from-indigo-400 to-blue-400', glow: 'rgba(129,140,248,0.45)' },
+  { key: 'empanelments', title: 'Empanelment', desc: 'Approved-vendor status per client and category.', icon: icons.empanelments, action: 'Open', accent: 'from-cyan-400 to-sky-400', glow: 'rgba(34,211,238,0.45)' },
+  { key: 'tenders', title: 'Tenders', desc: 'Government/EPC tenders raised against a client.', icon: icons.tenders, action: 'Open', accent: 'from-fuchsia-400 to-purple-400', glow: 'rgba(232,121,249,0.45)' },
   { key: 'tasks', title: 'Tasks', desc: 'Your follow-ups and to-dos in one place.', icon: icons.tasks, action: 'Open', accent: 'from-amber-400 to-orange-400', glow: 'rgba(251,191,36,0.45)' },
 ]
 
@@ -138,7 +152,11 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { key: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
     { key: 'lead-gen', label: 'Lead Generation', icon: icons.leadGen },
     { key: 'leads', label: 'My Leads', icon: icons.leads },
-    { key: 'campaigns', label: 'Campaigns', icon: icons.campaigns },
+    { key: 'proposals', label: 'Proposals', icon: icons.proposals },
+    { key: 'projects', label: 'Projects', icon: icons.projects },
+    { key: 'invoices', label: 'Invoices', icon: icons.invoices },
+    { key: 'empanelments', label: 'Empanelment', icon: icons.empanelments },
+    { key: 'tenders', label: 'Tenders', icon: icons.tenders },
     { key: 'tasks', label: 'Tasks', icon: icons.tasks },
     ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }] : []),
   ]
@@ -229,6 +247,65 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
   }, [active, isAdmin])
 
+  // Pending proposal value — sum of proposals not yet Won/Lost. Feeds the
+  // "Pipeline Value" tile that replaced the old unwired "Revenue" placeholder.
+  const [proposalStats, setProposalStats] = useState({
+    pendingValue: 0, pendingCount: 0,
+    wonValue: 0, wonCount: 0,
+    lostValue: 0, lostCount: 0,
+    loaded: false,
+  })
+  function refreshProposalStats() {
+    api<{ proposals: Proposal[] }>('/proposals', { auth: true })
+      .then(({ proposals }) => {
+        const pending = proposals.filter(p => p.status !== 'Won' && p.status !== 'Lost')
+        const won = proposals.filter(p => p.status === 'Won')
+        const lost = proposals.filter(p => p.status === 'Lost')
+        setProposalStats({
+          pendingValue: pending.reduce((sum, p) => sum + (p.value ?? 0), 0), pendingCount: pending.length,
+          wonValue: won.reduce((sum, p) => sum + (p.value ?? 0), 0), wonCount: won.length,
+          lostValue: lost.reduce((sum, p) => sum + (p.value ?? 0), 0), lostCount: lost.length,
+          loaded: true,
+        })
+      })
+      .catch(() => setProposalStats({ pendingValue: 0, pendingCount: 0, wonValue: 0, wonCount: 0, lostValue: 0, lostCount: 0, loaded: false }))
+  }
+  useEffect(() => {
+    if (active !== 'dashboard') return
+    refreshProposalStats()
+  }, [active, isAdmin])
+  useEffect(() => {
+    function onProposalSync() {
+      if (active !== 'dashboard') return
+      refreshProposalStats()
+    }
+    window.addEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
+    return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
+  }, [active])
+
+  // Pending payments — invoices with an amount still outstanding.
+  const [pendingInvoices, setPendingInvoices] = useState<{ invoices: Invoice[]; loaded: boolean }>({ invoices: [], loaded: false })
+  function refreshPendingInvoices() {
+    api<{ invoices: Invoice[] }>('/invoices', { auth: true })
+      .then(({ invoices }) => {
+        const pending = invoices.filter(i => i.amount - i.payments.reduce((sum, p) => sum + p.amountReceived, 0) > 0)
+        setPendingInvoices({ invoices: pending, loaded: true })
+      })
+      .catch(() => setPendingInvoices({ invoices: [], loaded: false }))
+  }
+  useEffect(() => {
+    if (active !== 'dashboard') return
+    refreshPendingInvoices()
+  }, [active, isAdmin])
+  useEffect(() => {
+    function onInvoiceSync() {
+      if (active !== 'dashboard') return
+      refreshPendingInvoices()
+    }
+    window.addEventListener(INVOICE_SYNC_EVENT, onInvoiceSync)
+    return () => window.removeEventListener(INVOICE_SYNC_EVENT, onInvoiceSync)
+  }, [active])
+
   // This employee's own assigned tasks, for the "Tasks" section on the
   // dashboard home. Admins are never assignable (enforced server-side), so
   // this stays empty — and hidden — for admin accounts.
@@ -250,6 +327,33 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     return () => window.removeEventListener(TASK_SYNC_EVENT, onTaskSync)
   }, [active, isAdmin])
 
+  // Follow-up buckets (today / overdue / upcoming) from the activity log —
+  // admins see everyone's, employees see only their own leads' follow-ups.
+  const [followUps, setFollowUps] = useState({ today: [] as Activity[], overdue: [] as Activity[], upcoming: [] as Activity[], loaded: false })
+  function refreshFollowUps() {
+    api<{ today: Activity[]; overdue: Activity[]; upcoming: Activity[] }>('/activities/follow-ups', { auth: true })
+      .then(d => setFollowUps({ ...d, loaded: true }))
+      .catch(() => setFollowUps({ today: [], overdue: [], upcoming: [], loaded: false }))
+  }
+  useEffect(() => {
+    if (active !== 'dashboard') return
+    refreshFollowUps()
+  }, [active, isAdmin])
+  useEffect(() => {
+    function onActivitySync() {
+      if (active !== 'dashboard') return
+      refreshFollowUps()
+    }
+    window.addEventListener(ACTIVITY_SYNC_EVENT, onActivitySync)
+    return () => window.removeEventListener(ACTIVITY_SYNC_EVENT, onActivitySync)
+  }, [active])
+
+  // Opens the full lead detail modal from a follow-up entry (which only carries
+  // a slim lead summary) by fetching the complete Lead record.
+  function openLeadById(leadId: string) {
+    api<{ lead: Lead }>(`/leads/${leadId}`, { auth: true }).then(({ lead }) => setSelectedLead(lead)).catch(() => {})
+  }
+
   // Assigned leads grouped by whoever they're currently assigned to, for the
   // "Total Leads" tile's breakdown modal. Only groups with leads are kept —
   // employees with nothing assigned aren't relevant to "who has what".
@@ -269,7 +373,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'empanelments', 'tenders'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
@@ -355,7 +459,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         {/* top bar */}
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-6 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80">
           <div>
-            <h1 className="text-lg font-bold">Welcome back, {name.split(' ')[0]} 👋</h1>
+            <h1 className="text-lg font-bold">Welcome back, {name.split(' ')[0]}</h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">Here's what's happening in your workspace today.</p>
           </div>
           <div className="flex items-center gap-3">
@@ -385,6 +489,16 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <Team />
         ) : active === 'tasks' ? (
           <Tasks isAdmin={isAdmin} />
+        ) : active === 'proposals' ? (
+          <Proposals />
+        ) : active === 'projects' ? (
+          <Projects />
+        ) : active === 'invoices' ? (
+          <Invoices />
+        ) : active === 'empanelments' ? (
+          <Empanelments />
+        ) : active === 'tenders' ? (
+          <Tenders />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (
@@ -395,7 +509,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           )}
 
           {/* stat tiles */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {/* Total Leads — upward sparkline. Click to see who each lead is
                 assigned to (admin), or the details of your own leads (employee). */}
             <button
@@ -447,13 +561,114 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
               <div className="mt-2 h-4">{stats.loaded && <StatusDots counts={stats.counts} />}</div>
             </div>
 
-            {/* Revenue — muted placeholder (no revenue source wired yet) */}
-            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Revenue (MTD)</p>
-              <p className="mt-1 text-2xl font-bold text-gray-300 dark:text-gray-700">—</p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">Connect revenue tracking</p>
-            </div>
+            {/* Pipeline Value — sum of open (not Won/Lost) proposal values */}
+            <button
+              type="button"
+              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
+              disabled={!proposalStats.loaded}
+              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
+            >
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Pipeline Value</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {proposalStats.loaded ? `₹${proposalStats.pendingValue.toLocaleString()}` : '—'}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                {proposalStats.loaded ? `${proposalStats.pendingCount} open proposal${proposalStats.pendingCount === 1 ? '' : 's'}` : ' '}
+              </p>
+            </button>
+
+            {/* Orders Received — sum of Won proposal values */}
+            <button
+              type="button"
+              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
+              disabled={!proposalStats.loaded}
+              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
+            >
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Orders Received</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                {proposalStats.loaded ? `₹${proposalStats.wonValue.toLocaleString()}` : '—'}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                {proposalStats.loaded ? `${proposalStats.wonCount} won proposal${proposalStats.wonCount === 1 ? '' : 's'}` : ' '}
+              </p>
+            </button>
+
+            {/* Lost Deals — count + value of Lost proposals */}
+            <button
+              type="button"
+              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
+              disabled={!proposalStats.loaded}
+              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
+            >
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Lost Deals</p>
+              <p className="mt-1 text-2xl font-bold text-rose-500 dark:text-rose-400">
+                {proposalStats.loaded ? String(proposalStats.lostCount) : '—'}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                {proposalStats.loaded ? `₹${proposalStats.lostValue.toLocaleString()} lost value` : ' '}
+              </p>
+            </button>
           </div>
+
+          {/* follow-ups — from the activity log's next-action dates */}
+          {followUps.loaded && (followUps.overdue.length + followUps.today.length + followUps.upcoming.length > 0) && (
+            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Follow-ups</h3>
+              </div>
+              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
+                {[...followUps.overdue, ...followUps.today].map(a => (
+                  <li
+                    key={a.id}
+                    onClick={() => openLeadById(a.leadId)}
+                    className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-gray-800/60"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{a.lead?.plant?.plantName ?? '—'}</p>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{a.activityType} · next action {fmtDate(a.nextActionDate!)}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${followUps.overdue.includes(a) ? 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800' : 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800'}`}>
+                      {followUps.overdue.includes(a) ? 'Overdue' : 'Today'}
+                    </span>
+                  </li>
+                ))}
+                {followUps.upcoming.length > 0 && (
+                  <li className="px-5 py-2.5 text-xs text-gray-400 dark:text-gray-500">
+                    +{followUps.upcoming.length} upcoming in the next 7 days
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          {/* pending payments — invoices with money still outstanding */}
+          {pendingInvoices.loaded && pendingInvoices.invoices.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Pending Payments</h3>
+              </div>
+              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
+                {pendingInvoices.invoices.map(inv => {
+                  const outstanding = inv.amount - inv.payments.reduce((sum, p) => sum + p.amountReceived, 0)
+                  return (
+                    <li
+                      key={inv.id}
+                      onClick={() => openModule({ key: 'invoices', label: 'Invoices' })}
+                      className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-gray-800/60"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{inv.invoiceNumber} — {inv.project?.projectName ?? '—'}</p>
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Due {fmtDate(inv.dueDate ?? inv.createdAt)}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                        ₹{outstanding.toLocaleString()} due
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
 
           {/* tasks — only appears once something has actually been assigned */}
           {!isAdmin && myTasks.length > 0 && (

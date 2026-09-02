@@ -4,8 +4,17 @@ import cors from 'cors'
 import authRoutes from './routes/auth'
 import leadRoutes from './routes/leads'
 import taskRoutes from './routes/tasks'
+import activityRoutes from './routes/activities'
+import proposalRoutes from './routes/proposals'
+import projectRoutes from './routes/projects'
+import documentRoutes from './routes/documents'
+import invoiceRoutes from './routes/invoices'
+import eventRoutes from './routes/events'
+import empanelmentRoutes from './routes/empanelments'
+import tenderRoutes from './routes/tenders'
 import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
+import { startFollowUpReminderJob } from './services/reminders'
 
 // Safety nets: keep the server alive through transient failures (e.g. the DB
 // briefly dropping) instead of the process dying and restarting repeatedly.
@@ -39,9 +48,18 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRoutes)
 app.use('/leads', leadRoutes)
 app.use('/tasks', taskRoutes)
+app.use('/activities', activityRoutes)
+app.use('/proposals', proposalRoutes)
+app.use('/projects', projectRoutes)
+app.use('/documents', documentRoutes)
+app.use('/invoices', invoiceRoutes)
+app.use('/events', eventRoutes)
+app.use('/empanelments', empanelmentRoutes)
+app.use('/tenders', tenderRoutes)
 app.use('/notifications', notificationRoutes)
 app.use('/', referenceRoutes)
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
+  startFollowUpReminderJob()
 })
