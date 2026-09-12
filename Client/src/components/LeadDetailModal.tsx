@@ -229,7 +229,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
           </DetailSection>
 
           <DetailSection title="Notes">
-            <DetailRow label="Remark" value={lead.remark} />
+            <BulletNote label="Remark" value={lead.remark} />
             <DetailRow label="Created" value={fmt(lead.createdAt)} />
             <DetailRow label="Updated" value={fmt(lead.updatedAt)} />
           </DetailSection>
@@ -335,7 +335,11 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{a.activityType}</span>
                       <span className="text-gray-400 dark:text-gray-500">{fmtDay(a.activityDate)}</span>
                     </div>
-                    {a.notes && <p className="mt-0.5 text-gray-600 dark:text-gray-400">{a.notes}</p>}
+                    {a.notes && (
+                      <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-gray-600 dark:text-gray-400">
+                        {a.notes.split('\n').map(line => line.trim()).filter(Boolean).map((line, i) => <li key={i}>{line}</li>)}
+                      </ul>
+                    )}
                     <p className="mt-0.5 text-gray-400 dark:text-gray-500">
                       {a.user ? `by ${a.user.userName || a.user.email}` : ''}
                       {a.nextActionDate ? ` · next: ${fmtDay(a.nextActionDate)}` : ''}
@@ -356,6 +360,19 @@ function DetailSection({ title, children, last = false }: { title: string; child
     <div className={`${last ? '' : 'mb-4 border-b border-gray-50 pb-4 dark:border-gray-800/60'}`}>
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{title}</p>
       <div className="space-y-1.5">{children}</div>
+    </div>
+  )
+}
+
+function BulletNote({ label, value }: { label: string; value?: string | null }) {
+  const lines = (value ?? '').split('\n').map(line => line.trim()).filter(Boolean)
+  if (lines.length === 0) return null
+  return (
+    <div className="text-sm">
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 font-medium text-gray-900 dark:text-gray-100">
+        {lines.map((line, i) => <li key={i}>{line}</li>)}
+      </ul>
     </div>
   )
 }

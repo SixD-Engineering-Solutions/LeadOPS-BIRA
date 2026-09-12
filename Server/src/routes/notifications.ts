@@ -62,4 +62,10 @@ router.post('/read-all', async (req: AuthRequest, res: Response) => {
   res.json({ message: 'All notifications marked read.' })
 })
 
+// DELETE /notifications — clear all notifications for the current user.
+router.delete('/', async (req: AuthRequest, res: Response) => {
+  await prisma.notification.deleteMany({ where: { userId: req.userId } })
+  res.json({ message: 'All notifications cleared.' })
+})
+
 export default router

@@ -1,3 +1,4 @@
+
 # CRM Roadmap — TODO
 
 ## Current State (already built)
@@ -7,7 +8,6 @@
 - [x] Tasks with deadlines, Notifications
 - [x] Pages: dashboard, leads, tasks, team, catalog, reports, login
 
----
 
 ## Phase 1 — Foundation (Client + Lookups)
 - [x] Add `Client` model above `Plant` (industry type, website, LinkedIn)

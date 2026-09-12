@@ -109,6 +109,11 @@ export default function NotificationBell() {
     try { await api('/notifications/read-all', { method: 'POST', auth: true }) } catch { /* best-effort */ }
   }
 
+  async function clearAll() {
+    setNotifications([])
+    try { await api('/notifications', { method: 'DELETE', auth: true }) } catch { /* best-effort */ }
+  }
+
   return (
     <>
       <div ref={rootRef} className="relative">
@@ -131,9 +136,14 @@ export default function NotificationBell() {
           <div className="absolute right-0 z-20 mt-2 w-80 rounded-2xl border border-gray-100 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-800">
               <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Notifications</span>
-              {unread > 0 && (
-                <button onClick={markAllRead} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Mark all read</button>
-              )}
+              <div className="flex items-center gap-3">
+                {unread > 0 && (
+                  <button onClick={markAllRead} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Mark all read</button>
+                )}
+                {notifications.length > 0 && (
+                  <button onClick={clearAll} className="text-xs font-medium text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">Clear all</button>
+                )}
+              </div>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (

@@ -82,7 +82,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     api<{ events: Event[] }>('/events', { auth: true }).then(({ events }) => setEvents(events)).catch(() => {})
   }, [])
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
   async function createLead(e: React.FormEvent) {
@@ -194,7 +194,10 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
               {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
-          {field('Remark', 'remark', 'Optional note', 'sm:col-span-2 lg:col-span-2')}
+          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2 lg:col-span-2">
+            Remark
+            <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
+          </label>
         </div>
         {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
         <div className="mt-3">
