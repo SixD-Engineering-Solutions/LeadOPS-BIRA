@@ -1,8 +1,10 @@
 import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
+import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastProjectUpdate } from '../services/notify'
+import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 
 const router = Router()
 router.use(authenticate)
@@ -27,9 +29,10 @@ async function canAccessLead(leadId: string, userId: string | undefined, admin: 
   return prisma.lead.findFirst({ where: { id: leadId, deletedAt: null, ...(admin ? {} : { assignedToUserId: userId }) } })
 }
 
-export async function nextWorkOrderNo(): Promise<string> {
-  const count = await prisma.project.count()
-  return `WO-${String(count + 1).padStart(4, '0')}`
+// Pass a transaction client when creating a project in the same transaction,
+// so reserving the number and creating the row succeed or fail together.
+export function nextWorkOrderNo(client: typeof prisma | Prisma.TransactionClient = prisma): Promise<string> {
+  return nextSequenceNumber(client, 'project', 'WO')
 }
 
 // GET /projects
@@ -95,21 +98,29 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
   }
   try {
-    const project = await prisma.project.create({
-      data: {
-        workOrderNo: await nextWorkOrderNo(),
-        leadId: d.leadId,
-        projectName: d.projectName.trim(),
-        locationId: d.locationId || null,
-        startDate: d.startDate ?? null,
-        completionDate: d.completionDate ?? null,
-        responsibleUserId: d.responsibleUserId || null,
-        status: d.status ?? 'Not Started',
-        billingStage: d.billingStage ?? 'Not Started',
-        createdByUserId: req.userId!,
-      },
-      include: projectInclude,
-    })
+    // Reserving the work order number and creating the row are one atomic
+    // unit — if the create fails validation after the number's reserved, the
+    // whole transaction rolls back rather than burning a number on a project
+    // that was never actually created (a rolled-back number is a harmless gap
+    // either way, but there's no reason not to keep them together).
+    const project = await prisma.$transaction(async tx => {
+      const workOrderNo = await nextWorkOrderNo(tx)
+      return tx.project.create({
+        data: {
+          workOrderNo,
+          leadId: d.leadId,
+          projectName: d.projectName.trim(),
+          locationId: d.locationId || null,
+          startDate: d.startDate ?? null,
+          completionDate: d.completionDate ?? null,
+          responsibleUserId: d.responsibleUserId || null,
+          status: d.status ?? 'Not Started',
+          billingStage: d.billingStage ?? 'Not Started',
+          createdByUserId: req.userId!,
+        },
+        include: projectInclude,
+      })
+    }, TX_OPTS)
     broadcastProjectUpdate(project.id)
     res.status(201).json({ project })
   } catch {

@@ -8,8 +8,8 @@ import Tasks from './tasks'
 import Proposals from './proposals'
 import Projects from './projects'
 import Invoices from './invoices'
-import Empanelments from './empanelments'
 import Tenders from './tenders'
+import Tracker from './tracker'
 import { taskStatusStyle, fmtTaskDeadline, isTaskOverdue } from '../lib/taskDisplay'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
@@ -53,8 +53,8 @@ const icons = {
   proposals: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   projects: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
   invoices: 'M9 14l2 2 4-4m5-6v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5z',
-  empanelments: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
   tenders: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l7-3 7 3z',
+  tracker: 'M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM3 10h18M9 4v16',
   reports: 'M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z',
   tasks: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
   team: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
@@ -64,6 +64,8 @@ const icons = {
   search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
   bell: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
   chevronLeft: 'M15 19l-7-7 7-7',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  close: 'M6 18L18 6M6 6l12 12',
 }
 
 // ─── module cards shown in the main area ────────────────────────────────────────
@@ -72,14 +74,13 @@ const icons = {
 type Module = { key: string; title: string; desc: string; icon: string; action: string; accent: string; glow: string }
 
 const CORE_MODULES: Module[] = [
-  { key: 'lead-gen', title: 'Lead Generation', desc: 'Discover, capture and qualify new prospects.', icon: icons.leadGen, action: 'Open', accent: 'from-rose-400 to-orange-400', glow: 'rgba(251,146,60,0.45)' },
-  { key: 'leads', title: 'My Leads', desc: 'Track and nurture your assigned leads.', icon: icons.leads, action: 'Open', accent: 'from-sky-400 to-indigo-400', glow: 'rgba(56,189,248,0.45)' },
+  { key: 'lead-gen', title: 'Leads', desc: 'Capture new leads and track the ones assigned to you.', icon: icons.leadGen, action: 'Open', accent: 'from-rose-400 to-orange-400', glow: 'rgba(251,146,60,0.45)' },
   { key: 'proposals', title: 'Proposals', desc: 'Quote value and probability, track to Won or Lost.', icon: icons.proposals, action: 'Open', accent: 'from-violet-400 to-fuchsia-400', glow: 'rgba(167,139,250,0.45)' },
   { key: 'projects', title: 'Projects', desc: 'Work orders and execution tracking after order.', icon: icons.projects, action: 'Open', accent: 'from-teal-400 to-emerald-400', glow: 'rgba(45,212,191,0.45)' },
   { key: 'invoices', title: 'Invoices', desc: 'Bill a project and track payments received.', icon: icons.invoices, action: 'Open', accent: 'from-indigo-400 to-blue-400', glow: 'rgba(129,140,248,0.45)' },
-  { key: 'empanelments', title: 'Empanelment', desc: 'Approved-vendor status per client and category.', icon: icons.empanelments, action: 'Open', accent: 'from-cyan-400 to-sky-400', glow: 'rgba(34,211,238,0.45)' },
   { key: 'tenders', title: 'Tenders', desc: 'Government/EPC tenders raised against a client.', icon: icons.tenders, action: 'Open', accent: 'from-fuchsia-400 to-purple-400', glow: 'rgba(232,121,249,0.45)' },
   { key: 'tasks', title: 'Tasks', desc: 'Your follow-ups and to-dos in one place.', icon: icons.tasks, action: 'Open', accent: 'from-amber-400 to-orange-400', glow: 'rgba(251,191,36,0.45)' },
+  { key: 'tracker', title: 'Tracker', desc: 'Imported pipeline and invoice data, at a glance.', icon: icons.tracker, action: 'Open', accent: 'from-lime-400 to-emerald-400', glow: 'rgba(163,230,53,0.45)' },
 ]
 
 const ADMIN_MODULES: Module[] = [
@@ -150,14 +151,13 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
-    { key: 'lead-gen', label: 'Lead Generation', icon: icons.leadGen },
-    { key: 'leads', label: 'My Leads', icon: icons.leads },
+    { key: 'lead-gen', label: 'Leads', icon: icons.leadGen },
     { key: 'proposals', label: 'Proposals', icon: icons.proposals },
     { key: 'projects', label: 'Projects', icon: icons.projects },
     { key: 'invoices', label: 'Invoices', icon: icons.invoices },
-    { key: 'empanelments', label: 'Empanelment', icon: icons.empanelments },
     { key: 'tenders', label: 'Tenders', icon: icons.tenders },
     { key: 'tasks', label: 'Tasks', icon: icons.tasks },
+    { key: 'tracker', label: 'Tracker', icon: icons.tracker },
     ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }] : []),
   ]
 
@@ -168,8 +168,13 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   useEffect(() => { sessionStorage.setItem('leadops_tab', active) }, [active])
 
   // Sidebar starts collapsed to icons; hovering over it reveals the full menu.
+  // On narrow screens there's no hover, so the sidebar is off-canvas instead —
+  // toggled open by the header's menu button — and always shows full labels
+  // while open, since there's no icon-only state worth having there.
   const [hovered, setHovered] = useState(false)
   const collapsed = !hovered
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const expanded = !collapsed || mobileNavOpen
   const [demoNote, setDemoNote] = useState<string | null>(null)
 
   // Live lead stats for the tiles. Refreshed each time the dashboard is shown.
@@ -373,36 +378,47 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'empanelments', 'tenders'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tenders', 'tracker'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
     setDemoNote(REAL_VIEWS.has(m.key) ? null : `“${m.label ?? m.title}” is a demo module — coming soon.`)
+    setMobileNavOpen(false) // picking a section closes the off-canvas nav on mobile
   }
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      {/* Backdrop — mobile only, closes the off-canvas nav on tap. */}
+      {mobileNavOpen && (
+        <div onClick={() => setMobileNavOpen(false)} className="fixed inset-0 z-20 bg-black/40 md:hidden" aria-hidden="true" />
+      )}
       <aside
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className={`relative hidden md:flex shrink-0 flex-col border-r border-gray-200 bg-white transition-[width] duration-200 dark:border-gray-800 dark:bg-gray-900
-          ${collapsed ? 'w-20' : 'w-64'}`}
+        className={`fixed inset-y-0 left-0 z-30 flex shrink-0 flex-col border-r border-gray-200 bg-white transition-transform duration-200 dark:border-gray-800 dark:bg-gray-900
+          md:static md:transition-[width]
+          ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+          ${expanded ? 'w-64' : 'w-20'}`}
       >
         {/* logo */}
-        <div className={`flex h-16 items-center gap-2 border-b border-gray-100 dark:border-gray-800 ${collapsed ? 'justify-center px-2' : 'px-6'}`}>
+        <div className={`flex h-16 items-center gap-2 border-b border-gray-100 dark:border-gray-800 ${expanded ? 'px-6' : 'justify-center px-2'}`}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose-400 to-orange-400 text-white font-bold">L</div>
-          {!collapsed && <span className="text-lg font-bold tracking-tight">LeadOps</span>}
+          {expanded && <span className="text-lg font-bold tracking-tight">LeadOps</span>}
+          {/* close button — mobile only */}
+          <button onClick={() => setMobileNavOpen(false)} className="ml-auto rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 md:hidden" aria-label="Close menu">
+            <Icon d={icons.close} className="h-5 w-5" />
+          </button>
         </div>
 
         {/* user profile */}
-        <div className={`border-b border-gray-100 py-4 dark:border-gray-800 ${collapsed ? 'px-2' : 'px-4'}`}>
-          <div className={`flex items-center rounded-xl bg-gray-50 p-3 dark:bg-gray-800 ${collapsed ? 'justify-center' : 'gap-3'}`}>
+        <div className={`border-b border-gray-100 py-4 dark:border-gray-800 ${expanded ? 'px-4' : 'px-2'}`}>
+          <div className={`flex items-center rounded-xl bg-gray-50 p-3 dark:bg-gray-800 ${expanded ? 'gap-3' : 'justify-center'}`}>
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-orange-400 text-white font-semibold">
               {initials(name)}
             </div>
-            {!collapsed && (
+            {expanded && (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
                 <span
@@ -418,22 +434,22 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         </div>
 
         {/* nav */}
-        <nav className={`flex-1 overflow-y-auto py-4 ${collapsed ? 'px-2' : 'px-3'}`}>
-          {!collapsed && <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Menu</p>}
+        <nav className={`flex-1 overflow-y-auto py-4 ${expanded ? 'px-3' : 'px-2'}`}>
+          {expanded && <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Menu</p>}
           <ul className="flex flex-col gap-1">
             {navItems.map(item => (
               <li key={item.key}>
                 <button
                   onClick={() => openModule(item)}
-                  title={collapsed ? item.label : undefined}
+                  title={!expanded ? item.label : undefined}
                   className={`flex w-full items-center rounded-xl py-2.5 text-sm font-medium transition
-                    ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'}
+                    ${expanded ? 'gap-3 px-3' : 'justify-center px-2'}
                     ${active === item.key
                       ? 'bg-gradient-to-r from-rose-50 to-orange-50 text-orange-600 dark:from-rose-950/40 dark:to-orange-950/40 dark:text-orange-400'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
                 >
                   <Icon d={item.icon} className={`h-5 w-5 shrink-0 ${active === item.key ? 'text-orange-500 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                  {!collapsed && item.label}
+                  {expanded && item.label}
                 </button>
               </li>
             ))}
@@ -444,12 +460,12 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         <div className="border-t border-gray-100 p-3 dark:border-gray-800">
           <button
             onClick={onSignOut}
-            title={collapsed ? 'Sign out' : undefined}
+            title={!expanded ? 'Sign out' : undefined}
             className={`flex w-full items-center rounded-xl py-2.5 text-sm font-medium text-gray-600 transition hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400
-              ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}
+              ${expanded ? 'gap-3 px-3' : 'justify-center px-2'}`}
           >
             <Icon d={icons.signout} className="h-5 w-5 shrink-0" />
-            {!collapsed && 'Sign out'}
+            {expanded && 'Sign out'}
           </button>
         </div>
       </aside>
@@ -457,27 +473,20 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       {/* ── Main ────────────────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
         {/* top bar */}
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-6 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80">
-          <div>
-            <h1 className="text-lg font-bold">Welcome back, {name.split(' ')[0]}</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Here's what's happening in your workspace today.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative hidden sm:block">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <Icon d={icons.search} className="h-4 w-4" />
-              </span>
-              <input
-                placeholder="Search…"
-                className="w-56 rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              />
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}
+            <button onClick={() => setMobileNavOpen(true)} className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden" aria-label="Open menu">
+              <Icon d={icons.menu} className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold">Welcome back, {name.split(' ')[0]}</h1>
+              <p className="truncate text-xs text-gray-500 dark:text-gray-400">Here's what's happening in your workspace today.</p>
             </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
             <ThemeToggle />
             <NotificationBell />
-            {/* mobile sign out (sidebar hidden on small screens) */}
-            <button onClick={onSignOut} className="md:hidden rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700">
-              <Icon d={icons.signout} className="h-5 w-5" />
-            </button>
           </div>
         </header>
 
@@ -494,11 +503,11 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'projects' ? (
           <Projects />
         ) : active === 'invoices' ? (
-          <Invoices />
-        ) : active === 'empanelments' ? (
-          <Empanelments />
+          <Invoices isAdmin={isAdmin} />
         ) : active === 'tenders' ? (
           <Tenders />
+        ) : active === 'tracker' ? (
+          <Tracker />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (

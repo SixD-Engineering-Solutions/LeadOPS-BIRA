@@ -134,6 +134,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   async function removeLead(id: string) {
+    if (!confirm('Delete this lead? This cannot be undone.')) return
     setSavingId(id)
     try {
       await api(`/leads/${id}`, { method: 'DELETE', auth: true })

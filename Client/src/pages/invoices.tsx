@@ -18,7 +18,7 @@ const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 
 const emptyForm = { projectId: '', amount: '', invoiceDate: '', dueDate: '' }
 const emptyPaymentForm = { amountReceived: '', paymentDate: new Date().toISOString().slice(0, 10), notes: '' }
 
-export default function Invoices() {
+export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,6 +32,7 @@ export default function Invoices() {
   const [paymentForm, setPaymentForm] = useState({ ...emptyPaymentForm })
   const [payingId, setPayingId] = useState<string | null>(null)
   const [payError, setPayError] = useState<string | null>(null)
+  const [voidingId, setVoidingId] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -117,6 +118,19 @@ export default function Invoices() {
       setPayError(e instanceof Error ? e.message : 'Could not record payment.')
     } finally {
       setPayingId(null)
+    }
+  }
+
+  async function voidPayment(invoiceId: string, paymentId: string) {
+    if (!confirm('Void this payment? It will stop counting toward what\'s been paid — record a corrected one afterward if needed.')) return
+    setVoidingId(paymentId)
+    try {
+      const { invoice } = await api<{ invoice: Invoice }>(`/invoices/${invoiceId}/payments/${paymentId}`, { method: 'DELETE', auth: true })
+      setInvoices(prev => prev.map(i => (i.id === invoiceId ? invoice : i)))
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'Could not void payment.')
+    } finally {
+      setVoidingId(null)
     }
   }
 
@@ -223,9 +237,21 @@ export default function Invoices() {
                       ) : (
                         <ul className="space-y-1.5">
                           {inv.payments.map(p => (
-                            <li key={p.id} className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                            <li key={p.id} className="flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-400">
                               <span>{fmtMoney(p.amountReceived)} on {fmtDate(p.paymentDate)}{p.notes ? ` — ${p.notes}` : ''}</span>
-                              <span className="text-gray-400 dark:text-gray-500">{p.recordedByUser ? (p.recordedByUser.userName || p.recordedByUser.email) : ''}</span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className="text-gray-400 dark:text-gray-500">{p.recordedByUser ? (p.recordedByUser.userName || p.recordedByUser.email) : ''}</span>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => voidPayment(inv.id, p.id)}
+                                    disabled={voidingId === p.id}
+                                    className="font-medium text-red-400 hover:text-red-600 disabled:opacity-50 dark:text-red-500 dark:hover:text-red-400"
+                                  >
+                                    {voidingId === p.id ? 'Voiding…' : 'Void'}
+                                  </button>
+                                )}
+                              </span>
                             </li>
                           ))}
                         </ul>

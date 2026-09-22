@@ -75,15 +75,36 @@ FROM_EMAIL="LeadOps <your-email@gmail.com>"
 # Server
 PORT="3000"
 FRONTEND_URL="http://localhost:5173"
+
+# DEV-ONLY: opt-in for the /auth/dev-login bypass. Leave unset (or "false")
+# outside local development — it's also hard-blocked whenever NODE_ENV=production
+# regardless of this flag.
+ENABLE_DEV_LOGIN="true"
 ```
 
 > **Gmail setup:** Google Account → Security → 2-Step Verification → App passwords → generate one for "Mail" and paste it as `SMTP_PASS`.
 
 ### Managed Postgres / SSL (e.g. Aiven)
 
-`src/prisma.ts` builds the connection itself: it **strips `sslmode` from the URL** (modern `pg` treats `sslmode=require` as full CA verification, which rejects a managed provider's private CA) and connects with `ssl: { rejectUnauthorized: false }`. This means the runtime connects to providers like Aiven without needing the `NODE_TLS_REJECT_UNAUTHORIZED` flag. For production, supply the provider's CA certificate instead of disabling verification.
+Aiven issues each project its own private CA and presents a certificate signed by it — modern `pg` treats `sslmode=require` in the URL as full verification, which rejects that private CA, so `src/prisma.ts` **strips `sslmode` from the URL** and configures SSL explicitly instead.
 
-The Prisma **CLI** commands (`db:migrate`, `db:generate`, `db:studio`) use a separate engine that still needs the flag, so those npm scripts set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+The actual fix is `certs/aiven-ca.pem` — this project's Aiven CA certificate, extracted directly from the server's own TLS handshake (not downloaded from Aiven's dashboard) and committed to the repo, since a CA *certificate* is a public trust anchor, not a secret (unlike a private key). `prisma.ts` loads it and connects with `ssl: { ca, rejectUnauthorized: true }` — real verification, not `rejectUnauthorized: false`. If this project's Aiven CA is ever rotated, or the database moves to a different project/provider, regenerate it:
+
+```js
+// One-off: connect once with verification off, walk the presented chain to
+// its self-signed root, and save that as PEM.
+const tls = require('tls')
+const fs = require('fs')
+const socket = tls.connect({ host: '<db host>', port: <db port>, rejectUnauthorized: false, servername: '<db host>' }, () => {
+  let c = socket.getPeerCertificate(true)
+  while (c.issuerCertificate && c.issuerCertificate !== c) c = c.issuerCertificate
+  const pem = '-----BEGIN CERTIFICATE-----\n' + c.raw.toString('base64').match(/.{1,64}/g).join('\n') + '\n-----END CERTIFICATE-----\n'
+  fs.writeFileSync('certs/aiven-ca.pem', pem)
+  socket.destroy()
+})
+```
+
+The Prisma **CLI** commands (`db:push`, `db:migrate`, `db:studio`) run their own engine outside `src/prisma.ts`, so they need the CA another way: those npm scripts set `NODE_EXTRA_CA_CERTS=./certs/aiven-ca.pem`, which adds it to Node's trust store for that one process — real verification, not the blanket `NODE_TLS_REJECT_UNAUTHORIZED=0` (which disables certificate checking entirely, for every connection that process makes) used before.
 
 ---
 

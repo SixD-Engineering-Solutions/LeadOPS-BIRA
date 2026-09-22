@@ -574,35 +574,6 @@ async function main() {
     console.log(`seeded ${invoicesSeeded} invoices`)
   }
 
-  // ── empanelments ─────────────────────────────────────────────────────────
-
-  const empanelmentCount = await prisma.empanelment.count()
-  if (empanelmentCount <= 3) {
-    console.log('seeding empanelments...')
-    const empanelmentDefs = [
-      { client: clients.sail,      serviceType: serviceTypes.rbi,           status: 'Empanelled',   renewal: daysFromNow(180) },
-      { client: clients.iocl,      serviceType: serviceTypes.tankInspection, status: 'Empanelled',  renewal: daysFromNow(90) },
-      { client: clients.ntpc,      serviceType: serviceTypes.laserScanning, status: 'Under Review',  renewal: undefined },
-      { client: clients.rinl,      serviceType: serviceTypes.bim,           status: 'Applied',      renewal: undefined },
-      { client: clients.bpcl,      serviceType: serviceTypes.rbi,           status: 'Expired',      renewal: daysAgo(30) },
-      { client: clients.ultratech, serviceType: serviceTypes.engineering,   status: 'Rejected',     renewal: undefined },
-    ]
-    for (const e of empanelmentDefs) {
-      await prisma.empanelment.create({
-        data: {
-          clientId: e.client.id,
-          serviceTypeId: e.serviceType.id,
-          status: e.status,
-          renewalDate: e.renewal ?? null,
-          createdByUserId: admin.id,
-        },
-      })
-    }
-    console.log(`seeded ${empanelmentDefs.length} empanelments`)
-  } else {
-    console.log(`${empanelmentCount} empanelments already present — skipped`)
-  }
-
   // ── tenders ───────────────────────────────────────────────────────────────
 
   const tenderCount = await prisma.tender.count()

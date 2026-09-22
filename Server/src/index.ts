@@ -10,10 +10,10 @@ import projectRoutes from './routes/projects'
 import documentRoutes from './routes/documents'
 import invoiceRoutes from './routes/invoices'
 import eventRoutes from './routes/events'
-import empanelmentRoutes from './routes/empanelments'
 import tenderRoutes from './routes/tenders'
 import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
+import trackerRoutes from './routes/tracker'
 import { startFollowUpReminderJob } from './services/reminders'
 
 // Safety nets: keep the server alive through transient failures (e.g. the DB
@@ -54,9 +54,9 @@ app.use('/projects', projectRoutes)
 app.use('/documents', documentRoutes)
 app.use('/invoices', invoiceRoutes)
 app.use('/events', eventRoutes)
-app.use('/empanelments', empanelmentRoutes)
 app.use('/tenders', tenderRoutes)
 app.use('/notifications', notificationRoutes)
+app.use('/tracker', trackerRoutes)
 app.use('/', referenceRoutes)
 
 app.listen(PORT, () => {

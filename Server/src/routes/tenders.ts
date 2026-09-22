@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 
-// Same visibility model as empanelments.ts — client-relationship-level data,
-// visible to everyone.
+// Client-relationship-level data, not tied to one lead/employee — visible to
+// everyone, same as the Client/Catalog reference data.
 const router = Router()
 router.use(authenticate)
 

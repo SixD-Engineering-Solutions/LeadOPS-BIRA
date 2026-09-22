@@ -4,6 +4,7 @@ import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastProposalUpdate, broadcastProjectUpdate } from '../services/notify'
 import { nextWorkOrderNo } from './projects'
+import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 
 const router = Router()
 router.use(authenticate)
@@ -66,11 +67,6 @@ const createSchema = z.object({
   expectedOrderDate: z.coerce.date().optional(),
 })
 
-async function nextProposalNumber(): Promise<string> {
-  const count = await prisma.proposal.count()
-  return `PROP-${String(count + 1).padStart(4, '0')}`
-}
-
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
@@ -84,13 +80,18 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     res.status(404).json({ error: 'Lead not found.' })
     return
   }
-  // Retry once on a proposal-number collision (two simultaneous creates) — rare
-  // for this team's volume, so a single retry is enough rather than a lock.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const proposal = await prisma.proposal.create({
+  try {
+    // Reserving the proposal number and creating the row together, so a
+    // failed create can't burn a number without ever producing a proposal.
+    // (This replaces the old count()+1 + retry-on-collision approach — that
+    // could still hand two concurrent requests the same number in the gap
+    // between reading the count and either one's create landing; the atomic
+    // counter here can't be read the same way twice.)
+    const proposal = await prisma.$transaction(async tx => {
+      const proposalNumber = await nextSequenceNumber(tx, 'proposal', 'PROP')
+      return tx.proposal.create({
         data: {
-          proposalNumber: await nextProposalNumber(),
+          proposalNumber,
           leadId: d.leadId,
           projectName: d.projectName?.trim() || null,
           value: d.value ?? null,
@@ -102,15 +103,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         },
         include: proposalInclude,
       })
-      broadcastProposalUpdate(proposal.id)
-      res.status(201).json({ proposal })
-      return
-    } catch {
-      if (attempt === 1) {
-        res.status(400).json({ error: 'Could not create proposal. Please try again.' })
-        return
-      }
-    }
+    }, TX_OPTS)
+    broadcastProposalUpdate(proposal.id)
+    res.status(201).json({ proposal })
+  } catch {
+    res.status(400).json({ error: 'Could not create proposal.' })
   }
 })
 
@@ -150,30 +147,45 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if ('expectedOrderDate' in d) data.expectedOrderDate = d.expectedOrderDate
 
   try {
-    const proposal = await prisma.proposal.update({ where: { id: existing.id }, data, include: proposalInclude })
-    broadcastProposalUpdate(proposal.id)
-
-    // Marking a proposal Won graduates it into an actual project to execute —
-    // auto-create one (once) if it doesn't already have one.
-    if (data.status === 'Won') {
-      const alreadyHasProject = await prisma.project.findUnique({ where: { proposalId: proposal.id } })
-      if (!alreadyHasProject) {
-        const lead = await prisma.lead.findUnique({ where: { id: proposal.leadId }, select: { plant: { select: { plantName: true, locationId: true } } } })
-        const project = await prisma.project.create({
-          data: {
-            workOrderNo: await nextWorkOrderNo(),
-            proposalId: proposal.id,
-            leadId: proposal.leadId,
-            projectName: proposal.projectName || lead?.plant.plantName || 'Untitled project',
-            locationId: lead?.plant.locationId ?? null,
-            createdByUserId: req.userId!,
-          },
-        })
-        broadcastProjectUpdate(project.id)
+    // The status update and the Won→Project auto-create are one transaction:
+    // if the project create fails, the status change rolls back with it,
+    // rather than leaving a proposal marked "Won" with no project ever
+    // created (which could otherwise happen if the create failed for any
+    // reason after the status had already been committed on its own).
+    //
+    // The "does it already have a project" check is a fast pre-check, not the
+    // actual duplicate-prevention guarantee — under Postgres's default READ
+    // COMMITTED isolation, two near-simultaneous "mark Won" requests on the
+    // same proposal could both see "no project yet" before either commits.
+    // What actually prevents a duplicate is `Project.proposalId` being
+    // `@unique`: the second transaction's create throws a unique-constraint
+    // error, caught below, and its status change rolls back too — an
+    // acceptable outcome (an unfriendly error) for an outcome (no duplicate
+    // project, ever) that's the actual requirement.
+    const result = await prisma.$transaction(async tx => {
+      const proposal = await tx.proposal.update({ where: { id: existing.id }, data, include: proposalInclude })
+      let project = null
+      if (data.status === 'Won') {
+        const alreadyHasProject = await tx.project.findUnique({ where: { proposalId: proposal.id } })
+        if (!alreadyHasProject) {
+          const lead = await tx.lead.findUnique({ where: { id: proposal.leadId }, select: { plant: { select: { plantName: true, locationId: true } } } })
+          project = await tx.project.create({
+            data: {
+              workOrderNo: await nextWorkOrderNo(tx),
+              proposalId: proposal.id,
+              leadId: proposal.leadId,
+              projectName: proposal.projectName || lead?.plant.plantName || 'Untitled project',
+              locationId: lead?.plant.locationId ?? null,
+              createdByUserId: req.userId!,
+            },
+          })
+        }
       }
-    }
-
-    res.json({ proposal })
+      return { proposal, project }
+    }, TX_OPTS)
+    broadcastProposalUpdate(result.proposal.id)
+    if (result.project) broadcastProjectUpdate(result.project.id)
+    res.json({ proposal: result.proposal })
   } catch {
     res.status(400).json({ error: 'Could not update proposal.' })
   }

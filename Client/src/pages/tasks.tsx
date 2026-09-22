@@ -96,6 +96,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   async function removeTask(id: string) {
+    if (!confirm('Delete this task? This cannot be undone.')) return
     setSavingId(id)
     try {
       await api(`/tasks/${id}`, { method: 'DELETE', auth: true })

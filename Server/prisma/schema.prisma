@@ -36,7 +36,6 @@ model User {
   documents           Document[]
   createdInvoices     Invoice[]
   recordedPayments    Payment[]
-  createdEmpanelments Empanelment[]
   createdTenders      Tender[]
   createdEvents       Event[]
 
@@ -100,7 +99,6 @@ model Client {
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
   plants       Plant[]
-  empanelments Empanelment[]
   tenders      Tender[]
 
   @@index([categoryId])
@@ -211,8 +209,7 @@ model ServiceType {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  leads        Lead[]
-  empanelments Empanelment[]
+  leads Lead[]
 
   @@map("service_types")
 }
@@ -326,7 +323,7 @@ model Proposal {
   leadId            String    @map("lead_id")
   lead              Lead      @relation(fields: [leadId], references: [id])
   projectName       String?   @map("project_name")
-  value             Float?
+  value             Decimal?  @db.Decimal(14, 2)
   submissionDate    DateTime? @map("submission_date")
   status            String    @default("Draft")
   probabilityPct    Int?      @map("probability_pct")
@@ -409,7 +406,7 @@ model Invoice {
   invoiceNumber   String    @unique @map("invoice_number")
   projectId       String    @map("project_id")
   project         Project   @relation(fields: [projectId], references: [id])
-  amount          Float
+  amount          Decimal   @db.Decimal(14, 2)
   invoiceDate     DateTime? @map("invoice_date")
   dueDate         DateTime? @map("due_date")
   status          String    @default("Draft")
@@ -428,39 +425,20 @@ model Invoice {
 }
 
 model Payment {
-  id               String   @id @default(cuid())
-  invoiceId        String   @map("invoice_id")
-  invoice          Invoice  @relation(fields: [invoiceId], references: [id])
-  amountReceived   Float    @map("amount_received")
-  paymentDate      DateTime @map("payment_date")
+  id               String    @id @default(cuid())
+  invoiceId        String    @map("invoice_id")
+  invoice          Invoice   @relation(fields: [invoiceId], references: [id])
+  amountReceived   Decimal   @db.Decimal(14, 2) @map("amount_received")
+  paymentDate      DateTime  @map("payment_date")
   notes            String?
-  recordedByUserId String   @map("recorded_by_user_id")
-  recordedByUser   User     @relation(fields: [recordedByUserId], references: [id])
-  createdAt        DateTime @default(now()) @map("created_at")
+  recordedByUserId String    @map("recorded_by_user_id")
+  recordedByUser   User      @relation(fields: [recordedByUserId], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  deletedAt        DateTime? @map("deleted_at")
 
   @@index([invoiceId])
-  @@map("payments")
-}
-
-// ─── Empanelment tracking ─────────────────────────────────────────────────
-// Being on a client's approved-vendor list for a given service category.
-model Empanelment {
-  id              String    @id @default(cuid())
-  clientId        String    @map("client_id")
-  client          Client    @relation(fields: [clientId], references: [id])
-  serviceTypeId   String?   @map("service_type_id")
-  serviceType     ServiceType? @relation(fields: [serviceTypeId], references: [id])
-  status          String    @default("Applied")
-  renewalDate     DateTime? @map("renewal_date")
-  createdByUserId String    @map("created_by_user_id")
-  createdByUser   User      @relation(fields: [createdByUserId], references: [id])
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
-
-  @@index([clientId])
   @@index([deletedAt])
-  @@map("empanelments")
+  @@map("payments")
 }
 
 // ─── Tender tracking ─────────────────────────────────────────────────────
@@ -472,7 +450,7 @@ model Tender {
   clientId        String    @map("client_id")
   client          Client    @relation(fields: [clientId], references: [id])
   submissionDate  DateTime? @map("submission_date")
-  value           Float?
+  value           Decimal?  @db.Decimal(14, 2)
   status          String    @default("Identified")
   createdByUserId String    @map("created_by_user_id")
   createdByUser   User      @relation(fields: [createdByUserId], references: [id])
@@ -483,6 +461,109 @@ model Tender {
   @@index([clientId])
   @@index([deletedAt])
   @@map("tenders")
+}
+
+// ─── Tracker (imported from the FY2026–27 Pipeline/Invoice Excel sheet) ─────
+// Read-only reference data shown on the Tracker page. These mirror the
+// original spreadsheet's columns as plain fields rather than the app's usual
+// relational entities (Client, User, …) since this is a one-off snapshot
+// import — see prisma/importTracker.ts — not data captured through the app's
+// own forms. `sortOrder` preserves the row order from the sheet, which has no
+// other natural sort key.
+model PipelineTrackerItem {
+  id             String   @id @default(cuid())
+  sortOrder      Int      @map("sort_order")
+  vertical       String?
+  client         String?
+  location       String?
+  service        String?
+  description    String?
+  valueLakhs     Float?   @map("value_lakhs")
+  currency       String?
+  status         String?
+  probabilityPct Int?     @map("probability_pct")
+  expectedClose  String?  @map("expected_close")
+  owner          String?
+  bmContact      String?  @map("bm_contact")
+  followUpDate   String?  @map("follow_up_date")
+  lastAction     String?  @map("last_action")
+  flagAction     String?  @map("flag_action")
+  priority       String?
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([sortOrder])
+  @@map("pipeline_tracker_items")
+}
+
+// The order-wise detailed invoice register (Section 2 of the sheet).
+model InvoiceRegisterItem {
+  id                      String    @id @default(cuid())
+  sortOrder               Int       @map("sort_order")
+  sector                  String?
+  client                  String?
+  location                String?
+  poNumber                String?   @map("po_number")
+  orderValueLakhs         Float?    @map("order_value_lakhs")
+  serviceType             String?   @map("service_type")
+  bmOwner                 String?   @map("bm_owner")
+  workCompletionDate      String?   @map("work_completion_date")
+  invoiceRaised           String?   @map("invoice_raised")
+  invoiceNumber           String?   @map("invoice_number")
+  invoiceDate             DateTime? @map("invoice_date")
+  invoiceAmountLakhs      Float?    @map("invoice_amount_lakhs")
+  tdsDeduction            Float?    @map("tds_deduction")
+  invoiceMonth            String?   @map("invoice_month")
+  dueDate                 String?   @map("due_date")
+  paymentReceived         String?   @map("payment_received")
+  currentManager          String?   @map("current_manager")
+  paymentDate             DateTime? @map("payment_date")
+  amountCollectedLakhs    Float?    @map("amount_collected_lakhs")
+  balanceOutstandingLakhs Float?    @map("balance_outstanding_lakhs")
+  daysToCollect           Int?      @map("days_to_collect")
+  dsoStatus               String?   @map("dso_status")
+  remarks                 String?
+  nextActionDate          String?   @map("next_action_date")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  @@index([sortOrder])
+  @@map("invoice_register_items")
+}
+
+// The monthly-by-sector invoice summary with FY targets (Section 1 of the
+// sheet), including its trailing "TOTAL" row.
+model InvoiceSectorSummary {
+  id             String   @id @default(cuid())
+  sortOrder      Int      @map("sort_order")
+  sector         String?
+  bmOwner        String?  @map("bm_owner")
+  apr            Float?
+  may            Float?
+  jun            Float?
+  q1Total        Float?   @map("q1_total")
+  jul            Float?
+  aug            Float?
+  sep            Float?
+  q2Total        Float?   @map("q2_total")
+  oct            Float?
+  nov            Float?
+  dec            Float?
+  q3Total        Float?   @map("q3_total")
+  jan            Float?
+  feb            Float?
+  mar            Float?
+  q4Total        Float?   @map("q4_total")
+  fyTotal        Float?   @map("fy_total")
+  fyTarget       Float?   @map("fy_target")
+  achievementPct Float?   @map("achievement_pct")
+  remarks        String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([sortOrder])
+  @@map("invoice_sector_summary")
 }
 
 // ─── Expo / visit tagging ────────────────────────────────────────────────
@@ -501,4 +582,16 @@ model Event {
   leads Lead[]
 
   @@map("events")
+}
+
+// ─── Sequential numbering (concurrency-safe) ────────────────────────────────
+// Backs the human-facing PROP-0001 / WO-0001 / INV-0001 style numbers. A named
+// atomic counter (see utils/sequence.ts) instead of count()+1, which two
+// concurrent requests could read identically and then both try to create the
+// same number.
+model Counter {
+  name  String @id
+  value Int    @default(0)
+
+  @@map("counters")
 }

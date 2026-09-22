@@ -4,7 +4,9 @@ import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 
 // List + create endpoints for the supporting tables (locations, plants,
-// contacts, verticals, sectors, lead statuses, users). All require auth.
+// contacts, verticals, sectors, lead statuses, users). All require auth;
+// every write (create/update) is admin-only — these are shared reference
+// data, edited from the admin-only Catalog page, not by regular employees.
 const router = Router()
 router.use(authenticate)
 
@@ -15,7 +17,7 @@ router.get('/locations', async (_req, res) => {
   res.json({ locations: await prisma.location.findMany({ orderBy: { city: 'asc' } }) })
 })
 const locationSchema = z.object({ city: z.string().min(1), state: z.string().optional(), country: z.string().optional(), address: z.string().optional() })
-router.post('/locations', async (req, res) => {
+router.post('/locations', requireAdmin, async (req, res) => {
   const p = locationSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'city is required.')
   res.status(201).json({ location: await prisma.location.create({ data: p.data }) })
@@ -26,7 +28,7 @@ router.get('/client-categories', async (_req, res) => {
   res.json({ clientCategories: await prisma.clientCategory.findMany({ where: { isActive: true }, orderBy: { categoryName: 'asc' } }) })
 })
 const clientCategorySchema = z.object({ categoryName: z.string().min(1), description: z.string().optional() })
-router.post('/client-categories', async (req, res) => {
+router.post('/client-categories', requireAdmin, async (req, res) => {
   const p = clientCategorySchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'categoryName is required.')
   res.status(201).json({ clientCategory: await prisma.clientCategory.create({ data: p.data }) })
@@ -37,13 +39,13 @@ router.get('/clients', async (_req, res) => {
   res.json({ clients: await prisma.client.findMany({ where: { isActive: true }, include: { category: { select: { id: true, categoryName: true } } }, orderBy: { clientName: 'asc' } }) })
 })
 const clientSchema = z.object({ clientName: z.string().min(1), industryType: z.string().optional(), website: z.string().optional(), linkedIn: z.string().optional(), categoryId: z.string().optional(), country: z.string().optional(), region: z.string().optional() })
-router.post('/clients', async (req, res) => {
+router.post('/clients', requireAdmin, async (req, res) => {
   const p = clientSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'clientName is required.')
   res.status(201).json({ client: await prisma.client.create({ data: p.data }) })
 })
 const clientUpdateSchema = clientSchema.partial()
-router.patch('/clients/:id', async (req, res) => {
+router.patch('/clients/:id', requireAdmin, async (req, res) => {
   const p = clientUpdateSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'Invalid client data.')
   try {
@@ -56,7 +58,7 @@ router.get('/lead-sources', async (_req, res) => {
   res.json({ leadSources: await prisma.leadSource.findMany({ where: { isActive: true }, orderBy: { sourceName: 'asc' } }) })
 })
 const leadSourceSchema = z.object({ sourceName: z.string().min(1), description: z.string().optional() })
-router.post('/lead-sources', async (req, res) => {
+router.post('/lead-sources', requireAdmin, async (req, res) => {
   const p = leadSourceSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'sourceName is required.')
   res.status(201).json({ leadSource: await prisma.leadSource.create({ data: p.data }) })
@@ -67,7 +69,7 @@ router.get('/service-types', async (_req, res) => {
   res.json({ serviceTypes: await prisma.serviceType.findMany({ where: { isActive: true }, orderBy: { serviceTypeName: 'asc' } }) })
 })
 const serviceTypeSchema = z.object({ serviceTypeName: z.string().min(1), description: z.string().optional() })
-router.post('/service-types', async (req, res) => {
+router.post('/service-types', requireAdmin, async (req, res) => {
   const p = serviceTypeSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'serviceTypeName is required.')
   res.status(201).json({ serviceType: await prisma.serviceType.create({ data: p.data }) })
@@ -78,7 +80,7 @@ router.get('/plants', async (_req, res) => {
   res.json({ plants: await prisma.plant.findMany({ include: { location: { select: { id: true, city: true, state: true } }, client: { select: { id: true, clientName: true } } }, orderBy: { plantName: 'asc' } }) })
 })
 const plantSchema = z.object({ plantName: z.string().min(1), companyName: z.string().optional(), clientId: z.string().optional(), locationId: z.string().min(1), plantCode: z.string().optional(), isActive: z.boolean().optional() })
-router.post('/plants', async (req, res) => {
+router.post('/plants', requireAdmin, async (req, res) => {
   const p = plantSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'plantName and locationId are required.')
   try {
@@ -100,7 +102,7 @@ const contactSchema = z.object({
   mailId: z.string().email().optional().or(z.literal('')),
   isPrimaryContact: z.boolean().optional(),
 })
-router.post('/contacts', async (req, res) => {
+router.post('/contacts', requireAdmin, async (req, res) => {
   const p = contactSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'plantId and contactPersonName are required.')
   try {
@@ -113,7 +115,7 @@ router.get('/verticals', async (_req, res) => {
   res.json({ verticals: await prisma.vertical.findMany({ where: { isActive: true }, orderBy: { verticalName: 'asc' } }) })
 })
 const verticalSchema = z.object({ verticalName: z.string().min(1), description: z.string().optional() })
-router.post('/verticals', async (req, res) => {
+router.post('/verticals', requireAdmin, async (req, res) => {
   const p = verticalSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'verticalName is required.')
   res.status(201).json({ vertical: await prisma.vertical.create({ data: p.data }) })
@@ -124,7 +126,7 @@ router.get('/sectors', async (_req, res) => {
   res.json({ sectors: await prisma.sector.findMany({ where: { isActive: true }, orderBy: { sectorName: 'asc' } }) })
 })
 const sectorSchema = z.object({ sectorName: z.string().min(1), description: z.string().optional() })
-router.post('/sectors', async (req, res) => {
+router.post('/sectors', requireAdmin, async (req, res) => {
   const p = sectorSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'sectorName is required.')
   res.status(201).json({ sector: await prisma.sector.create({ data: p.data }) })
@@ -135,16 +137,28 @@ router.get('/lead-statuses', async (_req, res) => {
   res.json({ leadStatuses: await prisma.leadStatus.findMany({ where: { isActive: true }, orderBy: { displayOrder: 'asc' } }) })
 })
 const statusSchema = z.object({ statusName: z.string().min(1), statusCategory: z.string().optional(), displayOrder: z.number().int().optional() })
-router.post('/lead-statuses', async (req, res) => {
+router.post('/lead-statuses', requireAdmin, async (req, res) => {
   const p = statusSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'statusName is required.')
   res.status(201).json({ leadStatus: await prisma.leadStatus.create({ data: p.data }) })
 })
 
 // ─── Users (internal employees — for assignment dropdowns) ───────────────────
-router.get('/users', async (_req: AuthRequest, res) => {
+async function isAdmin(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+  return user?.role === 'admin'
+}
+
+// GET /users — everyone needs the active roster for assignment dropdowns.
+// ?includeInactive=true additionally returns removed accounts, but only for
+// admins (that's who's allowed to see/reactivate them) — a non-admin passing
+// the param is silently given the normal active-only list instead of an error,
+// since this is an additive view, not a distinct resource.
+router.get('/users', async (req: AuthRequest, res) => {
+  const wantsInactive = req.query.includeInactive === 'true' && (await isAdmin(req.userId))
   const users = await prisma.user.findMany({
-    where: { isActive: true },
+    where: wantsInactive ? {} : { isActive: true },
     select: { id: true, userName: true, email: true, role: true, department: true, phoneNumber: true, isActive: true },
     orderBy: { email: 'asc' },
   })
@@ -154,16 +168,34 @@ const userSchema = z.object({
   userName: z.string().optional(),
   email: z.string().email(),
   phoneNumber: z.string().optional(),
-  role: z.string().optional(),
+  role: z.enum(['admin', 'employee']).optional(),
   department: z.string().optional(),
 })
-router.post('/users', async (req, res) => {
+// POST /users — admin-only: creates an employee (or another admin) account.
+router.post('/users', requireAdmin, async (req, res) => {
   const p = userSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'A valid email is required.')
   try {
     const user = await prisma.user.create({ data: p.data })
-    res.status(201).json({ user: { id: user.id, userName: user.userName, email: user.email, role: user.role } })
+    res.status(201).json({ user: { id: user.id, userName: user.userName, email: user.email, role: user.role, department: user.department, phoneNumber: user.phoneNumber, isActive: user.isActive } })
   } catch { bad(res, 'Could not create user. Email may already exist.') }
+})
+
+// POST /users/:id/reactivate — admin-only. Reverses the DELETE below (isActive:
+// true again); only meaningful for an account that's currently deactivated.
+router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = String(req.params.id)
+  const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true } })
+  if (!existing || existing.isActive) {
+    res.status(404).json({ error: 'No removed employee found with that id.' })
+    return
+  }
+  const user = await prisma.user.update({
+    where: { id },
+    data: { isActive: true },
+    select: { id: true, userName: true, email: true, role: true, department: true, phoneNumber: true, isActive: true },
+  })
+  res.json({ user })
 })
 
 // DELETE /users/:id — admin-only. Soft delete (isActive: false), same pattern

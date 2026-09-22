@@ -137,10 +137,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
 // POST /auth/dev-login
 // DEV-ONLY: upserts a fixed dev user and returns a real access token so the
-// frontend dev bypass can call authenticated endpoints (e.g. /leads). Disabled
-// in production. Remove alongside the frontend dev bypass once real auth is used.
+// frontend dev bypass can call authenticated endpoints (e.g. /leads). Requires
+// explicit opt-in (ENABLE_DEV_LOGIN=true) rather than just "not production" —
+// so it stays off by default in every environment, including a staging/local
+// setup where NODE_ENV was never set — and the production check stays as a
+// hard backstop even if the flag were ever set there by mistake.
+// Remove alongside the frontend dev bypass once real auth is used everywhere.
 router.post('/dev-login', async (_req: Request, res: Response): Promise<void> => {
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_LOGIN !== 'true') {
     res.status(404).json({ error: 'Not found.' })
     return
   }
