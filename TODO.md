@@ -58,7 +58,6 @@
 - [x] Employee-wise performance report (leads/won/lost/conversion/won-value table, Reports page)
 
 ## Phase 8 — Specialized Modules
-- [x] Empanelment tracking (client, service category, status, renewal date) — `empanelments.tsx`
 - [x] Tender tracking (manually-entered tender no, client, submission date, value, status) — `tenders.tsx`
 - [x] Expo / visit data tagging — `Event` model (name, type, date), leads generated tracked live per event; leads can be tagged to an event on creation
 - [x] Global client tracking (`country`/`region` fields added to `Client`)

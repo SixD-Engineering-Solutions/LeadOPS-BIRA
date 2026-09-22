@@ -15,6 +15,9 @@ const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 
+// Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
+const ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
+
 // Full-detail modal for a single lead — plant, contact, classification,
 // ownership, notes, and the activity timeline. Shared by the Leads page (row
 // click) and the dashboard's Lead Assignments breakdown (lead click), so both
@@ -113,8 +116,8 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
     const file = e.target.files?.[0]
     if (!file) return
     setUploadError(null)
-    if (file.type !== 'application/pdf') {
-      setUploadError('Only PDF files are accepted.')
+    if (!ALLOWED_DOCUMENT_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))) {
+      setUploadError('Only PDF, Excel (.xlsx/.xls), or CSV files are accepted.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
@@ -236,8 +239,8 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
 
           <DetailSection title="Documents">
             <div className="mb-3">
-              <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileSelected} disabled={uploading} className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-600 hover:file:bg-orange-100 dark:text-gray-400 dark:file:bg-orange-950/40 dark:file:text-orange-400" />
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">PDF only, up to 10MB.</p>
+              <input ref={fileInputRef} type="file" accept={ALLOWED_DOCUMENT_EXTENSIONS.join(',')} onChange={handleFileSelected} disabled={uploading} className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-600 hover:file:bg-orange-100 dark:text-gray-400 dark:file:bg-orange-950/40 dark:file:text-orange-400" />
+              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">PDF, Excel, or CSV, up to 10MB.</p>
               {uploading && <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Uploading…</p>}
               {uploadError && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{uploadError}</p>}
             </div>

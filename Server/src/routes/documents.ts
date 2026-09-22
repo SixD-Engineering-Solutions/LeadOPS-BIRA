@@ -9,9 +9,23 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/authentic
 const router = Router()
 router.use(authenticate)
 
-// PDFs only, capped at 10MB — this runs on a local disk with no CDN in front
-// of it, so a small ceiling keeps a bad upload from eating disk/RAM.
+// PDF, Excel, and CSV only, capped at 10MB — this runs on a local disk with no
+// CDN in front of it, so a small ceiling keeps a bad upload from eating disk/RAM.
 const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+// Browsers/OSes report inconsistent mimetypes for Excel/CSV (e.g. a .csv can
+// arrive as text/csv, application/vnd.ms-excel, or even text/plain), so the
+// extension on the original filename is the reliable signal — mimetype is
+// only used as a fallback when the extension is missing.
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.xlsx', '.xls', '.csv'])
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-excel', // .xls, and how some browsers report .csv
+  'text/csv',
+  'application/csv',
+  'text/plain', // some browsers report .csv this way
+])
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents')
 fs.mkdirSync(UPLOAD_DIR, { recursive: true })
@@ -19,23 +33,31 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 // Storage name is derived from a bcrypt hash of a per-upload random value, so
 // it can't be predicted or guessed from the download URL — never the
 // original filename, which is kept separately (in the DB) for display only.
-function storedNameFor(): string {
+// The real extension is preserved so a later download gets the right
+// Content-Type (res.download infers it from the file on disk).
+function storedNameFor(ext: string): string {
   const raw = `${Date.now()}-${Math.random()}`
   const hash = bcrypt.hashSync(raw, bcrypt.genSaltSync(10))
-  return `${hash.replace(/[^a-zA-Z0-9]/g, '')}.pdf`
+  return `${hash.replace(/[^a-zA-Z0-9]/g, '')}${ext}`
+}
+
+function allowedExtension(originalname: string): string | null {
+  const ext = path.extname(originalname).toLowerCase()
+  return ALLOWED_EXTENSIONS.has(ext) ? ext : null
 }
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, _file, cb) => cb(null, storedNameFor()),
+  filename: (_req, file, cb) => cb(null, storedNameFor(allowedExtension(file.originalname) ?? '')),
 })
 
 const upload = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype !== 'application/pdf') {
-      cb(new Error('Only PDF files are accepted.'))
+    const extOk = allowedExtension(file.originalname) !== null
+    if (!extOk && !ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(new Error('Only PDF, Excel (.xlsx/.xls), or CSV files are accepted.'))
       return
     }
     cb(null, true)
@@ -77,7 +99,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   res.json({ documents })
 })
 
-// POST /documents — multipart/form-data: leadId + file (PDF, <=10MB).
+// POST /documents — multipart/form-data: leadId + file (PDF/Excel/CSV, <=10MB).
 router.post('/', (req: AuthRequest, res: Response) => {
   upload.single('file')(req, res, async (err: unknown) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
@@ -94,7 +116,7 @@ router.post('/', (req: AuthRequest, res: Response) => {
       return
     }
     if (!req.file) {
-      res.status(400).json({ error: 'A PDF file is required.' })
+      res.status(400).json({ error: 'A file is required.' })
       return
     }
     const admin = await isAdmin(req.userId)

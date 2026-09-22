@@ -152,22 +152,7 @@ export type Invoice = {
   updatedAt: string
 }
 
-// ─── Empanelment / Tender (client-relationship-level, not tied to a lead) ────
-export const EMPANELMENT_STATUSES = ['Applied', 'Under Review', 'Empanelled', 'Rejected', 'Expired'] as const
-export type EmpanelmentStatus = (typeof EMPANELMENT_STATUSES)[number]
-export type Empanelment = {
-  id: string
-  clientId: string
-  client?: { id: string; clientName: string }
-  serviceTypeId: string | null
-  serviceType?: { id: string; serviceTypeName: string } | null
-  status: string
-  renewalDate: string | null
-  createdByUser?: { id: string; userName: string | null; email: string }
-  createdAt: string
-  updatedAt: string
-}
-
+// ─── Tender (client-relationship-level, not tied to a lead) ────────────────
 export const TENDER_STATUSES = ['Identified', 'Preparing', 'Submitted', 'Under Evaluation', 'Won', 'Lost'] as const
 export type TenderStatus = (typeof TENDER_STATUSES)[number]
 export type Tender = {
@@ -196,6 +181,85 @@ export type Task = {
   assignedByUser?: { id: string; userName: string | null; email: string }
   createdAt: string
   updatedAt: string
+}
+
+// ─── Tracker (read-only import of the FY2026–27 Pipeline/Invoice sheet) ─────
+// These mirror the sheet's own columns rather than the app's normal
+// relational entities — see Server/prisma/importTracker.ts. Read-only: there
+// are no create/update calls for these yet.
+export type PipelineTrackerItem = {
+  id: string
+  vertical: string | null
+  client: string | null
+  location: string | null
+  service: string | null
+  description: string | null
+  valueLakhs: number | null
+  currency: string | null
+  status: string | null
+  probabilityPct: number | null
+  expectedClose: string | null
+  owner: string | null
+  bmContact: string | null
+  followUpDate: string | null
+  lastAction: string | null
+  flagAction: string | null
+  priority: string | null
+  notes: string | null
+}
+
+export type InvoiceRegisterItem = {
+  id: string
+  sector: string | null
+  client: string | null
+  location: string | null
+  poNumber: string | null
+  orderValueLakhs: number | null
+  serviceType: string | null
+  bmOwner: string | null
+  workCompletionDate: string | null
+  invoiceRaised: string | null
+  invoiceNumber: string | null
+  invoiceDate: string | null
+  invoiceAmountLakhs: number | null
+  tdsDeduction: number | null
+  invoiceMonth: string | null
+  dueDate: string | null
+  paymentReceived: string | null
+  currentManager: string | null
+  paymentDate: string | null
+  amountCollectedLakhs: number | null
+  balanceOutstandingLakhs: number | null
+  daysToCollect: number | null
+  dsoStatus: string | null
+  remarks: string | null
+  nextActionDate: string | null
+}
+
+export type InvoiceSectorSummary = {
+  id: string
+  sector: string | null
+  bmOwner: string | null
+  apr: number | null
+  may: number | null
+  jun: number | null
+  q1Total: number | null
+  jul: number | null
+  aug: number | null
+  sep: number | null
+  q2Total: number | null
+  oct: number | null
+  nov: number | null
+  dec: number | null
+  q3Total: number | null
+  jan: number | null
+  feb: number | null
+  mar: number | null
+  q4Total: number | null
+  fyTotal: number | null
+  fyTarget: number | null
+  achievementPct: number | null
+  remarks: string | null
 }
 
 // Base URL of the backend. Override with VITE_API_URL in a .env file if needed.
@@ -317,7 +381,7 @@ export async function uploadDocument(leadId: string, file: File): Promise<LeadDo
   return (data as { document: LeadDocument }).document
 }
 
-// Fetches the PDF as a blob (auth header required) and triggers a browser
+// Fetches the file as a blob (auth header required) and triggers a browser
 // download with the document's original filename.
 export async function downloadDocument(id: string, fileName: string): Promise<void> {
   const token = getToken()

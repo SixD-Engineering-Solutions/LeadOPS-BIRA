@@ -12,15 +12,18 @@ type Props = {
   height?: number
   /** Prefix before the x-axis label in the tooltip, e.g. "Week of" or "Month of". */
   periodLabel?: string
+  /** Formats both the Y-axis ticks and the tooltip values — e.g. compact ₹ for currency series. Plain numbers if omitted. */
+  formatValue?: (v: number) => string
 }
 
 // Custom tooltip: reads each series value by key (dedupes the Area+Line pair).
-function ChartTooltip({ active, payload, label, series, periodLabel }: {
+function ChartTooltip({ active, payload, label, series, periodLabel, formatValue }: {
   active?: boolean
   payload?: { dataKey?: string | number; value?: number }[]
   label?: string
   series: Series[]
   periodLabel: string
+  formatValue: (v: number) => string
 }) {
   if (!active || !payload?.length) return null
   const valueOf = (k: string) => payload.find(p => p.dataKey === k)?.value
@@ -30,7 +33,7 @@ function ChartTooltip({ active, payload, label, series, periodLabel }: {
       {series.map(s => (
         <p key={s.key} className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-          {valueOf(s.key) ?? 0}
+          {formatValue(valueOf(s.key) ?? 0)}
           <span className="font-normal text-gray-500 dark:text-gray-400">{s.name}</span>
         </p>
       ))}
@@ -43,12 +46,16 @@ function ChartTooltip({ active, payload, label, series, periodLabel }: {
  * drop-shadow "lift" and gradient area fills for a little depth. Two hues
  * validated for colorblind separation; a legend labels the series.
  */
-export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300, periodLabel = 'Week of' }: Props) {
+export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300, periodLabel = 'Week of', formatValue = String }: Props) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
   const tickColor = isDark ? '#6b7280' : '#9ca3af'
   const cursorColor = isDark ? '#374151' : '#e5e7eb'
   const dotFill = isDark ? '#111827' : '#fff'
+  // Wide enough for the longest formatted tick (e.g. "₹1.2Cr") without
+  // guessing — measured against the actual data rather than a fixed width,
+  // so plain small numbers keep a narrow axis and currency doesn't clip.
+  const yAxisWidth = Math.max(28, ...data.flatMap(d => series.map(s => formatValue(Number(d[s.key]) || 0).length))) * 7 + 8
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -68,7 +75,7 @@ export default function WeeklyLineChart({ title, subtitle, data, xKey, series, h
         </div>
       </div>
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={data} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
           <defs>
             {series.map(s => (
               <linearGradient key={s.key} id={`fill-${s.key}`} x1="0" y1="0" x2="0" y2="1">
@@ -83,8 +90,8 @@ export default function WeeklyLineChart({ title, subtitle, data, xKey, series, h
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
           <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} />
-          <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} width={30} />
-          <Tooltip cursor={{ stroke: cursorColor, strokeWidth: 1 }} content={<ChartTooltip series={series} periodLabel={periodLabel} />} />
+          <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} width={yAxisWidth} tickFormatter={v => formatValue(Number(v))} />
+          <Tooltip cursor={{ stroke: cursorColor, strokeWidth: 1 }} content={<ChartTooltip series={series} periodLabel={periodLabel} formatValue={formatValue} />} />
           {/* gradient fills under each line */}
           {series.map(s => (
             <Area key={`a-${s.key}`} type="monotone" dataKey={s.key} stroke="none" fill={`url(#fill-${s.key})`} isAnimationActive={false} />
