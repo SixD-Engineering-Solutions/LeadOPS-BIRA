@@ -14,7 +14,8 @@
     "db:migrate:status": "set NODE_EXTRA_CA_CERTS=./certs/aiven-ca.pem && npx prisma migrate status",
     "db:seed": "npx ts-node prisma/seed.ts",
     "db:import-tracker": "npx ts-node prisma/importTracker.ts",
-    "db:studio": "set NODE_EXTRA_CA_CERTS=./certs/aiven-ca.pem && npx prisma studio"
+    "db:studio": "set NODE_EXTRA_CA_CERTS=./certs/aiven-ca.pem && npx prisma studio",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -44,7 +45,8 @@
     "@types/pg": "^8.20.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
   },
   "allowScripts": {
     "@prisma/engines@7.8.0": true,

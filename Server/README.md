@@ -163,6 +163,17 @@ Starts on `http://localhost:3000` with hot-reload via `ts-node-dev`.
 
 ---
 
+## Testing
+
+```powershell
+npm run dev    # in one terminal — the tests are integration tests against a real running server
+npm test       # in another
+```
+
+`tests/` covers the permission matrix, invoice status/overpayment correctness, and the concurrency guarantees (unique numbering, no duplicate Won→Project conversion, no overpaying an invoice under concurrent requests) added while hardening this backend — not general coverage of every route. Each test creates its own throwaway lead/proposal/project/invoice and cleans it up afterward (soft-delete, same as the app itself), so it's safe to run repeatedly against the real database without accumulating data. `tests/globalSetup.ts` checks `/health` first and fails with a clear message if the dev server isn't running, rather than every test timing out on a connection refused.
+
+---
+
 ## Data Model
 
 All tables use snake_case column/table names (mapped from Prisma's camelCase fields). Every table has `created_at` and `updated_at`.
@@ -319,3 +330,4 @@ New signups are `employee` by default; the dev-login account is `admin`.
 | `npm run db:generate` | Regenerate the Prisma client |
 | `npm run db:seed` | Seed verticals, sectors, and lead statuses |
 | `npm run db:studio` | Open the Prisma visual database browser |
+| `npm test` | Run the integration test suite (needs `npm run dev` running in another terminal) |

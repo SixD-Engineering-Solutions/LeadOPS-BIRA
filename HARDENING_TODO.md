@@ -259,7 +259,7 @@ dismissed, and confirmed to be a test-harness artifact rather than a defect in t
 test — worth recording precisely because "investigated and ruled out" is a different, and more
 trustworthy, claim than "didn't happen again."
 
-## Phase 4 — Infra hygiene (before this grows past "internal tool, small team") — 3/4 done
+## Phase 4 — Infra hygiene (before this grows past "internal tool, small team") — done
 
 - [x] Introduced versioned `prisma migrate` history. No `prisma/migrations/` existed before —
       everything had gone through `db push`. Baselined the current schema as an `_init`
@@ -294,12 +294,19 @@ trustworthy, claim than "didn't happen again."
       makes) to `NODE_EXTRA_CA_CERTS=./certs/aiven-ca.pem` (trusts only this one CA in addition
       to the normal trust store). `db:seed`/`db:import-tracker` needed no flag at all — they go
       through `prisma.ts`, which now handles this itself.
-- [ ] Add focused tests covering Phases 1–3 specifically: permission matrix (admin vs.
-      employee, allowed + denied case per resource/action), invoice recompute boundary cases
-      (exact/partial/over/zero), concurrent numbering + transaction races — not a
-      test-everything push
+- [x] Added focused tests covering Phases 1–3 specifically (`Server/tests/`, Vitest): permission
+      matrix (admin vs. employee, allowed + denied case per resource/action, reactivation
+      lifecycle), invoice correctness (the full partial → overpay-reject → paid → void → repaid
+      → amount-edit → zero lifecycle, with genuinely fractional Decimal amounts throughout), and
+      concurrency (unique numbering under real parallel load, exactly-one-project from a Won
+      race, exactly-one-payment from an overpayment race) — 15 tests, not a test-everything push.
+      These are real integration tests against the live running server (`index.ts` calls
+      `app.listen()` directly with no exported `app` to test in-process — refactoring that is
+      Phase 5 territory, not bundled in here), each creating and cleaning up its own throwaway
+      lead/proposal/project/invoice so the suite is safe to run repeatedly against the real
+      database.
 
-### Phase 4 — Verification so far (2026-09-22) — 3/4 items PASSED
+### Phase 4 — Verification (2026-09-22) — **PASSED, 4/4 items, 15/15 tests**
 
 - [x] Full Phase 2 + Phase 3 regression suite re-run against the Decimal-backed columns, this
       time with genuinely fractional amounts (₹10000.55, ₹6000.25, ₹4000.30) rather than round
@@ -322,7 +329,31 @@ trustworthy, claim than "didn't happen again."
       counts against the known baseline afterward rather than assuming clean, found 2 more
       orphaned-but-active payments from this round's own test invoices, voided both, confirmed
       by direct query back to the exact baseline (`20 / 6 / 3 / 2`)
-- [ ] Phase 4 test-suite item not yet started — verification for it will follow once written
+- [x] Test suite (`Server/tests/`, run via `npm test` against the live dev server): 3 files, 15
+      tests, all passing — `permissions.test.ts` (8), `invoices.test.ts` (1, walking the full
+      lifecycle in sequence), `concurrency.test.ts` (4, each firing genuinely parallel requests
+      via `Promise.all`, not a for-loop of awaits)
+  - **Caught and fixed a real bug in the test suite itself before trusting it**: the
+    overpayment-race test logged one real payment but only deleted the invoice afterward,
+    never voiding the payment underneath it — the exact same orphaned-active-payment mistake
+    made manually (twice) during the Phase 3/4 verifications. Found it by checking the active
+    payment count after the first run (`4`, not the expected `2`), not by assuming a green run
+    meant a clean one. Added a `deleteInvoiceAndPayments` helper so this class of mistake can't
+    recur, cleaned up the pre-fix orphans, then re-ran.
+  - **Repeatability verified directly, not assumed**: ran the full suite twice in a row after
+    the fix and queried the database after each run — both times landed on the exact baseline
+    (`proposals: 20, projects: 6, invoices: 3, payments: 2, orphaned payments: 0`) with zero
+    drift. A test suite that passes but silently leaves the database different each run would
+    be worse than no suite at all for a shared, non-disposable database like this one.
+  - `tsc --noEmit` on `tests/tsconfig.json` (a separate config, since `tests/` isn't in the
+    main `src`-scoped `tsconfig.json` and doesn't need to be — the tests only make HTTP calls,
+    they don't import app code) passes clean, and confirmed this didn't affect the main
+    `tsconfig.json`'s own typecheck.
+
+**Verdict: Phase 4 is complete.** All 4 items done and independently verified: versioned
+migrations, the Decimal money migration (zero data loss across 118 rows), real TLS verification
+(proven to actually reject a wrong CA, not just accept the right one), and a 15-test automated
+suite covering Phases 1–3 that's been proven repeatable, not just "green once."
 
 ## Phase 5 — Code health (opportunistic, not blocking anything)
 
