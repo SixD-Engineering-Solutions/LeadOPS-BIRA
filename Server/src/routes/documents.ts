@@ -5,6 +5,8 @@ import multer from 'multer'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { isAdmin, canAccessLead } from '../utils/access'
+import { sendError } from '../utils/errors'
 
 const router = Router()
 router.use(authenticate)
@@ -73,26 +75,17 @@ const documentSelect = {
   uploadedByUser: { select: { id: true, userName: true, email: true } },
 } as const
 
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
-async function canAccessLead(leadId: string, userId: string | undefined, admin: boolean) {
-  return prisma.lead.findFirst({ where: { id: leadId, deletedAt: null, ...(admin ? {} : { assignedToUserId: userId }) } })
-}
-
 // GET /documents?leadId=xxx — metadata list for one lead (not the file itself).
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const leadId = req.query.leadId ? String(req.query.leadId) : undefined
   if (!leadId) {
-    res.status(400).json({ error: 'leadId is required.' })
+    sendError(res, 400, 'leadId is required.')
     return
   }
   const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(leadId, req.userId, admin)
   if (!lead) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
   const documents = await prisma.document.findMany({ where: { leadId, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
@@ -103,27 +96,27 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 router.post('/', (req: AuthRequest, res: Response) => {
   upload.single('file')(req, res, async (err: unknown) => {
     if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-      res.status(400).json({ error: 'File exceeds the 10MB limit.' })
+      sendError(res, 400, 'File exceeds the 10MB limit.')
       return
     }
     if (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : 'Could not upload file.' })
+      sendError(res, 400, err instanceof Error ? err.message : 'Could not upload file.')
       return
     }
     const leadId = String(req.body.leadId ?? '')
     if (!leadId) {
-      res.status(400).json({ error: 'leadId is required.' })
+      sendError(res, 400, 'leadId is required.')
       return
     }
     if (!req.file) {
-      res.status(400).json({ error: 'A file is required.' })
+      sendError(res, 400, 'A file is required.')
       return
     }
     const admin = await isAdmin(req.userId)
     const lead = await canAccessLead(leadId, req.userId, admin)
     if (!lead) {
       fs.unlink(req.file.path, () => {})
-      res.status(404).json({ error: 'Lead not found.' })
+      sendError(res, 404, 'Lead not found.')
       return
     }
     try {
@@ -140,7 +133,7 @@ router.post('/', (req: AuthRequest, res: Response) => {
       res.status(201).json({ document })
     } catch {
       fs.unlink(req.file.path, () => {})
-      res.status(400).json({ error: 'Could not save document.' })
+      sendError(res, 400, 'Could not save document.')
     }
   })
 })
@@ -152,12 +145,12 @@ router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<voi
     where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
   })
   if (!document) {
-    res.status(404).json({ error: 'Document not found.' })
+    sendError(res, 404, 'Document not found.')
     return
   }
   const filePath = path.join(UPLOAD_DIR, document.storedFileName)
   res.download(filePath, document.fileName, err => {
-    if (err && !res.headersSent) res.status(404).json({ error: 'File is missing from storage.' })
+    if (err && !res.headersSent) sendError(res, 404, 'File is missing from storage.')
   })
 })
 
@@ -166,7 +159,7 @@ router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<voi
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.document.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Document not found.' })
+    sendError(res, 404, 'Document not found.')
     return
   }
   await prisma.document.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })

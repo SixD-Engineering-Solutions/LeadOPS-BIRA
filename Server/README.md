@@ -26,25 +26,30 @@ Node.js + Express + TypeScript REST API for the LeadOps application. Handles OTP
 ```
 Backend/
 ├── prisma/
-│   ├── schema.prisma          # All models (users, otp_tokens, locations, plants,
-│   │                          #   contacts, verticals, sectors, lead_statuses, leads)
+│   ├── schema.prisma          # All models — see Data Model below for the current set
+│   ├── migrations/            # Versioned migration history (see Database Setup)
 │   └── seed.ts                # Seeds lookup data (verticals, sectors, lead statuses)
 ├── prisma.config.ts           # Prisma 7 config — reads DATABASE_URL from .env
+├── certs/
+│   └── aiven-ca.pem           # This project's Aiven CA cert (see Managed Postgres / SSL below)
 ├── src/
 │   ├── generated/prisma/      # Auto-generated Prisma client (do not edit)
-│   ├── routes/
-│   │   ├── auth.ts            # /auth/*  — signup, login, OTP, dev-login, me
-│   │   ├── leads.ts          # /leads/* — lead CRUD (find-or-create, soft delete)
-│   │   └── reference.ts      # lookups: locations, plants, contacts, verticals,
-│   │                         #   sectors, lead-statuses, users
+│   ├── routes/                # One file per resource (auth, leads, tasks, activities,
+│   │                          #   proposals, projects, invoices, documents, events, tenders,
+│   │                          #   reference, notifications, tracker) — see API Reference below
 │   ├── middleware/
 │   │   └── authenticate.ts    # `authenticate` (JWT guard) + `requireAdmin`
 │   ├── services/
 │   │   └── email.ts           # Nodemailer OTP email sender
 │   ├── utils/
-│   │   └── jwt.ts             # sign/verify helpers for access + verify tokens
+│   │   ├── jwt.ts             # sign/verify helpers for access + verify tokens
+│   │   ├── access.ts          # shared `isAdmin`/`canAccessLead`/`canAccessProject` — the one
+│   │   │                      #   place every route's visibility check is defined
+│   │   ├── errors.ts          # `sendError()` — the one place the `{ error, code }` shape is defined
+│   │   └── sequence.ts        # atomic per-entity numbering (PROP-/WO-/INV- prefixes) + `TX_OPTS`
 │   ├── prisma.ts              # Prisma client singleton (pg pool + SSL + error handling)
-│   └── index.ts               # Express app entry point (CORS, routes, safety nets)
+│   └── index.ts               # Express app entry point (CORS, routes, 404/500 fallbacks, safety nets)
+├── tests/                     # Integration tests against a live running server — see Testing below
 ├── .env                       # Environment variables (fill this in)
 ├── package.json
 └── tsconfig.json
@@ -127,11 +132,18 @@ Create a database with your provider and paste its connection string into `DATAB
 
 ### Create the tables
 
+The schema is tracked as versioned migrations under `prisma/migrations/` (not `db push`):
+
 ```powershell
-npm run db:push        # sync schema -> database (no migration files)
-# or, for versioned migrations:
-npm run db:migrate
+npm run db:migrate:deploy   # apply any pending migrations — the normal path, including first setup
+npm run db:migrate:status   # check what's pending without applying anything
 ```
+
+`npm run db:migrate` (`prisma migrate dev`) is for authoring a *new* migration during local schema
+changes — it diffs your edited `schema.prisma` against the database, generates a new migration
+file, and applies it. `npm run db:push` still exists for quick, throwaway local iteration (it
+doesn't touch `prisma/migrations/` at all), but isn't how schema changes reach a real database —
+use a migration for anything that's going to be deployed.
 
 ### Seed lookup data
 
@@ -241,7 +253,13 @@ The `emailVerifiedToken` is a short-lived JWT signed with a separate secret (`JW
 
 ## API Reference
 
-JSON in/out. Zod validation → invalid requests return `400 { error }`. Protected routes need `Authorization: Bearer <accessToken>`.
+JSON in/out. Protected routes need `Authorization: Bearer <accessToken>`.
+
+**Errors** are always `{ error: string, code: string }` — a human-readable message plus a stable,
+machine-readable code (`VALIDATION_ERROR`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`,
+`INTERNAL_ERROR`, etc. — one per HTTP status, see `src/utils/errors.ts`), including a JSON 404 for
+unmatched routes and a JSON 500 for anything an individual route didn't handle itself. Zod
+validation failures return `400`.
 
 ### Health
 `GET /health` → `{ "status": "ok" }`
@@ -300,10 +318,20 @@ List + create for each supporting table (used to populate dropdowns and manage d
 
 ## Roles & Permissions
 
-`user.role` is `admin` or `employee`.
+`user.role` is `admin` or `employee`. `src/utils/access.ts` is the one place the shared checks
+(`isAdmin`, `canAccessLead`, `canAccessProject`) are defined — every route imports from there
+rather than redefining its own copy.
 
-- **Everyone (authenticated):** create/list/update leads, view and add reference data.
-- **Admins only:** delete leads (`DELETE /leads/:id`) — enforced by the `requireAdmin` middleware and hidden in the UI for non-admins. Deletes are soft, so entries persist until an admin removes them.
+- **Visibility:** admins see every lead/proposal/project/invoice/document/activity; employees only
+  see the ones on leads currently assigned to them. Reference/lookup data (locations, plants,
+  verticals, etc.) is visible to everyone.
+- **Admin-only actions:** every delete (soft delete — rows persist for audit until removed),
+  creating/editing reference data from the Catalog page, managing users (create, role, deactivate/
+  reactivate), and voiding a payment. Enforced server-side by `requireAdmin` (or an explicit
+  `isAdmin` check where the route also needs to allow the non-admin visibility case), not just
+  hidden in the UI.
+- Leads/projects/tasks can never be assigned to an admin account — enforced on every create/update
+  that sets an assignee, not just at creation.
 
 New signups are `employee` by default; the dev-login account is `admin`.
 
@@ -325,8 +353,10 @@ New signups are `employee` by default; the dev-login account is `admin`.
 | `npm run dev` | Start dev server with hot-reload |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run start` | Run compiled production build |
-| `npm run db:push` | Sync schema to the database (no migration files) |
-| `npm run db:migrate` | Apply schema changes as versioned migrations |
+| `npm run db:migrate:deploy` | Apply any pending migrations — the normal setup/deploy path |
+| `npm run db:migrate:status` | Check pending migrations without applying anything |
+| `npm run db:migrate` | Author a new migration from a local `schema.prisma` change (`prisma migrate dev`) |
+| `npm run db:push` | Sync schema to the database with no migration file — local iteration only |
 | `npm run db:generate` | Regenerate the Prisma client |
 | `npm run db:seed` | Seed verticals, sectors, and lead statuses |
 | `npm run db:studio` | Open the Prisma visual database browser |

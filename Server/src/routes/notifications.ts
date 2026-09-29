@@ -3,6 +3,7 @@ import { prisma } from '../prisma'
 import { verifyAccessToken } from '../utils/jwt'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
 import { subscribe, unsubscribe } from '../services/notify'
+import { sendError } from '../utils/errors'
 
 const router = Router()
 
@@ -14,7 +15,7 @@ router.get('/stream', (req: Request, res: Response): void => {
   try {
     userId = verifyAccessToken(token).sub
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token.' })
+    sendError(res, 401, 'Invalid or expired token.')
     return
   }
 
@@ -49,7 +50,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 router.patch('/:id/read', async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.notification.findFirst({ where: { id: String(req.params.id), userId: req.userId } })
   if (!existing) {
-    res.status(404).json({ error: 'Notification not found.' })
+    sendError(res, 404, 'Notification not found.')
     return
   }
   const notification = await prisma.notification.update({ where: { id: existing.id }, data: { isRead: true } })

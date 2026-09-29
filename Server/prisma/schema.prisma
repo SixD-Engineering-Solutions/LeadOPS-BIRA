@@ -23,16 +23,16 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  assignedLeads      Lead[] @relation("AssignedTo")
-  assignedByMeLeads  Lead[] @relation("AssignedBy")
-  createdLeads       Lead[] @relation("CreatedBy")
-  notifications      Notification[]
-  assignedTasks      Task[] @relation("TaskAssignedTo")
-  assignedByMeTasks  Task[] @relation("TaskAssignedBy")
-  activities         Activity[]
-  createdProposals   Proposal[] @relation("ProposalCreatedBy")
-  responsibleProjects Project[] @relation("ProjectResponsible")
-  createdProjects     Project[] @relation("ProjectCreatedBy")
+  assignedLeads       Lead[]         @relation("AssignedTo")
+  assignedByMeLeads   Lead[]         @relation("AssignedBy")
+  createdLeads        Lead[]         @relation("CreatedBy")
+  notifications       Notification[]
+  assignedTasks       Task[]         @relation("TaskAssignedTo")
+  assignedByMeTasks   Task[]         @relation("TaskAssignedBy")
+  activities          Activity[]
+  createdProposals    Proposal[]     @relation("ProposalCreatedBy")
+  responsibleProjects Project[]      @relation("ProjectResponsible")
+  createdProjects     Project[]      @relation("ProjectCreatedBy")
   documents           Document[]
   createdInvoices     Invoice[]
   recordedPayments    Payment[]
@@ -98,8 +98,8 @@ model Client {
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  plants       Plant[]
-  tenders      Tender[]
+  plants  Plant[]
+  tenders Tender[]
 
   @@index([categoryId])
   @@map("clients")
@@ -122,17 +122,17 @@ model Location {
 }
 
 model Plant {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   plantName   String    @map("plant_name")
   companyName String?   @map("company_name")
   clientId    String?   @map("client_id")
   client      Client?   @relation(fields: [clientId], references: [id])
   locationId  String?   @map("location_id")
   location    Location? @relation(fields: [locationId], references: [id])
-  plantCode   String?  @map("plant_code")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  plantCode   String?   @map("plant_code")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   contacts Contact[]
   leads    Lead[]
@@ -230,33 +230,33 @@ model LeadStatus {
 
 // ─── Leads (main table) ─────────────────────────────────────────────────────
 model Lead {
-  id               String      @id @default(cuid())
-  plantId          String      @map("plant_id")
-  plant            Plant       @relation(fields: [plantId], references: [id])
-  verticalId       String?     @map("vertical_id")
-  vertical         Vertical?   @relation(fields: [verticalId], references: [id])
-  sectorId         String?     @map("sector_id")
-  sector           Sector?     @relation(fields: [sectorId], references: [id])
-  sourceId         String?     @map("source_id")
-  source           LeadSource? @relation(fields: [sourceId], references: [id])
-  serviceTypeId    String?     @map("service_type_id")
-  serviceType      ServiceType? @relation(fields: [serviceTypeId], references: [id])
-  eventId          String?     @map("event_id")
-  event            Event?      @relation(fields: [eventId], references: [id])
-  contactId        String?     @map("contact_id")
-  contact          Contact?    @relation(fields: [contactId], references: [id])
-  assignedToUserId String?     @map("assigned_to_user_id")
-  assignedToUser   User?       @relation("AssignedTo", fields: [assignedToUserId], references: [id])
-  assignedByUserId String?     @map("assigned_by_user_id")
-  assignedByUser   User?       @relation("AssignedBy", fields: [assignedByUserId], references: [id])
-  statusId         String?     @map("status_id")
-  status           LeadStatus? @relation(fields: [statusId], references: [id])
+  id               String         @id @default(cuid())
+  plantId          String         @map("plant_id")
+  plant            Plant          @relation(fields: [plantId], references: [id])
+  verticalId       String?        @map("vertical_id")
+  vertical         Vertical?      @relation(fields: [verticalId], references: [id])
+  sectorId         String?        @map("sector_id")
+  sector           Sector?        @relation(fields: [sectorId], references: [id])
+  sourceId         String?        @map("source_id")
+  source           LeadSource?    @relation(fields: [sourceId], references: [id])
+  serviceTypeId    String?        @map("service_type_id")
+  serviceType      ServiceType?   @relation(fields: [serviceTypeId], references: [id])
+  eventId          String?        @map("event_id")
+  event            Event?         @relation(fields: [eventId], references: [id])
+  contactId        String?        @map("contact_id")
+  contact          Contact?       @relation(fields: [contactId], references: [id])
+  assignedToUserId String?        @map("assigned_to_user_id")
+  assignedToUser   User?          @relation("AssignedTo", fields: [assignedToUserId], references: [id])
+  assignedByUserId String?        @map("assigned_by_user_id")
+  assignedByUser   User?          @relation("AssignedBy", fields: [assignedByUserId], references: [id])
+  statusId         String?        @map("status_id")
+  status           LeadStatus?    @relation(fields: [statusId], references: [id])
   remark           String?
-  createdByUserId  String      @map("created_by_user_id")
-  createdByUser    User        @relation("CreatedBy", fields: [createdByUserId], references: [id])
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
-  deletedAt        DateTime?   @map("deleted_at")
+  createdByUserId  String         @map("created_by_user_id")
+  createdByUser    User           @relation("CreatedBy", fields: [createdByUserId], references: [id])
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  deletedAt        DateTime?      @map("deleted_at")
   notifications    Notification[]
   activities       Activity[]
   proposals        Proposal[]
@@ -428,7 +428,7 @@ model Payment {
   id               String    @id @default(cuid())
   invoiceId        String    @map("invoice_id")
   invoice          Invoice   @relation(fields: [invoiceId], references: [id])
-  amountReceived   Decimal   @db.Decimal(14, 2) @map("amount_received")
+  amountReceived   Decimal   @map("amount_received") @db.Decimal(14, 2)
   paymentDate      DateTime  @map("payment_date")
   notes            String?
   recordedByUserId String    @map("recorded_by_user_id")
@@ -473,6 +473,13 @@ model Tender {
 model PipelineTrackerItem {
   id             String   @id @default(cuid())
   sortOrder      Int      @map("sort_order")
+  // Set only on a row synced live from a real, non-deleted Lead (see
+  // syncLeadToPipeline in utils/pipelineSync.ts) —
+  // null for every row from the original Excel import. Same convention as
+  // InvoiceRegisterItem.sourceInvoiceId: doubles as the "is this a trial
+  // entry" flag the client uses to highlight/pin these rows, and as the key
+  // `DELETE /tracker/pipeline/trial-entries` clears before a real deployment.
+  sourceLeadId   String?  @unique @map("source_lead_id")
   vertical       String?
   client         String?
   location       String?
@@ -501,6 +508,12 @@ model PipelineTrackerItem {
 model InvoiceRegisterItem {
   id                      String    @id @default(cuid())
   sortOrder               Int       @map("sort_order")
+  // Set only on a row synced live from a real, fully-paid Invoice (see
+  // syncInvoiceToTracker in routes/invoices.ts) — null for every row that
+  // came from the original Excel import. Doubles as the "is this a trial
+  // entry" flag the client uses to highlight/pin these rows, and as the key
+  // `DELETE /tracker/invoices/trial-entries` clears before a real deployment.
+  sourceInvoiceId         String?   @unique @map("source_invoice_id")
   sector                  String?
   client                  String?
   location                String?
@@ -571,13 +584,13 @@ model InvoiceSectorSummary {
 // more granular than LeadSource ("Expo" as a category), so "leads generated"
 // can be counted per actual event.
 model Event {
-  id              String   @id @default(cuid())
-  eventName       String   @map("event_name")
-  eventType       String   @default("Expo")
+  id              String    @id @default(cuid())
+  eventName       String    @map("event_name")
+  eventType       String    @default("Expo")
   eventDate       DateTime? @map("event_date")
-  createdByUserId String   @map("created_by_user_id")
-  createdByUser   User     @relation(fields: [createdByUserId], references: [id])
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdByUserId String    @map("created_by_user_id")
+  createdByUser   User      @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   leads Lead[]
 

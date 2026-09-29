@@ -357,16 +357,243 @@ suite covering Phases 1–3 that's been proven repeatable, not just "green once.
 
 ## Phase 5 — Code health (opportunistic, not blocking anything)
 
-- [ ] Consolidate the repeated `isAdmin()` / `canAccessX()` pairs duplicated across
+- [x] Consolidate the repeated `isAdmin()` / `canAccessX()` pairs duplicated across
       `leads.ts`, `proposals.ts`, `projects.ts`, `invoices.ts`, `documents.ts` into one shared
       helper module
-- [ ] Standardize the backend error response shape across all routes (including 500s); add a
+- [x] Standardize the backend error response shape across all routes (including 500s); add a
       stable machine-readable code alongside the human message
-- [ ] Add distinct loading / empty / error UI states with a retry action wherever still missing
-- [ ] Split `Client/src/pages/dashboard.tsx` (~880 lines) along its existing internal seams
+- [x] Add distinct loading / empty / error UI states with a retry action wherever still missing
+- [x] Split `Client/src/pages/dashboard.tsx` (~880 lines) along its existing internal seams
       (stats / proposal stats / invoice stats / follow-ups / sidebar) into separate
       components/hooks
-- [ ] Split `Client/src/components/LeadDetailModal.tsx`'s activity / proposal / document
+- [x] Split `Client/src/components/LeadDetailModal.tsx`'s activity / proposal / document
       handling into three sub-components
-- [ ] Update `Server/README.md` / `Client/README.md` to match actual behavior once the above
+- [x] Update `Server/README.md` / `Client/README.md` to match actual behavior once the above
       lands (new env vars, migration workflow replacing `db push`, etc.)
+
+### Phase 5, item 1 — Verification (2026-09-22) — **PASSED**
+
+New shared module `Server/src/utils/access.ts` (`isAdmin`, `canAccessLead`, `canAccessProject`).
+The original plan named 5 files; a repo-wide grep during this item turned up the identical
+byte-for-byte duplication in 3 more (`tasks.ts`, `activities.ts`, `reference.ts`) that had been
+missed earlier — all 8 were consolidated, not just the originally-listed 5, since leaving 3
+duplicates behind would defeat the point of the item.
+
+- [x] Confirmed via `grep` that every local `isAdmin()` was byte-for-byte identical (all 8 files),
+      and `canAccessLead()` identical across the 4 files that had it (`proposals.ts`,
+      `projects.ts`, `documents.ts`, `activities.ts`) before merging them — a real behavioral
+      change hiding in one of these would have made consolidation unsafe
+- [x] `leads.ts`'s own `visibilityFilter()` left local (not duplicated elsewhere, leads-specific)
+- [x] `invoices.ts`'s `findAccessibleInvoice`/`totalPaid`/`recomputeStatus`/`ValidationError`/`Db`
+      type (all Phase 3/4 work) left untouched — only its `isAdmin`/`canAccessProject` pair was
+      removed and replaced with the import, checked by reading the whole file's diff, not just
+      the top
+- [x] Repo-wide grep for `async function isAdmin|canAccessLead|canAccessProject` across
+      `Server/src/routes/` after all edits → zero matches, confirming no local duplicate survived
+      anywhere, not just in the 5 originally-named files
+- [x] `Server` typecheck (`tsc --noEmit`): clean
+- [x] `Client` typecheck (`tsc --noEmit`): clean
+- [x] Full test suite (`npm test`, live dev server, real HTTP): **15/15 passed** — including the
+      full permission matrix in `permissions.test.ts`, which exercises `isAdmin`/`canAccessLead`
+      on every route now sourcing them from the shared module, so a behavioral slip during the
+      merge would have shown up as a permission-check failure, not just a compile error
+
+**Verdict: Phase 5 item 1 is complete.** All 8 duplicate-bearing files (3 more than the plan
+named) now import from one shared module; behavior verified unchanged by the full existing test
+suite plus a clean double typecheck, not just by the refactor "looking mechanical."
+
+### Phase 5, item 2 — Verification (2026-09-22) — **PASSED**
+
+New `Server/src/utils/errors.ts`: `sendError(res, status, message)` looks up one stable code per
+HTTP status from a small table (`400→VALIDATION_ERROR`, `401→UNAUTHORIZED`, `403→FORBIDDEN`,
+`404→NOT_FOUND`, `409→CONFLICT`, `500→INTERNAL_ERROR`, `502→UPSTREAM_ERROR`,
+`503→SERVICE_UNAVAILABLE`, anything else `ERROR`) and writes `{ error, code }` — chosen over a
+unique code per one of the ~100 individual call sites, since a per-status table is centrally
+defined (so it's actually "stable," not just consistent by convention) and this app doesn't have
+per-call-site error semantics worth a client branching on beyond the status class.
+
+- [x] Confirmed by grep that every one of the 100 `res.status(N).json({ error: ... })` call sites
+      across 13 files (`middleware/authenticate.ts` + 12 route files) matched one exact pattern
+      with no extra response fields anywhere, before writing a codemod to convert them — safe to
+      automate mechanically rather than hand-edit 100 sites with the attendant transcription risk
+- [x] Ran the codemod, then manually re-read every edge case that wasn't a plain string literal
+      to confirm the regex captured the full expression correctly: a ternary
+      (`documents.ts` — `err instanceof Error ? err.message : '...'`), a dynamic `e.message` off a
+      caught `ValidationError` (`invoices.ts`), an inline `if (err && !res.headersSent)` guard
+      (`documents.ts`), and `reference.ts`'s local `bad(res, msg)` helper (updated once, which
+      automatically fixed all 16 of its call sites — not touched individually)
+- [x] Repo-wide grep for the old `res.status(N).json({ error:` pattern after the codemod → zero
+      matches anywhere in `src/`
+- [x] Added two `index.ts` handlers that didn't exist before: a JSON 404 fallback for routes that
+      match nothing, and a 4-argument Express error-handling middleware as a last resort for
+      anything a route didn't catch itself — including Express 5's auto-forwarded async
+      rejections. Before this, an uncaught error would fall through to Express's default handler
+      and leak a stack trace as HTML instead of this app's JSON shape; now it logs server-side and
+      returns the same `{ error, code: 'INTERNAL_ERROR' }` shape as everything else.
+- [x] Live-server checks against the actual running app, not just typecheck: a `401` (missing
+      auth header), a `400` (missing `leadId` on `POST /activities`), a `404` (nonexistent lead
+      id, and a route matching nothing) — each returned the expected `code` alongside the
+      unchanged human message
+- [x] Noted, not fixed (out of scope for this item): `referenceRoutes` is mounted at `app.use('/',
+      ...)`, so its `authenticate` middleware intercepts *any* unmatched path before it can reach
+      the new global 404 handler when no auth header is sent — a pre-existing routing quirk from
+      before this phase, not a regression from this change (confirmed the new 404 handler does
+      fire correctly once a valid token is supplied)
+- [x] `Server` typecheck (`tsc --noEmit`): clean
+- [x] `Client` typecheck (`tsc --noEmit`): clean — the client already only reads `data.error` as
+      a string (`Client/src/lib/api.ts`) and ignores unknown fields, so adding `code` alongside it
+      is additive and required no client changes
+- [x] Full test suite (`npm test`, live dev server): **15/15 passed**, no regressions from
+      rewriting 100 error-response call sites
+
+**Verdict: Phase 5 item 2 is complete.** Every error response in the app (all ~100 existing call
+sites, plus the two new fallback handlers for 404s and uncaught 500s) now returns the same
+`{ error: string, code: string }` shape, verified against the live server and the full test suite,
+not just by the codemod "looking like it worked."
+
+### Phase 5, items 3–4–5 — Verification (2026-09-22) — **PASSED**
+
+Done together since items 4 and 5 (splitting `dashboard.tsx` and `LeadDetailModal.tsx`) touch the
+same files item 3's error/retry work needed to land in, and doing the error-state work twice
+(once before, once during the split) would've been wasted motion.
+
+**Item 3 — loading/empty/error+retry states.** New shared `Client/src/components/ErrorBanner.tsx`
+(a message plus an inline "Try again" button). A repo-wide survey (via a research subagent, since
+this spanned 11+ files) found every list page already had loading/empty/error, but the only retry
+available anywhere was an unrelated always-visible header "Refresh" button, never a retry scoped
+to the error itself — and `dashboard.tsx`, `LeadDetailModal.tsx`, and `NotificationBell.tsx` had no
+error state at all (fetch failures were silently swallowed via `.catch(() => {})`, leaving the user
+looking at permanent "—" placeholders or an empty list with zero explanation).
+
+- [x] Wired `ErrorBanner` into the 9 pages that already had error state + a named reload function
+      (`leads.tsx`, `tasks.tsx`, `projects.tsx`, `invoices.tsx`, `tenders.tsx`, `proposals.tsx`,
+      `team.tsx`, `reports.tsx`, `catalog.tsx`) — mechanical, one call site each
+- [x] `tracker.tsx`: both `PipelineTab` and `InvoicesTab` had their fetch inlined directly in
+      `useEffect` with no way to call it again — extracted each into a named `load()` function
+      first, *then* wired the retry, since there was nothing to retry into before that
+- [x] `NotificationBell.tsx`: added an error state to the initial notification fetch (previously
+      fully silent) — shown inside the dropdown in place of the empty-state message, with retry
+- [x] `LeadDetailModal.tsx`: added error state to all three of its independent loaders
+      (documents/proposals/activities — previously all `.catch(() => {})`), each with its own
+      scoped retry
+- [x] `dashboard.tsx`: the biggest gap — none of its 5 data sources (lead stats, proposal stats,
+      pending invoices, my tasks, follow-ups) had any visible error state; a failed fetch just
+      reset that section to empty/zero with nothing telling the user why. Fixed as part of the
+      hook extraction below, so each source's hook now returns its own `error` + `reload`,
+      surfaced as an `ErrorBanner` at the relevant spot (above the stat tiles for lead/proposal
+      stats, in place of the panel for follow-ups/pending-payments/tasks)
+
+**Item 4 — split `dashboard.tsx`** (874 → 274 lines). Extracted:
+
+- 5 hooks (`Client/src/hooks/useLeadStats.ts`, `useProposalStats.ts`, `usePendingInvoices.ts`,
+  `useMyTasks.ts`, `useFollowUps.ts`) — each owns one data source's fetch, SSE-resync listener,
+  loading state, and (new, per item 3) error + reload
+- `Client/src/components/dashboard/`: `icons.tsx` (shared icon set), `DashboardSidebar.tsx`,
+  `StatTiles.tsx`, `FollowUpsPanel.tsx`, `PendingPaymentsPanel.tsx`, `TasksPanel.tsx`,
+  `LeadAssignmentsModal.tsx` — `dashboard.tsx` itself is now just the tab-routing shell that
+  composes these
+
+**Item 5 — split `LeadDetailModal.tsx`** (406 → 124 lines). Extracted
+`Client/src/components/leadDetail/`: `shared.tsx` (`DetailSection`/`inputCls`/`fmtDay`, used by all
+three), `LeadDocumentsSection.tsx`, `LeadProposalsSection.tsx`, `LeadActivitySection.tsx` — each is
+now a fully self-contained component owning its own fetch, form, and error/retry state, taking only
+`leadId` as a prop. `LeadDetailModal.tsx` itself keeps the static info sections (Client/Plant/
+Contact/Classification/Ownership/Notes) and composes the three extracted sections.
+
+**Verification, run against the live app, not just typecheck:**
+
+- [x] `Server` typecheck (`tsc --noEmit`): clean
+- [x] `Client` typecheck (`tsc --noEmit`): clean
+- [x] Full test suite (`npm test`, live dev server): **15/15 passed**, both before and after the
+      dashboard/modal split (run once after item 3's wiring, once after the final split)
+- [x] Live browser walkthrough (Playwright) as the dev-admin user: dashboard loads with all 6 stat
+      tiles, Pending Payments panel, and Modules grid rendering correctly with real data; clicked
+      "Total Leads" → `LeadAssignmentsModal` opens with all 6 admins' grouped leads plus an
+      Unassigned bucket; clicked a lead row → `LeadDetailModal` opens on top with every section
+      (Documents/Proposals/Activity, each showing its correct empty state) intact
+- [x] **Error/retry path actually exercised, not just wired**: killed the backend process, reloaded
+      the dashboard — all 4 data-source error banners appeared correctly ("Cannot reach the
+      server. Please try again." + Try again), tiles fell back to "—" as before, console showed
+      only the expected fetch-failure errors and no React errors. Restarted the backend and clicked
+      each of the 4 "Try again" buttons individually — each one recovered *only* its own source
+      (e.g. clicking the lead-stats retry populated the lead tiles while the other 3 banners stayed
+      up), and after all 4 the page matched the original pre-failure state exactly. This is the
+      part that would have been easy to get wrong (four independent hooks, four independent
+      retries) and the live test is what actually proves the wiring is correct per-source, not just
+      that the code compiles.
+- [x] Tracker page re-tested after the `load()` extraction: Pipeline tab (129 imported rows) and
+      Invoices tab (summary + register tables) both still render correctly
+- [x] `LeadActivitySection`'s write path re-tested live: logged a real activity through the split
+      component's form, confirmed it appeared in the timeline immediately with the form reset —
+      proves the extracted component's create+reload cycle works, not just its read path
+- [x] No console errors or warnings at any point during the browser walkthrough (checked after
+      every navigation)
+
+**Known artifact, disclosed rather than hidden:** the live activity-logging test above added one
+real row ("Phase 5 split verification test", Call, today) to the Cipla Kurkumbh Plant lead's
+activity timeline in the dev database. Activities have no delete/edit endpoint in this app by
+design (append-only audit log, same as everywhere else soft-delete is used instead) — there's no
+way to remove it through the application layer, and reaching around the app to delete it directly
+in the database would be a worse precedent than one harmless, clearly-labeled test note. Flagged
+here rather than silently left for someone to wonder about later.
+
+**Verdict: Phase 5 items 3, 4, and 5 are complete.** Every page's error state now offers a scoped
+retry, the three components named in the plan (dashboard/LeadDetailModal, plus NotificationBell
+found during the survey) no longer silently swallow fetch failures, and both large files are split
+along the seams the plan named — verified by a live, once-broken-then-recovered walkthrough of the
+actual failure mode this item exists to fix, not just a green typecheck.
+
+### Phase 5, item 6 — Verification (2026-09-22) — **PASSED**
+
+`Server/README.md` was already partly current (Phase 1's `ENABLE_DEV_LOGIN` and Phase 4's Aiven
+TLS/migration-baselining notes had been written in as those phases landed), but still described
+`db:push` as the primary "create the tables" path and said nothing about the `{ error, code }`
+shape from this phase's item 2, the new `utils/access.ts`/`utils/errors.ts` modules, or the actual
+current route set (still only listed `auth`/`leads`/`reference` in the folder tree, though
+proposals/projects/invoices/tasks/tenders/documents/tracker/notifications/activities have existed
+since earlier sessions). `Client/README.md` was still the untouched Vite scaffold template — it
+never described the app at all.
+
+- [x] `Server/README.md`: rewrote "Create the tables" to present `db:migrate:deploy` as the normal
+      path and `db:push` as local-only iteration (matching Phase 4's actual migration workflow);
+      updated the npm-scripts table to match; added the `{ error, code }` shape to the API
+      Reference section; added `utils/access.ts`/`utils/errors.ts`/`utils/sequence.ts` and
+      `prisma/migrations/`/`tests/`/`certs/` to the folder structure; rewrote Roles & Permissions
+      to describe the actual current visibility model (admin-sees-all / employee-sees-assigned,
+      the full list of admin-only actions, the assign-to-admin block) instead of the stale
+      "leads only" description from before proposals/projects/invoices/tasks existed
+- [x] `Client/README.md`: replaced the generic Vite template with a real description of the app —
+      how to run it against the backend, the dev-login bypass and why it's safe (`import.meta.env
+      .DEV` gate), the post-split directory structure (`hooks/`, `components/dashboard/`,
+      `components/leadDetail/`), the error/retry convention from item 3, and the SSE live-update
+      mechanism
+- [x] Scope check: deliberately did **not** attempt a full route-by-route API reference rewrite
+      documenting every endpoint added across earlier, unrelated feature sessions (proposals/
+      projects/invoices/etc. already had no README coverage before this hardening effort started,
+      and backfilling that is a documentation debt from those sessions, not from Phases 1–5) —
+      scoped this item to what Phases 1–5's actual changes require the docs to now say, per the
+      item's own wording ("update... to match actual behavior once the above lands")
+- [x] Read both files back in full after editing to confirm they render as valid Markdown and
+      match the real `package.json` script names (`db:migrate:deploy`, `db:migrate:status`,
+      `db:migrate`, `db:push`, `db:generate`, `db:seed`, `db:studio`, `db:import-tracker` for
+      Server; `dev`, `build`, `lint`, `preview` for Client) — checked directly against each
+      `package.json`, not from memory
+
+**Verdict: Phase 5 item 6 is complete**, scoped to documenting what this hardening effort actually
+changed rather than backfilling unrelated pre-existing documentation gaps.
+
+## Phase 5 — Verdict
+
+**All 6 items complete.** Duplicated permission helpers consolidated into one module (8 files, 3
+more than originally scoped, found via a repo-wide grep rather than trusting the original list);
+every error response in the app standardized to `{ error, code }` including new 404/500 fallback
+handlers; every page's error state now offers a scoped retry, proven by actually killing and
+restarting the backend rather than just wiring the code; `dashboard.tsx` and `LeadDetailModal.tsx`
+split along the seams named in the plan (874→274 and 406→124 lines respectively); and both READMEs
+brought back in line with what Phases 1–5 actually built. Every item was verified against a live
+running server (or, for the client, a live browser session against a live server) and the full
+15-test automated suite — re-run clean after each of this phase's structural changes — not just a
+passing typecheck.
+
+This closes out the hardening initiative that began at Phase 1. `HARDENING_TODO.md` now reflects
+five complete phases, each independently verified and logged.

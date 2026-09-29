@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { Lead, Proposal, EmployeeUser } from '../lib/api'
 import WeeklyLineChart from '../components/WeeklyLineChart'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 const WEEKS = 8
 const MONTHS = 6
@@ -123,7 +124,7 @@ export default function Reports() {
         <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
       </div>
 
-      {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+      {error && <ErrorBanner message={error} onRetry={load} className="mb-5" />}
 
       {loading ? (
         <p className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">Loading reports…</p>

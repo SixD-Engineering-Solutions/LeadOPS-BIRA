@@ -5,6 +5,9 @@ import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastProjectUpdate } from '../services/notify'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
+import { isAdmin, canAccessLead } from '../utils/access'
+import { sendError } from '../utils/errors'
+import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 
 const router = Router()
 router.use(authenticate)
@@ -20,14 +23,6 @@ const projectInclude = {
 } as const
 
 // Same visibility rule as leads.ts: employees only see projects on their own leads, admins see all.
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
-async function canAccessLead(leadId: string, userId: string | undefined, admin: boolean) {
-  return prisma.lead.findFirst({ where: { id: leadId, deletedAt: null, ...(admin ? {} : { assignedToUserId: userId }) } })
-}
 
 // Pass a transaction client when creating a project in the same transaction,
 // so reserving the number and creating the row succeed or fail together.
@@ -58,7 +53,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     include: projectInclude,
   })
   if (!project) {
-    res.status(404).json({ error: 'Project not found.' })
+    sendError(res, 404, 'Project not found.')
     return
   }
   res.json({ project })
@@ -80,20 +75,20 @@ const createSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid project data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid project data.')
     return
   }
   const d = parse.data
   const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(d.leadId, req.userId, admin)
   if (!lead) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
   if (d.responsibleUserId) {
     const engineer = await prisma.user.findUnique({ where: { id: d.responsibleUserId }, select: { role: true } })
     if (engineer?.role === 'admin') {
-      res.status(400).json({ error: 'Projects cannot be assigned to an admin user.' })
+      sendError(res, 400, 'Projects cannot be assigned to an admin user.')
       return
     }
   }
@@ -105,7 +100,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // either way, but there's no reason not to keep them together).
     const project = await prisma.$transaction(async tx => {
       const workOrderNo = await nextWorkOrderNo(tx)
-      return tx.project.create({
+      const created = await tx.project.create({
         data: {
           workOrderNo,
           leadId: d.leadId,
@@ -120,11 +115,15 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         },
         include: projectInclude,
       })
+      return created
     }, TX_OPTS)
+    // Refreshes the lead's Pipeline row with the new project's status.
+    // After the transaction, not inside it.
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
     broadcastProjectUpdate(project.id)
     res.status(201).json({ project })
   } catch {
-    res.status(400).json({ error: 'Could not create project.' })
+    sendError(res, 400, 'Could not create project.')
   }
 })
 
@@ -142,7 +141,7 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid update data.' })
+    sendError(res, 400, 'Invalid update data.')
     return
   }
   const admin = await isAdmin(req.userId)
@@ -150,7 +149,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
   })
   if (!existing) {
-    res.status(404).json({ error: 'Project not found.' })
+    sendError(res, 404, 'Project not found.')
     return
   }
 
@@ -158,7 +157,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if (d.responsibleUserId) {
     const engineer = await prisma.user.findUnique({ where: { id: d.responsibleUserId }, select: { role: true } })
     if (engineer?.role === 'admin') {
-      res.status(400).json({ error: 'Projects cannot be assigned to an admin user.' })
+      sendError(res, 400, 'Projects cannot be assigned to an admin user.')
       return
     }
   }
@@ -174,10 +173,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
   try {
     const project = await prisma.project.update({ where: { id: existing.id }, data, include: projectInclude })
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
     broadcastProjectUpdate(project.id)
     res.json({ project })
   } catch {
-    res.status(400).json({ error: 'Could not update project.' })
+    sendError(res, 400, 'Could not update project.')
   }
 })
 
@@ -185,10 +185,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.project.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Project not found.' })
+    sendError(res, 404, 'Project not found.')
     return
   }
   await prisma.project.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
   broadcastProjectUpdate(existing.id)
   res.json({ message: 'Project deleted.' })
 })

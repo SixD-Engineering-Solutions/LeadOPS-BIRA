@@ -2,7 +2,11 @@ import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
-import { notifyUser, broadcastLeadUpdate } from '../services/notify'
+import { notifyUser, broadcastLeadUpdate, broadcastProposalUpdate, broadcastProjectUpdate, broadcastInvoiceUpdate } from '../services/notify'
+import { TX_OPTS } from '../utils/sequence'
+import { isAdmin } from '../utils/access'
+import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
+import { sendError } from '../utils/errors'
 
 const router = Router()
 router.use(authenticate)
@@ -25,12 +29,6 @@ const leadInclude = {
 // Employees only see leads currently assigned to them — never another
 // employee's leads, even ones they themselves created or handed off; admins
 // see everything.
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
-
 function visibilityFilter(userId: string | undefined) {
   return { assignedToUserId: userId }
 }
@@ -59,7 +57,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     include: leadInclude,
   })
   if (!lead) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
   res.json({ lead })
@@ -142,7 +140,7 @@ const clean = (s?: string) => s?.trim() || ''
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid lead data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid lead data.')
     return
   }
   const d = parse.data
@@ -157,7 +155,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const serviceType = clean(d.serviceTypeName) ? await foreServiceType(clean(d.serviceTypeName)) : null
     const assigned = clean(d.assignedToName) ? await foreUser(clean(d.assignedToName)) : null
     if (assigned?.role === 'admin') {
-      res.status(400).json({ error: 'Leads cannot be assigned to an admin user.' })
+      sendError(res, 400, 'Leads cannot be assigned to an admin user.')
       return
     }
     const status = await foreStatus(clean(d.statusName) || 'Submitted')
@@ -179,6 +177,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       },
       include: leadInclude,
     })
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, lead.id))
     broadcastLeadUpdate(lead.id)
     if (lead.assignedToUserId && lead.assignedToUserId !== req.userId) {
       notifyUser(lead.assignedToUserId, `You've been assigned a new lead: ${lead.plant.plantName}`, lead.id)
@@ -186,7 +185,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     res.status(201).json({ lead })
   } catch {
-    res.status(400).json({ error: 'Could not create lead.' })
+    sendError(res, 400, 'Could not create lead.')
   }
 })
 
@@ -200,12 +199,12 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid update data.' })
+    sendError(res, 400, 'Invalid update data.')
     return
   }
   const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
 
@@ -215,7 +214,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (parse.data.assignedToUserId) {
       const target = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { role: true } })
       if (target?.role === 'admin') {
-        res.status(400).json({ error: 'Leads cannot be assigned to an admin user.' })
+        sendError(res, 400, 'Leads cannot be assigned to an admin user.')
         return
       }
     }
@@ -232,6 +231,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       data, // updatedAt refreshes automatically (@updatedAt)
       include: leadInclude,
     })
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, lead.id))
     broadcastLeadUpdate(lead.id)
     if (
       data.assignedToUserId &&
@@ -243,7 +243,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     res.json({ lead })
   } catch {
-    res.status(400).json({ error: 'Could not update lead.' })
+    sendError(res, 400, 'Could not update lead.')
   }
 })
 
@@ -252,12 +252,45 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
-  await prisma.lead.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  // Deleting a lead takes everything built on it down with it — proposals,
+  // projects, invoices, payments, documents, its notifications and its
+  // Tracker rows — so nothing tied to a deleted lead lingers in any section.
+  // Soft delete like everywhere else (rows kept for audit, hidden from every
+  // view), all in one transaction so it can't stop halfway. Activities have
+  // no deletedAt; they're only ever reached through their lead, so they go
+  // with it.
+  const now = new Date()
+  const removed = await prisma.$transaction(async tx => {
+    const proposals = await tx.proposal.findMany({ where: { leadId: existing.id, deletedAt: null }, select: { id: true } })
+    const projects = await tx.project.findMany({ where: { leadId: existing.id, deletedAt: null }, select: { id: true } })
+    const projectIds = projects.map(p => p.id)
+    const invoices = await tx.invoice.findMany({ where: { projectId: { in: projectIds }, deletedAt: null }, select: { id: true } })
+    const invoiceIds = invoices.map(i => i.id)
+
+    await tx.payment.updateMany({ where: { invoiceId: { in: invoiceIds }, deletedAt: null }, data: { deletedAt: now } })
+    await tx.invoice.updateMany({ where: { id: { in: invoiceIds } }, data: { deletedAt: now } })
+    await tx.project.updateMany({ where: { id: { in: projectIds } }, data: { deletedAt: now } })
+    await tx.proposal.updateMany({ where: { leadId: existing.id, deletedAt: null }, data: { deletedAt: now } })
+    await tx.document.updateMany({ where: { leadId: existing.id, deletedAt: null }, data: { deletedAt: now } })
+    await tx.notification.deleteMany({ where: { leadId: existing.id } })
+    await tx.invoiceRegisterItem.deleteMany({ where: { sourceInvoiceId: { in: invoiceIds } } })
+    await tx.pipelineTrackerItem.deleteMany({ where: { sourceLeadId: existing.id } })
+    await tx.lead.update({ where: { id: existing.id }, data: { deletedAt: now } })
+
+    return { proposalIds: proposals.map(p => p.id), projectIds, invoiceIds }
+  }, TX_OPTS)
+
   broadcastLeadUpdate(existing.id)
-  res.json({ message: 'Lead deleted.' })
+  removed.proposalIds.forEach(broadcastProposalUpdate)
+  removed.projectIds.forEach(broadcastProjectUpdate)
+  removed.invoiceIds.forEach(broadcastInvoiceUpdate)
+  res.json({
+    message: 'Lead deleted.',
+    removed: { proposals: removed.proposalIds.length, projects: removed.projectIds.length, invoices: removed.invoiceIds.length },
+  })
 })
 
 export default router

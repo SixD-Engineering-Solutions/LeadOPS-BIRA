@@ -6,6 +6,7 @@ import { prisma } from '../prisma'
 import { signAccessToken, signEmailVerifiedToken, verifyEmailVerifiedToken } from '../utils/jwt'
 import { sendOtpEmail } from '../services/email'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
+import { sendError } from '../utils/errors'
 
 const router = Router()
 
@@ -13,14 +14,14 @@ const router = Router()
 router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email() }).safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid email address.' })
+    sendError(res, 400, 'Invalid email address.')
     return
   }
   const { email } = parse.data
 
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing && existing.isActive) {
-    res.status(409).json({ error: 'An account with this email already exists.' })
+    sendError(res, 409, 'An account with this email already exists.')
     return
   }
 
@@ -36,7 +37,7 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
     await sendOtpEmail(email, otp)
   } catch (err) {
     console.error('Failed to send OTP email:', err)
-    res.status(502).json({ error: 'Could not send the verification email. Please try again later.' })
+    sendError(res, 502, 'Could not send the verification email. Please try again later.')
     return
   }
 
@@ -47,7 +48,7 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
 router.post('/verify-otp', async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email(), otp: z.string().length(6) }).safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Email and 6-digit OTP are required.' })
+    sendError(res, 400, 'Email and 6-digit OTP are required.')
     return
   }
   const { email, otp } = parse.data
@@ -58,13 +59,13 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
   })
 
   if (!record || record.expiresAt < new Date()) {
-    res.status(400).json({ error: 'OTP expired or not found. Please request a new one.' })
+    sendError(res, 400, 'OTP expired or not found. Please request a new one.')
     return
   }
 
   const valid = await bcrypt.compare(otp, record.otpHash)
   if (!valid) {
-    res.status(400).json({ error: 'Incorrect OTP.' })
+    sendError(res, 400, 'Incorrect OTP.')
     return
   }
 
@@ -81,7 +82,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
     password: z.string().min(6),
   }).safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'emailVerifiedToken and password (min 6 chars) are required.' })
+    sendError(res, 400, 'emailVerifiedToken and password (min 6 chars) are required.')
     return
   }
 
@@ -89,7 +90,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
   try {
     email = verifyEmailVerifiedToken(parse.data.emailVerifiedToken).email
   } catch {
-    res.status(400).json({ error: 'Email verification expired. Please start the signup again.' })
+    sendError(res, 400, 'Email verification expired. Please start the signup again.')
     return
   }
 
@@ -97,7 +98,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
 
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing && existing.isActive) {
-    res.status(409).json({ error: 'An account with this email already exists.' })
+    sendError(res, 409, 'An account with this email already exists.')
     return
   }
 
@@ -113,7 +114,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email(), password: z.string() }).safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Email and password are required.' })
+    sendError(res, 400, 'Email and password are required.')
     return
   }
   const { email, password } = parse.data
@@ -123,11 +124,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const match = user?.passwordHash ? await bcrypt.compare(password, user.passwordHash) : false
 
   if (!user || !match) {
-    res.status(401).json({ error: 'Invalid email or password.' })
+    sendError(res, 401, 'Invalid email or password.')
     return
   }
   if (!user.isActive) {
-    res.status(403).json({ error: 'This account has been removed.' })
+    sendError(res, 403, 'This account has been removed.')
     return
   }
 
@@ -145,7 +146,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 // Remove alongside the frontend dev bypass once real auth is used everywhere.
 router.post('/dev-login', async (_req: Request, res: Response): Promise<void> => {
   if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_LOGIN !== 'true') {
-    res.status(404).json({ error: 'Not found.' })
+    sendError(res, 404, 'Not found.')
     return
   }
   const email = 'dev@leadops.local'
@@ -160,7 +161,7 @@ router.post('/dev-login', async (_req: Request, res: Response): Promise<void> =>
     res.json({ accessToken, user: { id: user.id, email: user.email } })
   } catch (err) {
     console.error('dev-login failed:', err)
-    res.status(503).json({ error: 'Database unavailable — cannot issue a dev token yet.' })
+    sendError(res, 503, 'Database unavailable — cannot issue a dev token yet.')
   }
 })
 
@@ -171,7 +172,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     select: { id: true, email: true, role: true, createdAt: true },
   })
   if (!user) {
-    res.status(404).json({ error: 'User not found.' })
+    sendError(res, 404, 'User not found.')
     return
   }
   res.json({ user })

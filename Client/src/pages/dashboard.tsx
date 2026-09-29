@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
-import type { AuthUser, EmployeeUser, Lead, Task, Activity, Proposal, Invoice } from '../lib/api'
+import type { AuthUser, Lead } from '../lib/api'
 import Leads from './leads'
 import Reports from './reports'
 import Team from './team'
@@ -10,63 +9,22 @@ import Projects from './projects'
 import Invoices from './invoices'
 import Tenders from './tenders'
 import Tracker from './tracker'
-import { taskStatusStyle, fmtTaskDeadline, isTaskOverdue } from '../lib/taskDisplay'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
 import LeadDetailModal from '../components/LeadDetailModal'
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-/** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
-function displayName(email: string): string {
-  const raw = email.split('@')[0].replace(/[._-]+/g, ' ').trim()
-  return raw.replace(/\b\w/g, c => c.toUpperCase()) || 'User'
-}
-
-function initials(name: string): string {
-  const parts = name.split(' ').filter(Boolean)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'U'
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  Submitted: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  'In Process': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  Dead: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-}
-const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? ''] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-const fmtDate = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-
-// ─── icons (inline, stroke-based to match the login page) ───────────────────────
-
-type IconProps = { className?: string }
-const Icon = ({ d, className = 'h-5 w-5' }: { d: string } & IconProps) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-    <path strokeLinecap="round" strokeLinejoin="round" d={d} />
-  </svg>
-)
-
-const icons = {
-  dashboard: 'M4 5a1 1 0 011-1h5v7H4V5zm0 9h6v6H5a1 1 0 01-1-1v-5zm10-10h5a1 1 0 011 1v5h-6V4zm0 9h6v6a1 1 0 01-1 1h-5v-7z',
-  leadGen: 'M12 3v3m0 12v3m9-9h-3M6 12H3m14.5-5.5L15 9m-6 6l-2.5 2.5m11 0L15 15m-6-6L6.5 6.5M12 8a4 4 0 100 8 4 4 0 000-8z',
-  leads: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-2a3 3 0 10-2.5-4.5',
-  campaigns: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z',
-  proposals: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-  projects: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
-  invoices: 'M9 14l2 2 4-4m5-6v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5z',
-  tenders: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l7-3 7 3z',
-  tracker: 'M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM3 10h18M9 4v16',
-  reports: 'M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z',
-  tasks: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
-  team: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
-  settings: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z',
-  signout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
-  setup: 'M4 7l8-4 8 4-8 4-8-4zm0 5l8 4 8-4M4 17l8 4 8-4',
-  search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
-  bell: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
-  chevronLeft: 'M15 19l-7-7 7-7',
-  menu: 'M4 6h16M4 12h16M4 18h16',
-  close: 'M6 18L18 6M6 6l12 12',
-}
+import { Icon, icons } from '../components/dashboard/icons'
+import { DashboardSidebar, displayName, type NavItem } from '../components/dashboard/DashboardSidebar'
+import { StatTiles } from '../components/dashboard/StatTiles'
+import { FollowUpsPanel } from '../components/dashboard/FollowUpsPanel'
+import { PendingPaymentsPanel } from '../components/dashboard/PendingPaymentsPanel'
+import { TasksPanel } from '../components/dashboard/TasksPanel'
+import { LeadAssignmentsModal } from '../components/dashboard/LeadAssignmentsModal'
+import { useLeadStats } from '../hooks/useLeadStats'
+import { useProposalStats } from '../hooks/useProposalStats'
+import { usePendingInvoices } from '../hooks/usePendingInvoices'
+import { useMyTasks } from '../hooks/useMyTasks'
+import { useFollowUps } from '../hooks/useFollowUps'
+import { api } from '../lib/api'
 
 // ─── module cards shown in the main area ────────────────────────────────────────
 
@@ -88,58 +46,6 @@ const ADMIN_MODULES: Module[] = [
   { key: 'team', title: 'Team Management', desc: 'Manage members, roles and permissions.', icon: icons.team, action: 'Manage', accent: 'from-rose-400 to-pink-400', glow: 'rgba(251,113,133,0.45)' },
 ]
 
-// ─── stat-tile micro-visualizations ────────────────────────────────────────────
-
-// Thin upward line (2px, rounded ends) with a small end marker. Emerald = growth.
-function Sparkline({ data }: { data: number[] }) {
-  if (data.length < 2) return <div className="h-6 w-[72px]" />
-  const w = 72, h = 24
-  const max = Math.max(...data), min = Math.min(...data)
-  const range = max - min || 1
-  const y = (v: number) => h - ((v - min) / range) * h
-  const pts = data.map((v, i) => `${((i / (data.length - 1)) * w).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible" aria-hidden="true">
-      <polyline points={pts} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={w} cy={y(data[data.length - 1])} r="2.5" fill="#10b981" />
-    </svg>
-  )
-}
-
-// Circular progress ring for a percentage. Track + orange arc.
-function Ring({ pct }: { pct: number }) {
-  const r = 15, c = 2 * Math.PI * r
-  const dash = (Math.max(0, Math.min(pct, 100)) / 100) * c
-  return (
-    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-      <circle cx="20" cy="20" r={r} fill="none" stroke="#eef2f7" strokeWidth="4" />
-      <circle cx="20" cy="20" r={r} fill="none" stroke="#f97316" strokeWidth="4" strokeLinecap="round"
-        strokeDasharray={`${dash} ${c}`} transform="rotate(-90 20 20)" />
-    </svg>
-  )
-}
-
-// Proportional status dots (In Process / Submitted / Dead). Each dot carries a
-// title so its status is available without relying on color alone.
-function StatusDots({ counts }: { counts: { submitted: number; inProcess: number; dead: number } }) {
-  const groups = [
-    { title: 'In Process', n: counts.inProcess, color: '#f59e0b' },
-    { title: 'Submitted', n: counts.submitted, color: '#0ea5e9' },
-    { title: 'Dead', n: counts.dead, color: '#f43f5e' },
-  ]
-  const dots = groups.flatMap(g => Array.from({ length: g.n }, () => ({ title: g.title, color: g.color })))
-  const shown = dots.slice(0, 14)
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {dots.length === 0 && <span className="text-[10px] text-gray-300 dark:text-gray-600">no leads</span>}
-      {shown.map((d, i) => (
-        <span key={i} title={d.title} className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
-      ))}
-      {dots.length > shown.length && <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500">+{dots.length - shown.length}</span>}
-    </div>
-  )
-}
-
 // ─── component ──────────────────────────────────────────────────────────────────
 
 export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignOut: () => void }) {
@@ -149,7 +55,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   const modules = isAdmin ? [...CORE_MODULES, ...ADMIN_MODULES] : CORE_MODULES
 
-  const navItems = [
+  const navItems: NavItem[] = [
     { key: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
     { key: 'lead-gen', label: 'Leads', icon: icons.leadGen },
     { key: 'proposals', label: 'Proposals', icon: icons.proposals },
@@ -166,6 +72,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   // already-open tab happens to be.
   const [active, setActive] = useState(() => sessionStorage.getItem('leadops_tab') ?? 'dashboard')
   useEffect(() => { sessionStorage.setItem('leadops_tab', active) }, [active])
+  const onDashboard = active === 'dashboard'
 
   // Sidebar starts collapsed to icons; hovering over it reveals the full menu.
   // On narrow screens there's no hover, so the sidebar is off-canvas instead —
@@ -177,181 +84,14 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const expanded = !collapsed || mobileNavOpen
   const [demoNote, setDemoNote] = useState<string | null>(null)
 
-  // Live lead stats for the tiles. Refreshed each time the dashboard is shown.
-  const [stats, setStats] = useState({
-    total: 0, active: 0, conversion: 0, converted: 0, weekAdded: 0,
-    spark: [] as number[],
-    counts: { submitted: 0, inProcess: 0, dead: 0 },
-    loaded: false,
-  })
-  // Raw leads + employees, kept alongside the derived stats above so the
-  // "Total Leads" tile can show who each one is assigned to on click.
-  // Admin-only: who has what assigned is workforce-management info, not
-  // something every employee should see about their teammates.
-  const [allLeads, setAllLeads] = useState<Lead[]>([])
-  const [employees, setEmployees] = useState<EmployeeUser[]>([])
   const [showAssignments, setShowAssignments] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
-  function refreshStats() {
-    return Promise.all([
-      api<{ leads: Lead[] }>('/leads', { auth: true }),
-      isAdmin ? api<{ users: EmployeeUser[] }>('/users', { auth: true }) : Promise.resolve({ users: [] as EmployeeUser[] }),
-    ])
-      .then(([{ leads }, { users }]) => {
-        setAllLeads(leads)
-        setEmployees(users)
-        const total = leads.length
-        const byName = (n: string) => leads.filter(l => l.status?.statusName === n).length
-        const inProcess = byName('In Process')
-        // "Converted" = progressed beyond the initial stage (In Progress or a Won/completed category).
-        const converted = leads.filter(l => {
-          const c = l.status?.statusCategory
-          return c === 'In Progress' || c === 'Closed Won'
-        }).length
-        // Cumulative leads created over the last 7 days → a naturally upward line.
-        const now = new Date()
-        const spark = Array.from({ length: 7 }, (_, i) => {
-          const end = new Date(now)
-          end.setDate(now.getDate() - (6 - i))
-          end.setHours(23, 59, 59, 999)
-          return leads.filter(l => new Date(l.createdAt) <= end).length
-        })
-        const weekAgo = new Date(now)
-        weekAgo.setDate(now.getDate() - 7)
-        const weekAdded = leads.filter(l => new Date(l.createdAt) >= weekAgo).length
-        setStats({
-          total, active: inProcess,
-          conversion: total ? Math.round((converted / total) * 1000) / 10 : 0,
-          converted, weekAdded,
-          spark,
-          counts: { submitted: byName('Submitted'), inProcess, dead: byName('Dead') },
-          loaded: true,
-        })
-      })
-      .catch(() => setStats({
-        total: 0, active: 0, conversion: 0, converted: 0, weekAdded: 0,
-        spark: [], counts: { submitted: 0, inProcess: 0, dead: 0 }, loaded: false,
-      }))
-  }
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    refreshStats()
-  }, [active, isAdmin])
-
-  // Live updates — a lead created/updated/deleted anywhere (by this admin on
-  // another tab, or by anyone else) pings every connected client over SSE (see
-  // NotificationBell). Re-pull the stats so the tiles don't go stale while the
-  // dashboard is sitting open.
-  useEffect(() => {
-    function onLeadSync() {
-      if (active !== 'dashboard') return
-      refreshStats()
-    }
-    window.addEventListener(LEAD_SYNC_EVENT, onLeadSync)
-    return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
-  }, [active, isAdmin])
-
-  // Pending proposal value — sum of proposals not yet Won/Lost. Feeds the
-  // "Pipeline Value" tile that replaced the old unwired "Revenue" placeholder.
-  const [proposalStats, setProposalStats] = useState({
-    pendingValue: 0, pendingCount: 0,
-    wonValue: 0, wonCount: 0,
-    lostValue: 0, lostCount: 0,
-    loaded: false,
-  })
-  function refreshProposalStats() {
-    api<{ proposals: Proposal[] }>('/proposals', { auth: true })
-      .then(({ proposals }) => {
-        const pending = proposals.filter(p => p.status !== 'Won' && p.status !== 'Lost')
-        const won = proposals.filter(p => p.status === 'Won')
-        const lost = proposals.filter(p => p.status === 'Lost')
-        setProposalStats({
-          pendingValue: pending.reduce((sum, p) => sum + (p.value ?? 0), 0), pendingCount: pending.length,
-          wonValue: won.reduce((sum, p) => sum + (p.value ?? 0), 0), wonCount: won.length,
-          lostValue: lost.reduce((sum, p) => sum + (p.value ?? 0), 0), lostCount: lost.length,
-          loaded: true,
-        })
-      })
-      .catch(() => setProposalStats({ pendingValue: 0, pendingCount: 0, wonValue: 0, wonCount: 0, lostValue: 0, lostCount: 0, loaded: false }))
-  }
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    refreshProposalStats()
-  }, [active, isAdmin])
-  useEffect(() => {
-    function onProposalSync() {
-      if (active !== 'dashboard') return
-      refreshProposalStats()
-    }
-    window.addEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
-    return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
-  }, [active])
-
-  // Pending payments — invoices with an amount still outstanding.
-  const [pendingInvoices, setPendingInvoices] = useState<{ invoices: Invoice[]; loaded: boolean }>({ invoices: [], loaded: false })
-  function refreshPendingInvoices() {
-    api<{ invoices: Invoice[] }>('/invoices', { auth: true })
-      .then(({ invoices }) => {
-        const pending = invoices.filter(i => i.amount - i.payments.reduce((sum, p) => sum + p.amountReceived, 0) > 0)
-        setPendingInvoices({ invoices: pending, loaded: true })
-      })
-      .catch(() => setPendingInvoices({ invoices: [], loaded: false }))
-  }
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    refreshPendingInvoices()
-  }, [active, isAdmin])
-  useEffect(() => {
-    function onInvoiceSync() {
-      if (active !== 'dashboard') return
-      refreshPendingInvoices()
-    }
-    window.addEventListener(INVOICE_SYNC_EVENT, onInvoiceSync)
-    return () => window.removeEventListener(INVOICE_SYNC_EVENT, onInvoiceSync)
-  }, [active])
-
-  // This employee's own assigned tasks, for the "Tasks" section on the
-  // dashboard home. Admins are never assignable (enforced server-side), so
-  // this stays empty — and hidden — for admin accounts.
-  const [myTasks, setMyTasks] = useState<Task[]>([])
-  function refreshMyTasks() {
-    if (isAdmin) return
-    api<{ tasks: Task[] }>('/tasks', { auth: true }).then(({ tasks }) => setMyTasks(tasks)).catch(() => {})
-  }
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    refreshMyTasks()
-  }, [active, isAdmin])
-  useEffect(() => {
-    function onTaskSync() {
-      if (active !== 'dashboard') return
-      refreshMyTasks()
-    }
-    window.addEventListener(TASK_SYNC_EVENT, onTaskSync)
-    return () => window.removeEventListener(TASK_SYNC_EVENT, onTaskSync)
-  }, [active, isAdmin])
-
-  // Follow-up buckets (today / overdue / upcoming) from the activity log —
-  // admins see everyone's, employees see only their own leads' follow-ups.
-  const [followUps, setFollowUps] = useState({ today: [] as Activity[], overdue: [] as Activity[], upcoming: [] as Activity[], loaded: false })
-  function refreshFollowUps() {
-    api<{ today: Activity[]; overdue: Activity[]; upcoming: Activity[] }>('/activities/follow-ups', { auth: true })
-      .then(d => setFollowUps({ ...d, loaded: true }))
-      .catch(() => setFollowUps({ today: [], overdue: [], upcoming: [], loaded: false }))
-  }
-  useEffect(() => {
-    if (active !== 'dashboard') return
-    refreshFollowUps()
-  }, [active, isAdmin])
-  useEffect(() => {
-    function onActivitySync() {
-      if (active !== 'dashboard') return
-      refreshFollowUps()
-    }
-    window.addEventListener(ACTIVITY_SYNC_EVENT, onActivitySync)
-    return () => window.removeEventListener(ACTIVITY_SYNC_EVENT, onActivitySync)
-  }, [active])
+  const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard, isAdmin)
+  const { proposalStats, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
+  const { pendingInvoices, error: pendingInvoicesError, reload: reloadPendingInvoices } = usePendingInvoices(onDashboard)
+  const { myTasks, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
+  const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard)
 
   // Opens the full lead detail modal from a follow-up entry (which only carries
   // a slim lead summary) by fetching the complete Lead record.
@@ -389,86 +129,19 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      {/* Backdrop — mobile only, closes the off-canvas nav on tap. */}
-      {mobileNavOpen && (
-        <div onClick={() => setMobileNavOpen(false)} className="fixed inset-0 z-20 bg-black/40 md:hidden" aria-hidden="true" />
-      )}
-      <aside
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className={`fixed inset-y-0 left-0 z-30 flex shrink-0 flex-col border-r border-gray-200 bg-white transition-transform duration-200 dark:border-gray-800 dark:bg-gray-900
-          md:static md:transition-[width]
-          ${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
-          ${expanded ? 'w-64' : 'w-20'}`}
-      >
-        {/* logo */}
-        <div className={`flex h-16 items-center gap-2 border-b border-gray-100 dark:border-gray-800 ${expanded ? 'px-6' : 'justify-center px-2'}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose-400 to-orange-400 text-white font-bold">L</div>
-          {expanded && <span className="text-lg font-bold tracking-tight">LeadOps</span>}
-          {/* close button — mobile only */}
-          <button onClick={() => setMobileNavOpen(false)} className="ml-auto rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 md:hidden" aria-label="Close menu">
-            <Icon d={icons.close} className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* user profile */}
-        <div className={`border-b border-gray-100 py-4 dark:border-gray-800 ${expanded ? 'px-4' : 'px-2'}`}>
-          <div className={`flex items-center rounded-xl bg-gray-50 p-3 dark:bg-gray-800 ${expanded ? 'gap-3' : 'justify-center'}`}>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-orange-400 text-white font-semibold">
-              {initials(name)}
-            </div>
-            {expanded && (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
-                <span
-                  className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize
-                    ${isAdmin ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300'}`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${isAdmin ? 'bg-orange-500' : 'bg-sky-500'}`} />
-                  {role}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* nav */}
-        <nav className={`flex-1 overflow-y-auto py-4 ${expanded ? 'px-3' : 'px-2'}`}>
-          {expanded && <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Menu</p>}
-          <ul className="flex flex-col gap-1">
-            {navItems.map(item => (
-              <li key={item.key}>
-                <button
-                  onClick={() => openModule(item)}
-                  title={!expanded ? item.label : undefined}
-                  className={`flex w-full items-center rounded-xl py-2.5 text-sm font-medium transition
-                    ${expanded ? 'gap-3 px-3' : 'justify-center px-2'}
-                    ${active === item.key
-                      ? 'bg-gradient-to-r from-rose-50 to-orange-50 text-orange-600 dark:from-rose-950/40 dark:to-orange-950/40 dark:text-orange-400'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
-                >
-                  <Icon d={item.icon} className={`h-5 w-5 shrink-0 ${active === item.key ? 'text-orange-500 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                  {expanded && item.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        {/* sign out */}
-        <div className="border-t border-gray-100 p-3 dark:border-gray-800">
-          <button
-            onClick={onSignOut}
-            title={!expanded ? 'Sign out' : undefined}
-            className={`flex w-full items-center rounded-xl py-2.5 text-sm font-medium text-gray-600 transition hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400
-              ${expanded ? 'gap-3 px-3' : 'justify-center px-2'}`}
-          >
-            <Icon d={icons.signout} className="h-5 w-5 shrink-0" />
-            {expanded && 'Sign out'}
-          </button>
-        </div>
-      </aside>
+      <DashboardSidebar
+        name={name}
+        role={role}
+        isAdmin={isAdmin}
+        navItems={navItems}
+        active={active}
+        expanded={expanded}
+        mobileNavOpen={mobileNavOpen}
+        onHoverChange={setHovered}
+        onCloseMobileNav={() => setMobileNavOpen(false)}
+        onSelect={openModule}
+        onSignOut={onSignOut}
+      />
 
       {/* ── Main ────────────────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto">
@@ -507,7 +180,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'tenders' ? (
           <Tenders />
         ) : active === 'tracker' ? (
-          <Tracker />
+          <Tracker isAdmin={isAdmin} />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (
@@ -517,195 +190,38 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             </div>
           )}
 
-          {/* stat tiles */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-            {/* Total Leads — upward sparkline. Click to see who each lead is
-                assigned to (admin), or the details of your own leads (employee). */}
-            <button
-              type="button"
-              onClick={() => stats.loaded && setShowAssignments(true)}
-              disabled={!stats.loaded}
-              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Leads</p>
-                {stats.loaded && (
-                  <svg className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                )}
-              </div>
-              <div className="mt-1 flex items-end justify-between gap-2">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.loaded ? stats.total.toLocaleString() : '—'}</p>
-                  <p className={`mt-0.5 text-[11px] font-medium ${stats.loaded && stats.weekAdded > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`}>
-                    {stats.loaded ? (stats.weekAdded > 0 ? `+${stats.weekAdded} this week` : 'No new this week') : ' '}
-                  </p>
-                </div>
-                <Sparkline data={stats.spark} />
-              </div>
-            </button>
+          <StatTiles
+            stats={stats}
+            proposalStats={proposalStats}
+            leadStatsError={leadStatsError}
+            proposalStatsError={proposalStatsError}
+            onRetryLeadStats={reloadLeadStats}
+            onRetryProposalStats={reloadProposalStats}
+            onOpenAssignments={() => setShowAssignments(true)}
+            onOpenProposals={() => openModule({ key: 'proposals', label: 'Proposals' })}
+          />
 
-            {/* Conversion Rate — circular progress ring */}
-            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Conversion Rate</p>
-              <div className="mt-1 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.loaded ? `${stats.conversion}%` : '—'}</p>
-                  <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                    {stats.loaded ? `${stats.converted} of ${stats.total} converted` : ' '}
-                  </p>
-                </div>
-                <Ring pct={stats.loaded ? stats.conversion : 0} />
-              </div>
-            </div>
+          <FollowUpsPanel
+            followUps={followUps}
+            error={followUpsError}
+            onRetry={reloadFollowUps}
+            onOpenLead={openLeadById}
+          />
 
-            {/* Active Campaigns — status dots */}
-            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Active Campaigns</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.loaded ? String(stats.active) : '—'}</p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {stats.loaded ? (stats.total ? `${Math.round((stats.active / stats.total) * 100)}% of pipeline` : 'No leads yet') : ' '}
-              </p>
-              <div className="mt-2 h-4">{stats.loaded && <StatusDots counts={stats.counts} />}</div>
-            </div>
+          <PendingPaymentsPanel
+            pendingInvoices={pendingInvoices}
+            error={pendingInvoicesError}
+            onRetry={reloadPendingInvoices}
+            onOpenInvoices={() => openModule({ key: 'invoices', label: 'Invoices' })}
+          />
 
-            {/* Pipeline Value — sum of open (not Won/Lost) proposal values */}
-            <button
-              type="button"
-              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
-              disabled={!proposalStats.loaded}
-              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
-            >
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Pipeline Value</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {proposalStats.loaded ? `₹${proposalStats.pendingValue.toLocaleString()}` : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {proposalStats.loaded ? `${proposalStats.pendingCount} open proposal${proposalStats.pendingCount === 1 ? '' : 's'}` : ' '}
-              </p>
-            </button>
-
-            {/* Orders Received — sum of Won proposal values */}
-            <button
-              type="button"
-              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
-              disabled={!proposalStats.loaded}
-              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
-            >
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Orders Received</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                {proposalStats.loaded ? `₹${proposalStats.wonValue.toLocaleString()}` : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {proposalStats.loaded ? `${proposalStats.wonCount} won proposal${proposalStats.wonCount === 1 ? '' : 's'}` : ' '}
-              </p>
-            </button>
-
-            {/* Lost Deals — count + value of Lost proposals */}
-            <button
-              type="button"
-              onClick={() => proposalStats.loaded && openModule({ key: 'proposals', label: 'Proposals' })}
-              disabled={!proposalStats.loaded}
-              className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
-            >
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Lost Deals</p>
-              <p className="mt-1 text-2xl font-bold text-rose-500 dark:text-rose-400">
-                {proposalStats.loaded ? String(proposalStats.lostCount) : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {proposalStats.loaded ? `₹${proposalStats.lostValue.toLocaleString()} lost value` : ' '}
-              </p>
-            </button>
-          </div>
-
-          {/* follow-ups — from the activity log's next-action dates */}
-          {followUps.loaded && (followUps.overdue.length + followUps.today.length + followUps.upcoming.length > 0) && (
-            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Follow-ups</h3>
-              </div>
-              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
-                {[...followUps.overdue, ...followUps.today].map(a => (
-                  <li
-                    key={a.id}
-                    onClick={() => openLeadById(a.leadId)}
-                    className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-gray-800/60"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{a.lead?.plant?.plantName ?? '—'}</p>
-                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{a.activityType} · next action {fmtDate(a.nextActionDate!)}</p>
-                    </div>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${followUps.overdue.includes(a) ? 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800' : 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800'}`}>
-                      {followUps.overdue.includes(a) ? 'Overdue' : 'Today'}
-                    </span>
-                  </li>
-                ))}
-                {followUps.upcoming.length > 0 && (
-                  <li className="px-5 py-2.5 text-xs text-gray-400 dark:text-gray-500">
-                    +{followUps.upcoming.length} upcoming in the next 7 days
-                  </li>
-                )}
-              </ul>
-            </div>
-          )}
-
-          {/* pending payments — invoices with money still outstanding */}
-          {pendingInvoices.loaded && pendingInvoices.invoices.length > 0 && (
-            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Pending Payments</h3>
-              </div>
-              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
-                {pendingInvoices.invoices.map(inv => {
-                  const outstanding = inv.amount - inv.payments.reduce((sum, p) => sum + p.amountReceived, 0)
-                  return (
-                    <li
-                      key={inv.id}
-                      onClick={() => openModule({ key: 'invoices', label: 'Invoices' })}
-                      className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-gray-800/60"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{inv.invoiceNumber} — {inv.project?.projectName ?? '—'}</p>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Due {fmtDate(inv.dueDate ?? inv.createdAt)}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
-                        ₹{outstanding.toLocaleString()} due
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
-
-          {/* tasks — only appears once something has actually been assigned */}
-          {!isAdmin && myTasks.length > 0 && (
-            <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  Tasks <span className="text-gray-400 dark:text-gray-500">({myTasks.length})</span>
-                </h3>
-                <button onClick={() => openModule({ key: 'tasks', label: 'Tasks' })} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">View all</button>
-              </div>
-              <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
-                {myTasks.map(task => (
-                  <li key={task.id} className="flex items-start justify-between gap-3 px-5 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{task.title}</p>
-                      {task.description && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{task.description}</p>}
-                      <p className={`mt-1 text-xs font-medium ${isTaskOverdue(task) ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>
-                        Due {fmtTaskDeadline(task.deadline)}{isTaskOverdue(task) ? ' · overdue' : ''}
-                      </p>
-                    </div>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${taskStatusStyle(task.status)}`}>
-                      {task.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <TasksPanel
+            isAdmin={isAdmin}
+            myTasks={myTasks}
+            error={myTasksError}
+            onRetry={reloadMyTasks}
+            onViewAll={() => openModule({ key: 'tasks', label: 'Tasks' })}
+          />
 
           {/* modules */}
           <div className="mt-8 mb-3 flex items-center justify-between">
@@ -742,129 +258,14 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
       {/* ── Lead assignment breakdown modal (admin), or "my leads" list (employee) ── */}
       {showAssignments && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
-          onClick={() => setShowAssignments(false)}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-gray-100 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
-          >
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{isAdmin ? 'Lead Assignments' : 'My Leads'}</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {stats.total} lead{stats.total === 1 ? '' : 's'} total
-                  {isAdmin && unassignedLeads.length > 0 ? ` · ${unassignedLeads.length} unassigned` : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAssignments(false)}
-                className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 text-base leading-none"
-                aria-label="Close"
-              >✕</button>
-            </div>
-
-            <div className="overflow-y-auto px-5 py-3">
-              {!isAdmin ? (
-                allLeads.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No leads assigned to you yet.</p>
-                ) : (
-                  <ul className="space-y-1.5 py-1">
-                    {allLeads.map(lead => (
-                      <li
-                        key={lead.id}
-                        onClick={() => setSelectedLead(lead)}
-                        className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
-                      >
-                        <span className="truncate text-gray-700 dark:text-gray-300">{lead.plant?.plantName ?? '—'}</span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
-                          <span className={`rounded-full px-2 py-0.5 font-semibold ${statusStyle(lead.status?.statusName)}`}>
-                            {lead.status?.statusName ?? 'Submitted'}
-                          </span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )
-              ) : assignmentGroups.length === 0 && unassignedLeads.length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No leads yet.</p>
-              ) : (
-                <>
-                  {assignmentGroups.length === 0 && (
-                    <p className="py-2 text-center text-sm text-gray-400 dark:text-gray-500">No leads assigned to anyone yet.</p>
-                  )}
-                  {assignmentGroups.map(({ user: u, leads: userLeads }) => {
-                    const uName = u.userName || displayName(u.email)
-                    return (
-                      <div key={u.id} className="border-b border-gray-50 py-3 last:border-b-0 dark:border-gray-800/60">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-orange-400 text-[11px] font-semibold text-white">
-                            {initials(uName)}
-                          </div>
-                          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{uName}</p>
-                          <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                            {userLeads.length} lead{userLeads.length === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                        <ul className="mt-2 ml-9 space-y-1.5">
-                          {userLeads.map(lead => (
-                            <li
-                              key={lead.id}
-                              onClick={() => setSelectedLead(lead)}
-                              className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
-                            >
-                              <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.plantName ?? '—'}</span>
-                              <span className="flex shrink-0 items-center gap-2">
-                                <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
-                                <span className={`rounded-full px-2 py-0.5 font-semibold ${statusStyle(lead.status?.statusName)}`}>
-                                  {lead.status?.statusName ?? 'Submitted'}
-                                </span>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )
-                  })}
-                  {unassignedLeads.length > 0 && (
-                    <div className="pt-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1z" />
-                          </svg>
-                        </div>
-                        <p className="flex-1 text-sm font-semibold text-gray-500 dark:text-gray-400">Unassigned</p>
-                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                          {unassignedLeads.length} lead{unassignedLeads.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      <ul className="mt-2 ml-9 space-y-1.5">
-                        {unassignedLeads.map(lead => (
-                          <li
-                            key={lead.id}
-                            onClick={() => setSelectedLead(lead)}
-                            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
-                          >
-                            <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.plantName ?? '—'}</span>
-                            <span className="flex shrink-0 items-center gap-2">
-                              <span className="text-gray-400 dark:text-gray-500">{fmtDate(lead.updatedAt)}</span>
-                              <span className={`rounded-full px-2 py-0.5 font-semibold ${statusStyle(lead.status?.statusName)}`}>
-                                {lead.status?.statusName ?? 'Submitted'}
-                              </span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <LeadAssignmentsModal
+          isAdmin={isAdmin}
+          allLeads={allLeads}
+          assignmentGroups={assignmentGroups}
+          unassignedLeads={unassignedLeads}
+          onClose={() => setShowAssignments(false)}
+          onSelectLead={lead => { setSelectedLead(lead) }}
+        />
       )}
 
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, TASK_SYNC_EVENT } from '../lib/api'
 import type { Task, EmployeeUser } from '../lib/api'
 import { taskStatusStyle as statusStyle, fmtTaskDeadline as fmtDeadline, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 const STATUSES = ['Pending', 'In Progress', 'Done'] as const
 
@@ -158,7 +159,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
-        {error && <div className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+        {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
           <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>

@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
+import { sendError } from '../utils/errors'
 
 // Expos/visits are org-wide reference data (like Client/Vertical/Sector), not
 // scoped to one employee — every authenticated user can view and add them.
@@ -28,7 +29,7 @@ const createSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid event data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid event data.')
     return
   }
   const d = parse.data

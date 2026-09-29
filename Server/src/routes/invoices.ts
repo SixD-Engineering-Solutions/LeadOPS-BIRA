@@ -5,6 +5,9 @@ import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastInvoiceUpdate } from '../services/notify'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
+import { isAdmin, canAccessProject } from '../utils/access'
+import { sendError } from '../utils/errors'
+import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 
 type Db = typeof prisma | Prisma.TransactionClient
 
@@ -24,14 +27,6 @@ const invoiceInclude = {
 } as const
 
 // Same visibility rule as elsewhere: employees only see invoices on their own leads' projects, admins see all.
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
-async function canAccessProject(projectId: string, userId: string | undefined, admin: boolean) {
-  return prisma.project.findFirst({ where: { id: projectId, deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: userId } }) } })
-}
 async function findAccessibleInvoice(id: string, userId: string | undefined, admin: boolean) {
   return prisma.invoice.findFirst({
     where: { id, deletedAt: null, ...(admin ? {} : { project: { lead: { assignedToUserId: userId } } }) },
@@ -57,6 +52,8 @@ async function totalPaid(db: Db, invoiceId: string): Promise<number> {
 // derived, never hand-set, so they can't drift out of sync with payments.
 // Draft/Sent/Overdue stay manual (Overdue has no time-based auto-trigger —
 // there's no background job in this app — so it's set by whoever notices).
+// Doesn't sync to the Tracker itself — see the note on `syncInvoiceToTracker`
+// below on why that's deliberately kept out of this (and every) transaction.
 async function recomputeStatus(db: Db, invoiceId: string): Promise<void> {
   const invoice = await db.invoice.findUnique({ where: { id: invoiceId } })
   if (!invoice) return
@@ -74,6 +71,115 @@ async function recomputeStatus(db: Db, invoiceId: string): Promise<void> {
   if (nextStatus !== invoice.status) {
     await db.invoice.update({ where: { id: invoiceId }, data: { status: nextStatus } })
   }
+}
+
+
+// Mirrors a Paid invoice into `InvoiceRegisterItem` (the Tracker's Invoice
+// Register) so it shows up alongside the imported historical data —
+// `sourceInvoiceId` marks the row as live-synced (vs. `null` for everything
+// from the original Excel import); the client uses that to pin/highlight
+// these as trial entries, and `DELETE /tracker/invoices/trial-entries`
+// (admin-only) uses it to clear them before a real deployment. Keyed by
+// `sourceInvoiceId` (unique), so re-running this on the same invoice updates
+// its one row rather than creating duplicates.
+//
+// Called from every route below with the invoice's already-current status —
+// after the payment/status-change transaction has committed, never from
+// inside one. This does a handful of extra reads/writes (the deep include
+// below, plus the upsert), which is fine on its own but is exactly the kind
+// of added latency that pushed a real concurrency test over its timeout when
+// it was first wired in *inside* the payment-creation transaction (that
+// transaction is already tuned tight — see TX_OPTS — specifically so N-way
+// concurrent requests all fit inside it under this DB plan's connection
+// cap). Keeping this call after commit means it can take its time without
+// holding a row lock or eating into that budget; `syncTrackerBestEffort`
+// (below each call site) also means a failure here never fails the request
+// that triggered it — worst case, the Tracker mirror lags until the next
+// event resyncs it, not the actual invoice/payment write.
+async function syncInvoiceToTracker(db: Db, invoiceId: string, status: string): Promise<void> {
+  if (status !== 'Paid') {
+    // Not (or no longer) fully paid — e.g. voiding a payment dropped it back
+    // to Partially Paid — remove any tracker row rather than leaving a stale
+    // "Paid" entry behind.
+    await db.invoiceRegisterItem.deleteMany({ where: { sourceInvoiceId: invoiceId } })
+    return
+  }
+  const invoice = await db.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      project: {
+        include: {
+          responsibleUser: { select: { userName: true, email: true } },
+          lead: {
+            include: {
+              sector: { select: { sectorName: true } },
+              serviceType: { select: { serviceTypeName: true } },
+              plant: {
+                include: {
+                  client: { select: { clientName: true } },
+                  location: { select: { city: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+      payments: { where: { deletedAt: null }, orderBy: { paymentDate: 'desc' } },
+    },
+  })
+  if (!invoice) return
+
+  const amount = Number(invoice.amount)
+  const paidTotal = invoice.payments.reduce((sum, p) => sum + Number(p.amountReceived), 0)
+  // Marked Paid with no (or only partial) real payment behind it — e.g. the
+  // status dropdown, hand-set directly rather than via a logged payment.
+  // Treat the invoice's own amount as what was collected in that case,
+  // rather than showing a contradictory "Paid, ₹0 collected" row; if there
+  // IS a real (even partial) payment on record, report that honestly instead
+  // of overriding it — so a partial payment force-marked Paid still shows
+  // its actual outstanding balance rather than pretending it's zero.
+  const amountCollected = paidTotal > 0 ? paidTotal : amount
+  const balanceOutstanding = Math.max(0, amount - amountCollected)
+  const lastPaymentDate = invoice.payments[0]?.paymentDate ?? new Date()
+  const toLakhs = (n: number) => Math.round((n / 100000) * 100) / 100
+  const bmOwner = invoice.project.responsibleUser
+    ? (invoice.project.responsibleUser.userName || invoice.project.responsibleUser.email)
+    : null
+  const daysToCollect = invoice.invoiceDate
+    ? Math.round((lastPaymentDate.getTime() - invoice.invoiceDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null
+
+  const data = {
+    sourceInvoiceId: invoice.id,
+    sortOrder: -1, // always sorts ahead of every imported row (sortOrder >= 0); the client re-sorts trial rows among themselves
+    sector: invoice.project.lead.sector?.sectorName ?? null,
+    client: invoice.project.lead.plant.client?.clientName ?? null,
+    location: invoice.project.lead.plant.location?.city ?? null,
+    poNumber: invoice.project.workOrderNo,
+    orderValueLakhs: toLakhs(amount),
+    serviceType: invoice.project.lead.serviceType?.serviceTypeName ?? null,
+    bmOwner,
+    workCompletionDate: invoice.project.completionDate?.toISOString().slice(0, 10) ?? null,
+    invoiceRaised: 'Yes',
+    invoiceNumber: invoice.invoiceNumber,
+    invoiceDate: invoice.invoiceDate,
+    invoiceAmountLakhs: toLakhs(amount),
+    dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? null,
+    paymentReceived: 'Yes',
+    paymentDate: lastPaymentDate,
+    amountCollectedLakhs: toLakhs(amountCollected),
+    balanceOutstandingLakhs: toLakhs(balanceOutstanding),
+    daysToCollect,
+    remarks: paidTotal > 0
+      ? 'Auto-synced from a live paid invoice — trial entry, safe to clear before deployment.'
+      : 'Auto-synced from an invoice marked Paid manually (no payment logged) — trial entry, safe to clear before deployment.',
+  }
+
+  await db.invoiceRegisterItem.upsert({
+    where: { sourceInvoiceId: invoice.id },
+    create: data,
+    update: data,
+  })
 }
 
 // GET /invoices?projectId=xxx
@@ -96,7 +202,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const admin = await isAdmin(req.userId)
   const invoice = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
   if (!invoice) {
-    res.status(404).json({ error: 'Invoice not found.' })
+    sendError(res, 404, 'Invoice not found.')
     return
   }
   res.json({ invoice })
@@ -113,14 +219,14 @@ const createSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid invoice data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid invoice data.')
     return
   }
   const d = parse.data
   const admin = await isAdmin(req.userId)
   const project = await canAccessProject(d.projectId, req.userId, admin)
   if (!project) {
-    res.status(404).json({ error: 'Project not found.' })
+    sendError(res, 404, 'Project not found.')
     return
   }
   try {
@@ -128,7 +234,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // same reasoning in projects.ts/proposals.ts.
     const invoice = await prisma.$transaction(async tx => {
       const invoiceNumber = await nextSequenceNumber(tx, 'invoice', 'INV')
-      return tx.invoice.create({
+      const created = await tx.invoice.create({
         data: {
           invoiceNumber,
           projectId: d.projectId,
@@ -139,18 +245,23 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         },
         include: invoiceInclude,
       })
+      return created
     }, TX_OPTS)
+    // Moves the lead's Pipeline row to the Invoice stage. After the
+    // transaction, not inside it.
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, project.leadId))
     broadcastInvoiceUpdate(invoice.id)
     res.status(201).json({ invoice })
   } catch {
-    res.status(400).json({ error: 'Could not create invoice.' })
+    sendError(res, 400, 'Could not create invoice.')
   }
 })
 
-// PATCH /invoices/:id — manual edits (amount/dates/status). Status here covers
-// the manual states (Draft/Sent/Overdue) — Paid/Partially Paid are overwritten
-// again the moment a payment is logged or the amount changes, so hand-setting
-// them has no lasting effect once real payment data disagrees.
+// PATCH /invoices/:id — manual edits (amount/dates/status). A hand-set status
+// (including Paid/Partially Paid) is overwritten again the moment a payment
+// is logged or the amount changes, since `recomputeStatus` always wins once
+// real payment data disagrees with it — but until then, a hand-set Paid is
+// still treated as genuinely paid for the Tracker sync (see syncInvoiceToTracker).
 const updateSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   invoiceDate: z.coerce.date().nullable().optional(),
@@ -161,13 +272,13 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid update data.' })
+    sendError(res, 400, 'Invalid update data.')
     return
   }
   const admin = await isAdmin(req.userId)
   const existing = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
   if (!existing) {
-    res.status(404).json({ error: 'Invoice not found.' })
+    sendError(res, 404, 'Invoice not found.')
     return
   }
 
@@ -183,16 +294,25 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       await tx.invoice.update({ where: { id: existing.id }, data })
       // Amount changed → what's already been paid may no longer cover it (or
       // now covers it in full), so the derived Paid/Partially Paid state
-      // can't be trusted until it's recomputed against the new amount. Same
-      // transaction as the update, so a status left stale by a crash
-      // mid-request isn't possible — either both land or neither does.
+      // can't be trusted until it's recomputed against the new amount — this
+      // takes priority over (and can overwrite) a `status` sent in the same
+      // request. Same transaction as the update, so a status left stale by a
+      // crash mid-request isn't possible.
       if ('amount' in data) await recomputeStatus(tx, existing.id)
       return tx.invoice.findUnique({ where: { id: existing.id }, include: invoiceInclude })
     }, TX_OPTS)
+    if (invoice && ('amount' in data || 'status' in data)) {
+      // Whatever's now current — either just recomputed from real payments,
+      // or (a bare status change, e.g. the dropdown) hand-set directly with
+      // no payment math to re-derive. After the transaction, not inside it.
+      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id, invoice.status))
+      // The lead's Pipeline row shows this invoice's status ("Invoice:Paid").
+      await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+    }
     broadcastInvoiceUpdate(existing.id)
     res.json({ invoice })
   } catch {
-    res.status(400).json({ error: 'Could not update invoice.' })
+    sendError(res, 400, 'Could not update invoice.')
   }
 })
 
@@ -206,13 +326,13 @@ const paymentSchema = z.object({
 router.post('/:id/payments', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = paymentSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid payment data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid payment data.')
     return
   }
   const admin = await isAdmin(req.userId)
   const existing = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
   if (!existing) {
-    res.status(404).json({ error: 'Invoice not found.' })
+    sendError(res, 404, 'Invoice not found.')
     return
   }
   const d = parse.data
@@ -253,14 +373,18 @@ router.post('/:id/payments', async (req: AuthRequest, res: Response): Promise<vo
       await recomputeStatus(tx, existing.id)
       return tx.invoice.findUnique({ where: { id: existing.id }, include: invoiceInclude })
     }, TX_OPTS)
+    if (invoice) {
+      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id, invoice.status))
+      await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+    }
     broadcastInvoiceUpdate(existing.id)
     res.status(201).json({ invoice })
   } catch (e) {
     if (e instanceof ValidationError) {
-      res.status(400).json({ error: e.message })
+      sendError(res, 400, e.message)
       return
     }
-    res.status(400).json({ error: 'Could not record payment.' })
+    sendError(res, 400, 'Could not record payment.')
   }
 })
 
@@ -274,7 +398,7 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
   const paymentId = String(req.params.paymentId)
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, invoiceId, deletedAt: null } })
   if (!payment) {
-    res.status(404).json({ error: 'Payment not found.' })
+    sendError(res, 404, 'Payment not found.')
     return
   }
   const invoice = await prisma.$transaction(async tx => {
@@ -282,6 +406,10 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
     await recomputeStatus(tx, invoiceId)
     return tx.invoice.findUnique({ where: { id: invoiceId }, include: invoiceInclude })
   }, TX_OPTS)
+  if (invoice) {
+    await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoiceId, invoice.status))
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+  }
   broadcastInvoiceUpdate(invoiceId)
   res.json({ invoice })
 })
@@ -290,10 +418,14 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.invoice.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Invoice not found.' })
+    sendError(res, 404, 'Invoice not found.')
     return
   }
   await prisma.invoice.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  // If that was the lead's only invoice, its Pipeline row drops back to the
+  // Working Project stage.
+  const project = await prisma.project.findUnique({ where: { id: existing.projectId }, select: { leadId: true } })
+  if (project) await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, project.leadId))
   broadcastInvoiceUpdate(existing.id)
   res.json({ message: 'Invoice deleted.' })
 })

@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
 import { broadcastActivityUpdate } from '../services/notify'
+import { isAdmin, canAccessLead } from '../utils/access'
+import { sendError } from '../utils/errors'
+import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 
 const router = Router()
 router.use(authenticate)
@@ -15,26 +18,18 @@ const activityInclude = {
 } as const
 
 // Same visibility rule as leads.ts: employees only see their own leads, admins see all.
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
-async function canAccessLead(leadId: string, userId: string | undefined, admin: boolean) {
-  return prisma.lead.findFirst({ where: { id: leadId, deletedAt: null, ...(admin ? {} : { assignedToUserId: userId }) } })
-}
 
 // GET /activities?leadId=xxx — timeline for one lead
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const leadId = req.query.leadId ? String(req.query.leadId) : undefined
   if (!leadId) {
-    res.status(400).json({ error: 'leadId is required.' })
+    sendError(res, 400, 'leadId is required.')
     return
   }
   const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(leadId, req.userId, admin)
   if (!lead) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
   const activities = await prisma.activity.findMany({ where: { leadId }, include: activityInclude, orderBy: { activityDate: 'desc' } })
@@ -87,14 +82,14 @@ const createSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid activity data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid activity data.')
     return
   }
   const d = parse.data
   const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(d.leadId, req.userId, admin)
   if (!lead) {
-    res.status(404).json({ error: 'Lead not found.' })
+    sendError(res, 404, 'Lead not found.')
     return
   }
   try {
@@ -109,10 +104,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       },
       include: activityInclude,
     })
+    // Refreshes the lead's Pipeline row (last action, next follow-up date).
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, activity.leadId))
     broadcastActivityUpdate(activity.leadId)
     res.status(201).json({ activity })
   } catch {
-    res.status(400).json({ error: 'Could not create activity.' })
+    sendError(res, 400, 'Could not create activity.')
   }
 })
 

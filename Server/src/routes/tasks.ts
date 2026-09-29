@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { notifyUser, broadcastTaskUpdate } from '../services/notify'
+import { isAdmin } from '../utils/access'
+import { sendError } from '../utils/errors'
 
 const router = Router()
 router.use(authenticate)
@@ -14,11 +16,6 @@ const taskInclude = {
 
 // Employees only see tasks assigned to them; admins see everything (same
 // visibility rule as leads).
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
 
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10)
 
@@ -45,7 +42,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     include: taskInclude,
   })
   if (!task) {
-    res.status(404).json({ error: 'Task not found.' })
+    sendError(res, 404, 'Task not found.')
     return
   }
   res.json({ task })
@@ -62,18 +59,18 @@ const createSchema = z.object({
 router.post('/', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid task data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid task data.')
     return
   }
   const d = parse.data
 
   const assignee = await prisma.user.findUnique({ where: { id: d.assignedToUserId }, select: { id: true, isActive: true, role: true } })
   if (!assignee || !assignee.isActive) {
-    res.status(400).json({ error: 'Assignee not found.' })
+    sendError(res, 400, 'Assignee not found.')
     return
   }
   if (assignee.role === 'admin') {
-    res.status(400).json({ error: 'Tasks cannot be assigned to an admin user.' })
+    sendError(res, 400, 'Tasks cannot be assigned to an admin user.')
     return
   }
 
@@ -93,7 +90,7 @@ router.post('/', requireAdmin, async (req: AuthRequest, res: Response): Promise<
       .catch(err => console.error('notifyUser failed:', err.message))
     res.status(201).json({ task })
   } catch {
-    res.status(400).json({ error: 'Could not create task.' })
+    sendError(res, 400, 'Could not create task.')
   }
 })
 
@@ -110,17 +107,17 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid update data.' })
+    sendError(res, 400, 'Invalid update data.')
     return
   }
   const existing = await prisma.task.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Task not found.' })
+    sendError(res, 404, 'Task not found.')
     return
   }
   const admin = await isAdmin(req.userId)
   if (!admin && existing.assignedToUserId !== req.userId) {
-    res.status(403).json({ error: 'Not authorized to update this task.' })
+    sendError(res, 403, 'Not authorized to update this task.')
     return
   }
 
@@ -134,11 +131,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (parse.data.assignedToUserId && parse.data.assignedToUserId !== existing.assignedToUserId) {
       const assignee = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { id: true, isActive: true, role: true } })
       if (!assignee || !assignee.isActive) {
-        res.status(400).json({ error: 'Assignee not found.' })
+        sendError(res, 400, 'Assignee not found.')
         return
       }
       if (assignee.role === 'admin') {
-        res.status(400).json({ error: 'Tasks cannot be assigned to an admin user.' })
+        sendError(res, 400, 'Tasks cannot be assigned to an admin user.')
         return
       }
       data.assignedToUserId = assignee.id
@@ -154,7 +151,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     res.json({ task })
   } catch {
-    res.status(400).json({ error: 'Could not update task.' })
+    sendError(res, 400, 'Could not update task.')
   }
 })
 
@@ -162,7 +159,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.task.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Task not found.' })
+    sendError(res, 404, 'Task not found.')
     return
   }
   await prisma.task.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })

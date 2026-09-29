@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import type { EmployeeUser, Lead } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 /** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
 function displayName(email: string): string {
@@ -155,7 +156,7 @@ export default function Team() {
         <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
       </div>
 
-      {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+      {error && <ErrorBanner message={error} onRetry={load} className="mb-5" />}
 
       <form onSubmit={createEmployee} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">Add employee</h3>

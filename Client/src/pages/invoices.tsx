@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, INVOICE_SYNC_EVENT, INVOICE_STATUSES } from '../lib/api'
 import type { Invoice, InvoiceStatus, Project } from '../lib/api'
+import { ErrorBanner } from '../components/ErrorBanner'
+import { INVOICE_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 
-const STATUS_STYLES: Record<string, string> = {
-  Draft: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
-  Sent: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800',
-  'Partially Paid': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800',
-  Paid: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800',
-  Overdue: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800',
-}
-const statusStyle = (name: string) => STATUS_STYLES[name] ?? 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+const statusStyle = (name: string) => INVOICE_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
 const fmtMoney = (v: number) => `₹${v.toLocaleString()}`
 const paidOf = (inv: Invoice) => inv.payments.reduce((sum, p) => sum + p.amountReceived, 0)
@@ -180,7 +175,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
-        {error && <div className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+        {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
           <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>

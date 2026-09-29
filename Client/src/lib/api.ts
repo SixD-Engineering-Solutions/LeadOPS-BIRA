@@ -189,6 +189,9 @@ export type Task = {
 // are no create/update calls for these yet.
 export type PipelineTrackerItem = {
   id: string
+  // Set only on a row synced live from a real, non-deleted Lead — null for
+  // every row from the original Excel import. See Tracker's PipelineTab.
+  sourceLeadId: string | null
   vertical: string | null
   client: string | null
   location: string | null
@@ -210,6 +213,9 @@ export type PipelineTrackerItem = {
 
 export type InvoiceRegisterItem = {
   id: string
+  // Set only on a row synced live from a real, fully-paid Invoice — null for
+  // every row from the original Excel import. See Tracker's InvoicesTab.
+  sourceInvoiceId: string | null
   sector: string | null
   client: string | null
   location: string | null

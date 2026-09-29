@@ -2,16 +2,13 @@ import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
 import type { Lead, EmployeeUser, Event } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
+import { ErrorBanner } from '../components/ErrorBanner'
+import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 
 // Fixed status options.
 const STATUSES = ['Submitted', 'In Process', 'Dead'] as const
 
-const STATUS_STYLES: Record<string, string> = {
-  Submitted: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800',
-  'In Process': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800',
-  Dead: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800',
-}
-const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? ''] ?? 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name ?? ''] ?? DEFAULT_STATUS_STYLE
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
@@ -134,7 +131,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   async function removeLead(id: string) {
-    if (!confirm('Delete this lead? This cannot be undone.')) return
+    if (!confirm('Delete this lead? Its proposals, projects, invoices, payments and documents will be deleted too. This cannot be undone.')) return
     setSavingId(id)
     try {
       await api(`/leads/${id}`, { method: 'DELETE', auth: true })
@@ -215,7 +212,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
-        {error && <div className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+        {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
           <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>

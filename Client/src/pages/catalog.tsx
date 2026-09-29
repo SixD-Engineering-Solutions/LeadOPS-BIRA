@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { Location, Plant, Contact, Vertical, Sector, Client, ClientCategory, LeadSource, ServiceType, Event, EventType } from '../lib/api'
 import { EVENT_TYPES } from '../lib/api'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const btnCls = 'rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60'
@@ -85,7 +86,7 @@ export default function Catalog() {
         <p className="text-sm text-gray-500 dark:text-gray-400">Add the reference data that leads are built from. Everyone can view and add here.</p>
       </div>
 
-      {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+      {error && <ErrorBanner message={error} onRetry={loadAll} className="mb-5" />}
       {loading && <p className="mb-5 text-sm text-gray-400 dark:text-gray-500">Loading…</p>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

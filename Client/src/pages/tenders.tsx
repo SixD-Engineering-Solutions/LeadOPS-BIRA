@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, TENDER_STATUSES } from '../lib/api'
 import type { Tender, TenderStatus, Client } from '../lib/api'
+import { ErrorBanner } from '../components/ErrorBanner'
 
 const STATUS_STYLES: Record<string, string> = {
   Identified: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700',
@@ -121,7 +122,7 @@ export default function Tenders() {
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Tenders {tenders.length > 0 && <span className="text-gray-400 dark:text-gray-500">({tenders.length})</span>}</h3>
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
-        {error && <div className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
+        {error && <ErrorBanner message={error} onRetry={load} />}
         {loading ? (
           <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
         ) : tenders.length === 0 && !error ? (

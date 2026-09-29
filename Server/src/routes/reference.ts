@@ -2,6 +2,8 @@ import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { isAdmin } from '../utils/access'
+import { sendError } from '../utils/errors'
 
 // List + create endpoints for the supporting tables (locations, plants,
 // contacts, verticals, sectors, lead statuses, users). All require auth;
@@ -10,7 +12,7 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/authentic
 const router = Router()
 router.use(authenticate)
 
-const bad = (res: Response, msg: string) => res.status(400).json({ error: msg })
+const bad = (res: Response, msg: string) => sendError(res, 400, msg)
 
 // ─── Locations ──────────────────────────────────────────────────────────────
 router.get('/locations', async (_req, res) => {
@@ -144,11 +146,6 @@ router.post('/lead-statuses', requireAdmin, async (req, res) => {
 })
 
 // ─── Users (internal employees — for assignment dropdowns) ───────────────────
-async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
-  return user?.role === 'admin'
-}
 
 // GET /users — everyone needs the active roster for assignment dropdowns.
 // ?includeInactive=true additionally returns removed accounts, but only for
@@ -187,7 +184,7 @@ router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res:
   const id = String(req.params.id)
   const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true } })
   if (!existing || existing.isActive) {
-    res.status(404).json({ error: 'No removed employee found with that id.' })
+    sendError(res, 404, 'No removed employee found with that id.')
     return
   }
   const user = await prisma.user.update({
@@ -205,12 +202,12 @@ router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res:
 router.delete('/users/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const id = String(req.params.id)
   if (id === req.userId) {
-    res.status(400).json({ error: 'You cannot delete your own account.' })
+    sendError(res, 400, 'You cannot delete your own account.')
     return
   }
   const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true } })
   if (!existing || !existing.isActive) {
-    res.status(404).json({ error: 'Employee not found.' })
+    sendError(res, 404, 'Employee not found.')
     return
   }
   await prisma.user.update({ where: { id }, data: { isActive: false } })

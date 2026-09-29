@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { sendError } from '../utils/errors'
 
 // Client-relationship-level data, not tied to one lead/employee — visible to
 // everyone, same as the Client/Catalog reference data.
@@ -37,7 +38,7 @@ const createSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: parse.error.issues[0]?.message ?? 'Invalid tender data.' })
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid tender data.')
     return
   }
   const d = parse.data
@@ -55,7 +56,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     })
     res.status(201).json({ tender })
   } catch {
-    res.status(400).json({ error: 'Could not create tender. Does the client exist?' })
+    sendError(res, 400, 'Could not create tender. Does the client exist?')
   }
 })
 
@@ -68,12 +69,12 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    res.status(400).json({ error: 'Invalid update data.' })
+    sendError(res, 400, 'Invalid update data.')
     return
   }
   const existing = await prisma.tender.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Tender not found.' })
+    sendError(res, 404, 'Tender not found.')
     return
   }
   const d = parse.data
@@ -88,7 +89,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   const existing = await prisma.tender.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
-    res.status(404).json({ error: 'Tender not found.' })
+    sendError(res, 404, 'Tender not found.')
     return
   }
   await prisma.tender.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })

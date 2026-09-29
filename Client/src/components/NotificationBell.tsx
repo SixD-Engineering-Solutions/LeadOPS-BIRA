@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, getToken, BASE_URL, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
 import type { Notification } from '../lib/api'
+import { ErrorBanner } from './ErrorBanner'
 
 const bellPath = 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9'
 
@@ -16,15 +17,17 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState<Notification[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const unread = notifications.filter(n => !n.isRead).length
 
   // Initial load.
-  useEffect(() => {
+  function loadNotifications() {
     api<{ notifications: Notification[] }>('/notifications', { auth: true })
-      .then(({ notifications }) => setNotifications(notifications))
-      .catch(() => {})
-  }, [])
+      .then(({ notifications }) => { setNotifications(notifications); setLoadError(null) })
+      .catch(e => setLoadError(e instanceof Error ? e.message : 'Failed to load notifications.'))
+  }
+  useEffect(loadNotifications, [])
 
   // Live stream — pushes a new notification the instant the backend creates one.
   useEffect(() => {
@@ -146,7 +149,9 @@ export default function NotificationBell() {
               </div>
             </div>
             <div className="max-h-96 overflow-y-auto">
-              {notifications.length === 0 ? (
+              {loadError ? (
+                <ErrorBanner message={loadError} onRetry={loadNotifications} />
+              ) : notifications.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-gray-400 dark:text-gray-500">No notifications yet.</p>
               ) : (
                 notifications.map(n => (

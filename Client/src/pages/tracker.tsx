@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary } from '../lib/api'
+import { ErrorBanner } from '../components/ErrorBanner'
+import { stageStatusStyle } from '../lib/statusStyles'
+import ReportsTab from '../components/tracker/ReportsTab'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
@@ -14,6 +17,14 @@ const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(und
 // "LOST due to price" — entered freehand in the original sheet. Classify it
 // well enough to color it; this is display-only, so there's no fixed enum to
 // validate against.
+// Live-synced rows instead carry "<stage>: <status>" (e.g. "Proposal: Negotiation",
+// see syncLeadToPipeline on the server) — colored exactly as that status is on
+// its own page.
+function pipelineRowStyle(row: PipelineTrackerItem): string {
+  if (row.sourceLeadId) return stageStatusStyle(row.status)
+  return pipelineStatusStyle(row.status)
+}
+
 function pipelineStatusStyle(status: string | null): string {
   const s = (status ?? '').toLowerCase()
   if (s.includes('✅') || /order received|po received/.test(s)) {
@@ -54,12 +65,21 @@ function DataTable<T>({ columns, rows, getKey, minWidth = 900 }: { columns: Col<
   )
 }
 
-function Card({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function Card({ title, subtitle, headerAction, highlight = false, children }: {
+  title: string
+  subtitle: string
+  headerAction?: React.ReactNode
+  highlight?: boolean
+  children: React.ReactNode
+}) {
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-        <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>
+    <div className={`rounded-2xl border shadow-sm ${highlight ? 'border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/20' : 'border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
+      <div className={`flex items-start justify-between gap-3 border-b px-5 py-3 ${highlight ? 'border-amber-200 dark:border-amber-800' : 'border-gray-100 dark:border-gray-800'}`}>
+        <div>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+          <p className="text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>
+        </div>
+        {headerAction}
       </div>
       {children}
     </div>
@@ -68,17 +88,38 @@ function Card({ title, subtitle, children }: { title: string; subtitle: string; 
 
 // ─── Pipeline tab ────────────────────────────────────────────────────────────
 
-function PipelineTab() {
+function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
+    setLoading(true)
     api<{ items: PipelineTrackerItem[] }>('/tracker/pipeline', { auth: true })
       .then(({ items }) => { setItems(items); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the pipeline tracker.'))
       .finally(() => setLoading(false))
-  }, [])
+  }
+  useEffect(load, [])
+
+  const trialItems = items.filter(i => i.sourceLeadId)
+  const importedItems = items.filter(i => !i.sourceLeadId)
+
+  async function handleClearTrialEntries() {
+    if (!confirm(`Clear all ${trialItems.length} trial entr${trialItems.length === 1 ? 'y' : 'ies'}? This only removes live-synced rows — imported data is untouched.`)) return
+    setClearing(true)
+    setClearError(null)
+    try {
+      await api('/tracker/pipeline/trial-entries', { method: 'DELETE', auth: true })
+      load()
+    } catch (e) {
+      setClearError(e instanceof Error ? e.message : 'Could not clear trial entries.')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const columns: Col<PipelineTrackerItem>[] = [
     { label: 'Vertical', render: r => fmtText(r.vertical) },
@@ -88,7 +129,7 @@ function PipelineTab() {
     { label: 'Description', render: r => <span className="block max-w-[220px] truncate" title={r.description ?? undefined}>{fmtText(r.description)}</span> },
     { label: 'Value', render: r => fmtLakhs(r.valueLakhs) },
     { label: 'Currency', render: r => fmtText(r.currency) },
-    { label: 'Status', render: r => <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${pipelineStatusStyle(r.status)}`}>{fmtText(r.status)}</span> },
+    { label: 'Status', render: r => <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${pipelineRowStyle(r)}`}>{fmtText(r.status)}</span> },
     { label: 'Probability', render: r => fmtPct(r.probabilityPct) },
     { label: 'Expected close', render: r => fmtText(r.expectedClose) },
     { label: 'Owner', render: r => fmtText(r.owner) },
@@ -100,33 +141,77 @@ function PipelineTab() {
   ]
 
   return (
-    <Card title={`Pipeline ${items.length > 0 ? `(${items.length})` : ''}`} subtitle="Imported from the FY2026–27 Pipeline Tracker sheet · read-only">
-      {error && <div className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
-      {loading ? (
-        <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
-      ) : items.length === 0 && !error ? (
-        <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No pipeline data imported yet.</p>
-      ) : (
-        <DataTable columns={columns} rows={items} getKey={r => r.id} minWidth={1700} />
+    <div className="flex flex-col gap-6">
+      {error && <ErrorBanner message={error} onRetry={load} />}
+
+      {!error && trialItems.length > 0 && (
+        <Card
+          highlight
+          title={`Live-synced trial entries (${trialItems.length})`}
+          subtitle="Added automatically for every lead raised in this app, showing the stage it has reached and that stage's status (e.g. Proposal: Negotiation). Clear these before a real deployment."
+          headerAction={isAdmin ? (
+            <button
+              onClick={handleClearTrialEntries}
+              disabled={clearing}
+              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-400 dark:hover:bg-amber-950/40"
+            >
+              {clearing ? 'Clearing…' : 'Clear all'}
+            </button>
+          ) : undefined}
+        >
+          {clearError && <p className="px-5 pt-3 text-xs text-red-500 dark:text-red-400">{clearError}</p>}
+          <DataTable columns={columns} rows={trialItems} getKey={r => r.id} minWidth={1700} />
+        </Card>
       )}
-    </Card>
+
+      <Card title={`Pipeline ${importedItems.length > 0 ? `(${importedItems.length})` : ''}`} subtitle="Imported from the FY2026–27 Pipeline Tracker sheet · read-only">
+        {loading ? (
+          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+        ) : importedItems.length === 0 && !error ? (
+          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No pipeline data imported yet.</p>
+        ) : (
+          <DataTable columns={columns} rows={importedItems} getKey={r => r.id} minWidth={1700} />
+        )}
+      </Card>
+    </div>
   )
 }
 
 // ─── Invoices tab ────────────────────────────────────────────────────────────
 
-function InvoicesTab() {
+function InvoicesTab({ isAdmin }: { isAdmin: boolean }) {
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
+    setLoading(true)
     api<{ summary: InvoiceSectorSummary[]; register: InvoiceRegisterItem[] }>('/tracker/invoices', { auth: true })
       .then(({ summary, register }) => { setSummary(summary); setRegister(register); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the invoice tracker.'))
       .finally(() => setLoading(false))
-  }, [])
+  }
+  useEffect(load, [])
+
+  const trialEntries = register.filter(r => r.sourceInvoiceId)
+  const importedRegister = register.filter(r => !r.sourceInvoiceId)
+
+  async function handleClearTrialEntries() {
+    if (!confirm(`Clear all ${trialEntries.length} trial entr${trialEntries.length === 1 ? 'y' : 'ies'}? This only removes live-synced rows — imported data is untouched.`)) return
+    setClearing(true)
+    setClearError(null)
+    try {
+      await api('/tracker/invoices/trial-entries', { method: 'DELETE', auth: true })
+      load()
+    } catch (e) {
+      setClearError(e instanceof Error ? e.message : 'Could not clear trial entries.')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const summaryColumns: Col<InvoiceSectorSummary>[] = [
     { label: 'Sector', render: r => fmtText(r.sector), emphasize: true },
@@ -181,7 +266,7 @@ function InvoicesTab() {
   ]
 
   if (loading) return <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
-  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400">{error}</div>
+  if (error) return <ErrorBanner message={error} onRetry={load} className="" />
 
   return (
     <div className="flex flex-col gap-6">
@@ -192,11 +277,32 @@ function InvoicesTab() {
           <DataTable columns={summaryColumns} rows={summary} getKey={r => r.id} minWidth={2000} />
         )}
       </Card>
-      <Card title={`Invoice register ${register.length > 0 ? `(${register.length})` : ''}`} subtitle="Order-wise invoice and collection detail · read-only">
-        {register.length === 0 ? (
+
+      {trialEntries.length > 0 && (
+        <Card
+          highlight
+          title={`Live-synced trial entries (${trialEntries.length})`}
+          subtitle="Added automatically when an invoice raised in this app is paid in full — clear these before a real deployment."
+          headerAction={isAdmin ? (
+            <button
+              onClick={handleClearTrialEntries}
+              disabled={clearing}
+              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-400 dark:hover:bg-amber-950/40"
+            >
+              {clearing ? 'Clearing…' : 'Clear all'}
+            </button>
+          ) : undefined}
+        >
+          {clearError && <p className="px-5 pt-3 text-xs text-red-500 dark:text-red-400">{clearError}</p>}
+          <DataTable columns={registerColumns} rows={trialEntries} getKey={r => r.id} minWidth={2400} />
+        </Card>
+      )}
+
+      <Card title={`Invoice register ${importedRegister.length > 0 ? `(${importedRegister.length})` : ''}`} subtitle="Order-wise invoice and collection detail · read-only">
+        {importedRegister.length === 0 ? (
           <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No invoice register data imported yet.</p>
         ) : (
-          <DataTable columns={registerColumns} rows={register} getKey={r => r.id} minWidth={2400} />
+          <DataTable columns={registerColumns} rows={importedRegister} getKey={r => r.id} minWidth={2400} />
         )}
       </Card>
     </div>
@@ -205,8 +311,10 @@ function InvoicesTab() {
 
 // ─── page ────────────────────────────────────────────────────────────────────
 
-export default function Tracker() {
-  const [tab, setTab] = useState<'pipeline' | 'invoices'>('pipeline')
+const TAB_LABELS = { pipeline: 'Pipeline', invoices: 'Invoices', report: 'Report' } as const
+
+export default function Tracker({ isAdmin }: { isAdmin: boolean }) {
+  const [tab, setTab] = useState<'pipeline' | 'invoices' | 'report'>('pipeline')
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-6">
@@ -216,7 +324,7 @@ export default function Tracker() {
       </div>
 
       <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
-        {(['pipeline', 'invoices'] as const).map(t => (
+        {(Object.keys(TAB_LABELS) as (keyof typeof TAB_LABELS)[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -226,12 +334,12 @@ export default function Tracker() {
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
-            {t === 'pipeline' ? 'Pipeline' : 'Invoices'}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
 
-      {tab === 'pipeline' ? <PipelineTab /> : <InvoicesTab />}
+      {tab === 'pipeline' ? <PipelineTab isAdmin={isAdmin} /> : tab === 'invoices' ? <InvoicesTab isAdmin={isAdmin} /> : <ReportsTab />}
     </div>
   )
 }

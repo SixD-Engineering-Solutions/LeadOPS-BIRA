@@ -15,6 +15,8 @@ import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
 import trackerRoutes from './routes/tracker'
 import { startFollowUpReminderJob } from './services/reminders'
+import { sendError } from './utils/errors'
+import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
 
 // Safety nets: keep the server alive through transient failures (e.g. the DB
 // briefly dropping) instead of the process dying and restarting repeatedly.
@@ -59,7 +61,28 @@ app.use('/notifications', notificationRoutes)
 app.use('/tracker', trackerRoutes)
 app.use('/', referenceRoutes)
 
+// Unmatched route — same JSON error shape as every other 404 in the app,
+// instead of Express's default HTML page.
+app.use((_req, res) => {
+  sendError(res, 404, 'Not found.')
+})
+
+// Last-resort handler: catches anything a route didn't handle itself,
+// including Express 5's auto-forwarded async rejections. Without this,
+// an uncaught error would fall through to Express's default handler and
+// leak a stack trace as an HTML response instead of this app's JSON shape.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[unhandled route error]', err instanceof Error ? err.stack ?? err.message : err)
+  if (res.headersSent) {
+    return
+  }
+  sendError(res, 500, 'Something went wrong. Please try again.')
+})
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   startFollowUpReminderJob()
+  resyncAllLeadsToPipeline()
+    .then(n => console.log(`Pipeline tracker: re-synced ${n} lead(s)`))
+    .catch(err => console.error('Pipeline tracker resync failed:', err instanceof Error ? err.message : err))
 })
