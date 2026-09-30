@@ -10,7 +10,6 @@ import projectRoutes from './routes/projects'
 import documentRoutes from './routes/documents'
 import invoiceRoutes from './routes/invoices'
 import eventRoutes from './routes/events'
-import tenderRoutes from './routes/tenders'
 import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
 import trackerRoutes from './routes/tracker'
@@ -56,7 +55,6 @@ app.use('/projects', projectRoutes)
 app.use('/documents', documentRoutes)
 app.use('/invoices', invoiceRoutes)
 app.use('/events', eventRoutes)
-app.use('/tenders', tenderRoutes)
 app.use('/notifications', notificationRoutes)
 app.use('/tracker', trackerRoutes)
 app.use('/', referenceRoutes)

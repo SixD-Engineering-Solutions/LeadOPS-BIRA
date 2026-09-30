@@ -3,3 +3,21 @@
 /* Manual dark mode: toggled via a `dark` class on <html> (see lib/theme.ts),
    not just OS preference, so the button actually controls it. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Tell the browser which theme is active so its own UI — the open list of a
+   <select>, date pickers, scrollbars — is drawn to match. */
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
+/* Dropdown options: a status <select> is tinted and its text colored (e.g.
+   light sky text on a translucent sky background in dark mode), and the
+   option list inherits that — pale text on the browser's own background,
+   unreadable. Options always get plain, high-contrast colors instead. */
+select option {
+  background-color: #ffffff;
+  color: #111827;
+}
+html.dark select option {
+  background-color: #1f2937;
+  color: #f3f4f6;
+}

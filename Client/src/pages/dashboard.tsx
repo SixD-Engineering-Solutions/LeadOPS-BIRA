@@ -7,7 +7,6 @@ import Tasks from './tasks'
 import Proposals from './proposals'
 import Projects from './projects'
 import Invoices from './invoices'
-import Tenders from './tenders'
 import Tracker from './tracker'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
@@ -36,7 +35,6 @@ const CORE_MODULES: Module[] = [
   { key: 'proposals', title: 'Proposals', desc: 'Quote value and probability, track to Won or Lost.', icon: icons.proposals, action: 'Open', accent: 'from-violet-400 to-fuchsia-400', glow: 'rgba(167,139,250,0.45)' },
   { key: 'projects', title: 'Projects', desc: 'Work orders and execution tracking after order.', icon: icons.projects, action: 'Open', accent: 'from-teal-400 to-emerald-400', glow: 'rgba(45,212,191,0.45)' },
   { key: 'invoices', title: 'Invoices', desc: 'Bill a project and track payments received.', icon: icons.invoices, action: 'Open', accent: 'from-indigo-400 to-blue-400', glow: 'rgba(129,140,248,0.45)' },
-  { key: 'tenders', title: 'Tenders', desc: 'Government/EPC tenders raised against a client.', icon: icons.tenders, action: 'Open', accent: 'from-fuchsia-400 to-purple-400', glow: 'rgba(232,121,249,0.45)' },
   { key: 'tasks', title: 'Tasks', desc: 'Your follow-ups and to-dos in one place.', icon: icons.tasks, action: 'Open', accent: 'from-amber-400 to-orange-400', glow: 'rgba(251,191,36,0.45)' },
   { key: 'tracker', title: 'Tracker', desc: 'Imported pipeline and invoice data, at a glance.', icon: icons.tracker, action: 'Open', accent: 'from-lime-400 to-emerald-400', glow: 'rgba(163,230,53,0.45)' },
 ]
@@ -61,7 +59,6 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { key: 'proposals', label: 'Proposals', icon: icons.proposals },
     { key: 'projects', label: 'Projects', icon: icons.projects },
     { key: 'invoices', label: 'Invoices', icon: icons.invoices },
-    { key: 'tenders', label: 'Tenders', icon: icons.tenders },
     { key: 'tasks', label: 'Tasks', icon: icons.tasks },
     { key: 'tracker', label: 'Tracker', icon: icons.tracker },
     ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }] : []),
@@ -118,7 +115,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tenders', 'tracker'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tracker'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
@@ -177,8 +174,6 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <Projects />
         ) : active === 'invoices' ? (
           <Invoices isAdmin={isAdmin} />
-        ) : active === 'tenders' ? (
-          <Tenders />
         ) : active === 'tracker' ? (
           <Tracker isAdmin={isAdmin} />
         ) : (

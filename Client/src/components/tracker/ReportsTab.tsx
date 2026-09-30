@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts'
 import { api } from '../../lib/api'
 import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary } from '../../lib/api'
 import { useTheme } from '../../lib/theme'
 import { ErrorBanner } from '../ErrorBanner'
 import WeeklyLineChart from '../WeeklyLineChart'
+import PipelineStatusModal from './PipelineStatusModal'
 
 type FyMonthKey = 'apr' | 'may' | 'jun' | 'jul' | 'aug' | 'sep' | 'oct' | 'nov' | 'dec' | 'jan' | 'feb' | 'mar'
 const FY_MONTHS: { key: FyMonthKey; label: string }[] = [
@@ -18,8 +19,13 @@ const FY_MONTHS: { key: FyMonthKey; label: string }[] = [
 // badge — duplicated here as plain data rather than a CSS class, so it can
 // drive a chart. The sheet's status text is freehand, so this is a
 // best-effort bucket, not a fixed enum.
+// Rows synced from app leads carry "<stage>: <status>" instead (see
+// syncLeadToPipeline on the server): reaching a project or invoice means the
+// order was won; a dead lead or lost proposal is lost.
 function classifyPipelineStatus(status: string | null): 'Won' | 'Lost' | 'Active' {
   const s = (status ?? '').toLowerCase()
+  if (/^(project|invoice):/.test(s) || s === 'proposal: won') return 'Won'
+  if (s === 'lead: dead' || s === 'proposal: lost') return 'Lost'
   if (s.includes('✅') || /order received|po received/.test(s)) return 'Won'
   if (/\blost\b/.test(s) || s.startsWith('x ')) return 'Lost'
   return 'Active'
@@ -69,19 +75,45 @@ function PieBreakdown({ data, colors, height = 240 }: { data: { name: string; va
   )
 }
 
-function BarBreakdown({ data, color = '#f97316', height }: { data: { name: string; value: number }[]; color?: string; height?: number }) {
+const BAR_LABEL_WIDTH = 200
+const BAR_LABEL_MAX_CHARS = 28
+const BAR_ROW_HEIGHT = 40
+
+// Category labels are the sheet's freehand status text — often long, and
+// Recharts' default tick wraps it onto two lines, which knocks the leading
+// emoji out of line with its bar. One line, ellipsized, full text on hover.
+function BarCategoryTick({ x, y, payload, fill }: { x?: number; y?: number; payload?: { value: string }; fill: string }) {
+  const full = payload?.value ?? ''
+  const text = full.length > BAR_LABEL_MAX_CHARS ? `${full.slice(0, BAR_LABEL_MAX_CHARS - 1).trimEnd()}…` : full
+  return (
+    <text x={x} y={y} dx={-10} textAnchor="end" dominantBaseline="central" fontSize={12} fill={fill}>
+      <title>{full}</title>
+      {text}
+    </text>
+  )
+}
+
+function BarBreakdown({ data, color = '#f97316', height, onSelect }: { data: { name: string; value: number }[]; color?: string; height?: number; onSelect?: (name: string) => void }) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
-  const tickColor = isDark ? '#6b7280' : '#9ca3af'
-  const chartHeight = height ?? Math.max(220, data.length * 26)
+  const tickColor = isDark ? '#9ca3af' : '#4b5563'
+  const chartHeight = height ?? Math.max(240, data.length * BAR_ROW_HEIGHT + 40)
   return (
     <ResponsiveContainer width="100%" height={chartHeight}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+      {/* Clicking anywhere on a row selects it, not just the bar — a count-of-1
+          bar is only a few pixels wide. */}
+      <BarChart
+        data={data} layout="vertical" margin={{ top: 8, right: 40, left: 8, bottom: 8 }} barCategoryGap="30%"
+        onClick={onSelect ? (state: { activeLabel?: string | number }) => { if (state?.activeLabel != null) onSelect(String(state.activeLabel)) } : undefined}
+        style={onSelect ? { cursor: 'pointer' } : undefined}
+      >
         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={gridColor} />
         <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="name" width={170} tick={{ fontSize: 10, fill: tickColor }} axisLine={false} tickLine={false} />
-        <Tooltip contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
-        <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} />
+        <YAxis type="category" dataKey="name" width={BAR_LABEL_WIDTH} interval={0} tick={<BarCategoryTick fill={tickColor} />} axisLine={false} tickLine={false} />
+        <Tooltip cursor={{ fill: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }} contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
+        <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} maxBarSize={22}>
+          <LabelList dataKey="value" position="right" fontSize={11} fill={tickColor} />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )
@@ -115,6 +147,7 @@ export default function ReportsTab() {
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -123,12 +156,11 @@ export default function ReportsTab() {
       api<{ summary: InvoiceSectorSummary[]; register: InvoiceRegisterItem[] }>('/tracker/invoices', { auth: true }),
     ])
       .then(([pipelineRes, invoiceRes]) => {
-        // Live-synced trial rows are excluded here — they're pre-deployment
-        // test data (see the Pipeline/Invoices tabs), not real historical
-        // performance.
-        setPipeline(pipelineRes.items.filter(i => !i.sourceLeadId))
+        // Imported sheet rows and rows synced from app leads / paid invoices
+        // together — the app's data is what keeps these charts current.
+        setPipeline(pipelineRes.items)
         setSummary(invoiceRes.summary)
-        setRegister(invoiceRes.register.filter(r => !r.sourceInvoiceId))
+        setRegister(invoiceRes.register)
         setError(null)
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load report data.'))
@@ -140,12 +172,35 @@ export default function ReportsTab() {
   if (error) return <ErrorBanner message={error} onRetry={load} />
 
   const statusCounts = countBy(pipeline, p => classifyPipelineStatus(p.status))
-  const rawStatusCounts = countBy(pipeline, p => p.status?.trim() || 'Unspecified')
+  const rawStatusOf = (p: PipelineTrackerItem) => p.status?.trim() || 'Unspecified'
+  const rawStatusCounts = countBy(pipeline, rawStatusOf)
+  // The sheet's sector summary is a fixed FY2026–27 table; collections from
+  // invoices paid in the app are added on top, by payment month and sector.
+  const liveCollected = register.filter(r => r.sourceInvoiceId && r.paymentDate && r.amountCollectedLakhs)
+  const fyMonthOf = (iso: string): FyMonthKey | null => {
+    const d = new Date(iso)
+    const inFy = (d.getFullYear() === 2026 && d.getMonth() >= 3) || (d.getFullYear() === 2027 && d.getMonth() <= 2)
+    return inFy ? FY_MONTHS[(d.getMonth() + 9) % 12].key : null
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100
   const total = summary.find(s => s.sector === 'TOTAL')
-  const monthlyTrend = total ? FY_MONTHS.map(({ key, label }) => ({ month: label, collected: Number(total[key] ?? 0) })) : []
-  const sectorPerformance = summary
-    .filter(s => s.sector !== 'TOTAL')
-    .map(s => ({ sector: s.sector ?? '—', fyTotal: s.fyTotal ?? 0, fyTarget: s.fyTarget ?? 0 }))
+  const monthlyTrend = FY_MONTHS.map(({ key, label }) => ({
+    month: label,
+    collected: round2(Number(total?.[key] ?? 0) + liveCollected.filter(r => fyMonthOf(r.paymentDate!) === key).reduce((sum, r) => sum + r.amountCollectedLakhs!, 0)),
+  }))
+  const sectorMap = new Map<string, { sector: string; fyTotal: number; fyTarget: number }>()
+  for (const s of summary.filter(s => s.sector !== 'TOTAL')) {
+    const name = s.sector ?? '—'
+    sectorMap.set(name.toLowerCase(), { sector: name, fyTotal: s.fyTotal ?? 0, fyTarget: s.fyTarget ?? 0 })
+  }
+  for (const r of liveCollected) {
+    if (!fyMonthOf(r.paymentDate!)) continue
+    const name = r.sector?.trim() || 'Unspecified'
+    const entry = sectorMap.get(name.toLowerCase()) ?? { sector: name, fyTotal: 0, fyTarget: 0 }
+    entry.fyTotal = round2(entry.fyTotal + r.amountCollectedLakhs!)
+    sectorMap.set(name.toLowerCase(), entry)
+  }
+  const sectorPerformance = [...sectorMap.values()]
   const dsoBreakdown = countBy(register, r => r.dsoStatus?.trim() || 'Unspecified')
   const paymentBreakdown = countBy(register, r => {
     const v = r.paymentReceived?.trim().toUpperCase()
@@ -160,8 +215,8 @@ export default function ReportsTab() {
           <ChartCard title="Pipeline health" subtitle="Every open lead classified as Won, Lost, or still Active">
             <PieBreakdown data={statusCounts} colors={STATUS_COLORS} />
           </ChartCard>
-          <ChartCard title="Pipeline by status" subtitle="Count of items per exact status recorded in the sheet">
-            <BarBreakdown data={rawStatusCounts} />
+          <ChartCard title="Pipeline by status" subtitle="Leads per status, from the imported sheet and the app · click a row to see its leads">
+            <BarBreakdown data={rawStatusCounts} onSelect={setSelectedStatus} />
           </ChartCard>
         </div>
       </div>
@@ -191,6 +246,14 @@ export default function ReportsTab() {
           </div>
         </div>
       </div>
+
+      {selectedStatus && (
+        <PipelineStatusModal
+          status={selectedStatus}
+          rows={pipeline.filter(p => rawStatusOf(p) === selectedStatus)}
+          onClose={() => setSelectedStatus(null)}
+        />
+      )}
     </div>
   )
 }

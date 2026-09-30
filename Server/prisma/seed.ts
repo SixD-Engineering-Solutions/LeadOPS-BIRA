@@ -573,35 +573,6 @@ async function main() {
     }
     console.log(`seeded ${invoicesSeeded} invoices`)
   }
-
-  // ── tenders ───────────────────────────────────────────────────────────────
-
-  const tenderCount = await prisma.tender.count()
-  if (tenderCount <= 3) {
-    console.log('seeding tenders...')
-    const tenderDefs = [
-      { no: 'SAIL/CE/2026/0142',   client: clients.sail,  value: 8500000, status: 'Under Evaluation', ago: 20 },
-      { no: 'IOCL/HLD/2026/0087',  client: clients.iocl,  value: 4200000, status: 'Submitted',        ago: 12 },
-      { no: 'NTPC/SIP/2026/0231',  client: clients.ntpc,  value: 6100000, status: 'Preparing',         ago: 5 },
-      { no: 'RINL/VZ/2026/0019',   client: clients.rinl,  value: 3000000, status: 'Identified',        ago: 2 },
-      { no: 'ADANI/MND/2025/0304', client: clients.adani, value: 5400000, status: 'Won',               ago: 45 },
-    ]
-    for (const t of tenderDefs) {
-      await prisma.tender.create({
-        data: {
-          tenderNo: t.no,
-          clientId: t.client.id,
-          submissionDate: daysAgo(t.ago),
-          value: t.value,
-          status: t.status,
-          createdByUserId: admin.id,
-        },
-      })
-    }
-    console.log(`seeded ${tenderDefs.length} tenders`)
-  } else {
-    console.log(`${tenderCount} tenders already present — skipped`)
-  }
 }
 
 main()

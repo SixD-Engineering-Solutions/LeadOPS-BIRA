@@ -35,7 +35,7 @@ Backend/
 ├── src/
 │   ├── generated/prisma/      # Auto-generated Prisma client (do not edit)
 │   ├── routes/                # One file per resource (auth, leads, tasks, activities,
-│   │                          #   proposals, projects, invoices, documents, events, tenders,
+│   │                          #   proposals, projects, invoices, documents, events,
 │   │                          #   reference, notifications, tracker) — see API Reference below
 │   ├── middleware/
 │   │   └── authenticate.ts    # `authenticate` (JWT guard) + `requireAdmin`

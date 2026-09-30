@@ -4,18 +4,16 @@ import type { Lead, EmployeeUser } from '../lib/api'
 
 export type LeadStats = {
   total: number
-  active: number
   conversion: number
   converted: number
   weekAdded: number
   spark: number[]
-  counts: { submitted: number; inProcess: number; dead: number }
   loaded: boolean
 }
 
 const EMPTY_STATS: LeadStats = {
-  total: 0, active: 0, conversion: 0, converted: 0, weekAdded: 0,
-  spark: [], counts: { submitted: 0, inProcess: 0, dead: 0 }, loaded: false,
+  total: 0, conversion: 0, converted: 0, weekAdded: 0,
+  spark: [], loaded: false,
 }
 
 // Live lead stats for the dashboard tiles, plus the raw leads + employees
@@ -39,8 +37,6 @@ export function useLeadStats(active: boolean, isAdmin: boolean) {
         setAllLeads(leads)
         setEmployees(users)
         const total = leads.length
-        const byName = (n: string) => leads.filter(l => l.status?.statusName === n).length
-        const inProcess = byName('In Process')
         // "Converted" = progressed beyond the initial stage (In Progress or a Won/completed category).
         const converted = leads.filter(l => {
           const c = l.status?.statusCategory
@@ -58,11 +54,10 @@ export function useLeadStats(active: boolean, isAdmin: boolean) {
         weekAgo.setDate(now.getDate() - 7)
         const weekAdded = leads.filter(l => new Date(l.createdAt) >= weekAgo).length
         setStats({
-          total, active: inProcess,
+          total,
           conversion: total ? Math.round((converted / total) * 1000) / 10 : 0,
           converted, weekAdded,
           spark,
-          counts: { submitted: byName('Submitted'), inProcess, dead: byName('Dead') },
           loaded: true,
         })
         setError(null)

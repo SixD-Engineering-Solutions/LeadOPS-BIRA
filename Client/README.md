@@ -1,7 +1,7 @@
 # LeadOps Frontend
 
 React + TypeScript + Vite single-page app for the LeadOps CRM — lead capture, proposals, projects,
-invoices/payments, tasks, tenders, and an imported pipeline/invoice tracker. Talks to the
+invoices/payments, tasks, and an imported pipeline/invoice tracker. Talks to the
 [Server](../Server/README.md) REST API over JSON, with live updates over Server-Sent Events.
 
 ---
@@ -39,7 +39,7 @@ reachable but you don't want to create a real account, or for quick UI verificat
 ```text
 src/
 ├── pages/                    # One file per top-level view (dashboard, leads, proposals,
-│                              #   projects, invoices, tasks, tenders, tracker, reports, team,
+│                              #   projects, invoices, tasks, tracker, reports, team,
 │                              #   catalog, login) — routed by Dashboard's own tab state, not
 │                              #   a router library
 ├── components/

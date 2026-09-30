@@ -4,8 +4,8 @@ import { PrismaClient, Prisma } from './generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 
-// Money columns (Invoice.amount, Payment.amountReceived, Proposal.value,
-// Tender.value) are Prisma `Decimal` — exact storage in Postgres, but the
+// Money columns (Invoice.amount, Payment.amountReceived, Proposal.value)
+// are Prisma `Decimal` — exact storage in Postgres, but the
 // JS value is a Decimal.js instance, not a plain number. Decimal's default
 // `toJSON()` returns a *string* (so `JSON.stringify` doesn't silently lose
 // precision), which would turn every one of these fields into a string in

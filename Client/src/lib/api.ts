@@ -152,22 +152,6 @@ export type Invoice = {
   updatedAt: string
 }
 
-// ─── Tender (client-relationship-level, not tied to a lead) ────────────────
-export const TENDER_STATUSES = ['Identified', 'Preparing', 'Submitted', 'Under Evaluation', 'Won', 'Lost'] as const
-export type TenderStatus = (typeof TENDER_STATUSES)[number]
-export type Tender = {
-  id: string
-  tenderNo: string
-  clientId: string
-  client?: { id: string; clientName: string }
-  submissionDate: string | null
-  value: number | null
-  status: string
-  createdByUser?: { id: string; userName: string | null; email: string }
-  createdAt: string
-  updatedAt: string
-}
-
 // ─── Task (admin-assigned to-do, independent of any lead) ───────────────────
 export type Task = {
   id: string

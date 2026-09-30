@@ -166,6 +166,7 @@ async function syncInvoiceToTracker(db: Db, invoiceId: string, status: string): 
     invoiceAmountLakhs: toLakhs(amount),
     dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? null,
     paymentReceived: 'Yes',
+    dsoStatus: '🟢 Collected', // same label the imported sheet uses, so the Reports DSO chart buckets it with them
     paymentDate: lastPaymentDate,
     amountCollectedLakhs: toLakhs(amountCollected),
     balanceOutstandingLakhs: toLakhs(balanceOutstanding),
