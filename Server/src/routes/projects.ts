@@ -61,16 +61,27 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
 // POST /projects — for work raised directly, without going through a Won
 // proposal (the Won-proposal path auto-creates one instead, see proposals.ts).
+// Engineer and both dates are mandatory on every project — here, on the
+// Won → project auto-create (proposals.ts), and they can't be cleared later.
 const createSchema = z.object({
   leadId: z.string().min(1),
   projectName: z.string().min(1, 'Project name is required.'),
   locationId: z.string().optional(),
-  startDate: z.coerce.date().optional(),
-  completionDate: z.coerce.date().optional(),
-  responsibleUserId: z.string().optional(),
+  startDate: z.coerce.date({ message: 'Start date is required.' }),
+  completionDate: z.coerce.date({ message: 'Completion date is required.' }),
+  responsibleUserId: z.string({ message: 'Responsible engineer is required.' }).min(1, 'Responsible engineer is required.'),
   status: z.enum(PROJECT_STATUSES).optional(),
   billingStage: z.enum(BILLING_STAGES).optional(),
-})
+}).refine(d => d.completionDate >= d.startDate, { message: 'Completion date can’t be before the start date.' })
+
+/** Checks a would-be project engineer: must be an active, non-admin user.
+ *  Returns an error message, or null when fine. */
+export async function checkEngineer(userId: string): Promise<string | null> {
+  const engineer = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true } })
+  if (!engineer || !engineer.isActive) return 'Responsible engineer not found.'
+  if (engineer.role === 'admin') return 'Projects cannot be assigned to an admin user.'
+  return null
+}
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
@@ -85,12 +96,10 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 404, 'Lead not found.')
     return
   }
-  if (d.responsibleUserId) {
-    const engineer = await prisma.user.findUnique({ where: { id: d.responsibleUserId }, select: { role: true } })
-    if (engineer?.role === 'admin') {
-      sendError(res, 400, 'Projects cannot be assigned to an admin user.')
-      return
-    }
+  const engineerError = await checkEngineer(d.responsibleUserId)
+  if (engineerError) {
+    sendError(res, 400, engineerError)
+    return
   }
   try {
     // Reserving the work order number and creating the row are one atomic
@@ -112,9 +121,9 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
           leadId: d.leadId,
           projectName: d.projectName.trim(),
           locationId: d.locationId || null,
-          startDate: d.startDate ?? null,
-          completionDate: d.completionDate ?? null,
-          responsibleUserId: d.responsibleUserId || null,
+          startDate: d.startDate,
+          completionDate: d.completionDate,
+          responsibleUserId: d.responsibleUserId,
           status: d.status ?? 'Not Started',
           billingStage: d.billingStage ?? 'Not Started',
           createdByUserId: req.userId!,
@@ -145,9 +154,10 @@ class DuplicateProjectError extends Error {
 const updateSchema = z.object({
   projectName: z.string().min(1).optional(),
   locationId: z.string().nullable().optional(),
-  startDate: z.coerce.date().nullable().optional(),
-  completionDate: z.coerce.date().nullable().optional(),
-  responsibleUserId: z.string().nullable().optional(),
+  // Mandatory fields: can be changed, never cleared (no null).
+  startDate: z.coerce.date().optional(),
+  completionDate: z.coerce.date().optional(),
+  responsibleUserId: z.string().min(1, 'Responsible engineer is required.').optional(),
   status: z.enum(PROJECT_STATUSES).optional(),
   billingStage: z.enum(BILLING_STAGES).optional(),
 })
@@ -155,7 +165,7 @@ const updateSchema = z.object({
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    sendError(res, 400, 'Invalid update data.')
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid update data.')
     return
   }
   const admin = await isAdmin(req.userId)
@@ -169,19 +179,36 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
   const d = parse.data
   if (d.responsibleUserId) {
-    const engineer = await prisma.user.findUnique({ where: { id: d.responsibleUserId }, select: { role: true } })
-    if (engineer?.role === 'admin') {
-      sendError(res, 400, 'Projects cannot be assigned to an admin user.')
+    const engineerError = await checkEngineer(d.responsibleUserId)
+    if (engineerError) {
+      sendError(res, 400, engineerError)
       return
     }
+  }
+  // The project as it will be after this update — date order and the
+  // mandatory fields are checked on that, not just on what was sent.
+  const next = {
+    startDate: d.startDate ?? existing.startDate,
+    completionDate: d.completionDate ?? existing.completionDate,
+    responsibleUserId: d.responsibleUserId ?? existing.responsibleUserId,
+  }
+  if (next.startDate && next.completionDate && next.completionDate < next.startDate) {
+    sendError(res, 400, 'Completion date can’t be before the start date.')
+    return
+  }
+  // Projects from before these fields were mandatory may still lack them:
+  // they can be filled in, but the work can't move on until they are.
+  if (d.status && d.status !== 'Not Started' && (!next.responsibleUserId || !next.startDate || !next.completionDate)) {
+    sendError(res, 400, 'Assign a responsible engineer and start/completion dates before changing the status.')
+    return
   }
 
   const data: Record<string, unknown> = {}
   if (d.projectName) data.projectName = d.projectName.trim()
   if ('locationId' in d) data.locationId = d.locationId || null
-  if ('startDate' in d) data.startDate = d.startDate
-  if ('completionDate' in d) data.completionDate = d.completionDate
-  if ('responsibleUserId' in d) data.responsibleUserId = d.responsibleUserId || null
+  if (d.startDate) data.startDate = d.startDate
+  if (d.completionDate) data.completionDate = d.completionDate
+  if (d.responsibleUserId) data.responsibleUserId = d.responsibleUserId
   if (d.status) data.status = d.status
   if (d.billingStage) data.billingStage = d.billingStage
 

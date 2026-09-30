@@ -37,7 +37,7 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
         where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 1,
-        select: { status: true, value: true, probabilityPct: true, expectedOrderDate: true },
+        select: { status: true, value: true, probabilityPct: true, expectedOrderDate: true, lostReason: true },
       },
       projects: {
         where: { deletedAt: null },
@@ -102,7 +102,10 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
     lastAction: lastActivity
       ? `${lastActivity.activityType} · ${day(lastActivity.activityDate)}`
       : project ? `Billing: ${project.billingStage}` : null,
-    notes: 'Auto-synced from a lead in the app.',
+    // Why it was lost, when it was — otherwise just where the row came from.
+    notes: (proposal?.status === 'Lost' && proposal.lostReason)
+      ? `Lost: ${proposal.lostReason}`
+      : lead.lostReason ? `Lost: ${lead.lostReason}` : 'Auto-synced from a lead in the app.',
   }
 
   await db.pipelineTrackerItem.upsert({

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
 import type { Lead, EmployeeUser, Event } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
+import { LostReasonModal } from '../components/LostReasonModal'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { EmptyState } from '../components/EmptyState'
@@ -15,7 +16,7 @@ const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', eventId: '', assignedToName: '', remark: '', statusName: 'Submitted' }
+const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', eventId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
@@ -93,6 +94,10 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       setFormError('Contact email must look like username@gmail.com.')
       return
     }
+    if (form.statusName === 'Dead' && form.lostReason.trim().length < 3) {
+      setFormError('Give a reason why the lead was lost (at least 3 characters).')
+      return
+    }
     setCreating(true)
     try {
       const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: form })
@@ -105,10 +110,10 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
-  async function changeStatus(id: string, statusName: string) {
+  async function changeStatus(id: string, statusName: string, lostReason?: string) {
     setSavingId(id)
     try {
-      const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { statusName } })
+      const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { statusName, lostReason } })
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
@@ -117,6 +122,14 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     } finally {
       setSavingId(null)
     }
+  }
+
+  // Marking a lead Dead asks why first (mandatory); the status only changes
+  // once a reason is given.
+  const [lostFor, setLostFor] = useState<Lead | null>(null)
+  function onStatusSelect(lead: Lead, statusName: string) {
+    if (statusName === 'Dead' && lead.status?.statusName !== 'Dead') setLostFor(lead)
+    else changeStatus(lead.id, statusName)
   }
 
   async function reassign(id: string, assignedToUserId: string) {
@@ -199,6 +212,12 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
             Remark
             <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
           </label>
+          {form.statusName === 'Dead' && (
+            <label className="flex flex-col gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 sm:col-span-2 lg:col-span-3">
+              Reason lost *
+              <textarea value={form.lostReason} onChange={set('lostReason')} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} className={`${inputCls} resize-none`} />
+            </label>
+          )}
         </div>
         {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
         <div className="mt-3">
@@ -254,11 +273,14 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
                       <select
                         value={lead.status?.statusName ?? 'Submitted'}
                         disabled={savingId === lead.id}
-                        onChange={e => changeStatus(lead.id, e.target.value)}
+                        onChange={e => onStatusSelect(lead, e.target.value)}
                         className={`rounded-lg border px-2 py-1 text-xs font-semibold outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 ${statusStyle(lead.status?.statusName)}`}
                       >
                         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                      {lead.lostReason && (
+                        <p className="mt-1 max-w-[180px] truncate text-[11px] text-rose-500 dark:text-rose-400" title={lead.lostReason}>Lost: {lead.lostReason}</p>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400" onClick={e => e.stopPropagation()}>
                       <select
@@ -288,6 +310,20 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {/* detail modal */}
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+
+      {lostFor && (
+        <LostReasonModal
+          title="Why was this lead lost?"
+          subject={`Marking ${lostFor.plant?.plantName ?? 'this lead'} as Dead — the reason is required.`}
+          onCancel={() => setLostFor(null)}
+          onConfirm={async reason => {
+            const { lead } = await api<{ lead: Lead }>(`/leads/${lostFor.id}`, { method: 'PATCH', auth: true, body: { statusName: 'Dead', lostReason: reason } })
+            setLeads(prev => prev.map(l => (l.id === lead.id ? lead : l)))
+            setSelectedLead(prev => (prev && prev.id === lead.id ? lead : prev))
+            setLostFor(null)
+          }}
+        />
+      )}
     </div>
   )
 }

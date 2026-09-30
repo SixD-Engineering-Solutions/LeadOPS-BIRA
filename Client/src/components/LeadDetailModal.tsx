@@ -66,6 +66,12 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
 
       <DetailSection title="Notes">
         <BulletNote label="Remark" value={lead.remark} />
+        {lead.lostReason && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm dark:border-rose-500/40 dark:bg-rose-500/10">
+            <span className="text-xs font-semibold text-rose-600 dark:text-rose-300">Reason lost</span>
+            <p className="mt-0.5 whitespace-pre-line text-gray-900 dark:text-gray-100">{lead.lostReason}</p>
+          </div>
+        )}
         <DetailRow label="Created" value={fmt(lead.createdAt)} />
         <DetailRow label="Updated" value={fmt(lead.updatedAt)} />
       </DetailSection>

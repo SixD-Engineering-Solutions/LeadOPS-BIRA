@@ -74,11 +74,20 @@ export async function createTestLead(token: string, plantName: string): Promise<
   return body.lead.id
 }
 
+// Every project needs a responsible engineer (an active non-admin user) and
+// start/completion dates — whichever employee exists is fine for tests.
+export async function projectDetails(token: string): Promise<{ responsibleUserId: string; startDate: string; completionDate: string }> {
+  const { body } = await api<{ users: { id: string; role: string; isActive: boolean }[] }>('/users', { token })
+  const engineer = body.users.find(u => u.role !== 'admin' && u.isActive)
+  if (!engineer) throw new Error('Tests need at least one active employee to assign projects to.')
+  return { responsibleUserId: engineer.id, startDate: '2026-10-01', completionDate: '2026-10-31' }
+}
+
 export async function createTestProject(token: string, leadId: string, projectName: string): Promise<string> {
   const { status, body } = await api<{ project: { id: string } }>('/projects', {
     method: 'POST',
     token,
-    body: { leadId, projectName },
+    body: { leadId, projectName, ...(await projectDetails(token)) },
   })
   if (status !== 201) throw new Error(`Failed to create test project: ${JSON.stringify(body)}`)
   return body.project.id

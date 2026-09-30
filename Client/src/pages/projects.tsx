@@ -9,7 +9,11 @@ import { focusCreateForm } from '../lib/focusCreateForm'
 import { SkeletonRows } from '../components/Skeleton'
 
 const statusStyle = (name: string) => PROJECT_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
-const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
+// A stored date as the YYYY-MM-DD a date input expects ('' when unset).
+const toDateInput = (ts: string | null) => (ts ? ts.slice(0, 10) : '')
+const cellInputCls = 'rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
+// A mandatory field still empty (projects from before engineer/dates were required).
+const missingCls = '!border-rose-400 dark:!border-rose-500'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { leadId: '', projectName: '', locationId: '', startDate: '', completionDate: '', responsibleUserId: '' }
@@ -79,6 +83,9 @@ export default function Projects() {
     setFormError(null)
     if (!form.leadId) { setFormError('Lead is required.'); return }
     if (!form.projectName.trim()) { setFormError('Project name is required.'); return }
+    if (!form.responsibleUserId) { setFormError('Responsible engineer is required.'); return }
+    if (!form.startDate || !form.completionDate) { setFormError('Start and completion dates are required.'); return }
+    if (form.completionDate < form.startDate) { setFormError('Completion date can’t be before the start date.'); return }
     setCreating(true)
     try {
       const { project } = await api<{ project: Project }>('/projects', {
@@ -88,9 +95,9 @@ export default function Projects() {
           leadId: form.leadId,
           projectName: form.projectName.trim(),
           locationId: form.locationId || undefined,
-          startDate: form.startDate || undefined,
-          completionDate: form.completionDate || undefined,
-          responsibleUserId: form.responsibleUserId || undefined,
+          startDate: form.startDate,
+          completionDate: form.completionDate,
+          responsibleUserId: form.responsibleUserId,
         },
       })
       setProjects(prev => [project, ...prev])
@@ -146,19 +153,19 @@ export default function Projects() {
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Responsible engineer
+            Responsible engineer *
             <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls}>
-              <option value="">Unassigned</option>
+              <option value="">Select an engineer…</option>
               {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Start date
-            <input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
+            Start date *
+            <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Completion date
-            <input type="date" value={form.completionDate} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
+            Completion date *
+            <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
           </label>
         </div>
         {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
@@ -184,7 +191,7 @@ export default function Projects() {
           <EmptyState icon="briefcase" title="No projects yet" message="Marking a proposal Won creates its project automatically — or add one by hand." action={{ label: 'Create project', onClick: focusCreateForm }} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-[1150px] text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                   <th className="px-5 py-3 font-semibold">Work Order</th>
@@ -207,8 +214,53 @@ export default function Projects() {
                       <p>{p.lead?.plant?.plantName ?? '—'}</p>
                       <p className="text-gray-400 dark:text-gray-400">{p.lead?.plant?.client?.clientName ?? ''}</p>
                     </td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">{p.responsibleUser ? (p.responsibleUser.userName || p.responsibleUser.email) : 'Unassigned'}</td>
-                    <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmtDate(p.startDate)} → {fmtDate(p.completionDate)}</td>
+                    {/* Engineer and dates are editable here, not just at creation —
+                        a project auto-created from a Won proposal starts with neither. */}
+                    <td className="px-3 py-3">
+                      <select
+                        value={p.responsibleUserId ?? ''}
+                        disabled={savingId === p.id}
+                        onChange={e => e.target.value && patchProject(p.id, { responsibleUserId: e.target.value })}
+                        className={`${cellInputCls} ${p.responsibleUserId ? '' : missingCls}`}
+                        aria-label={`Engineer for ${p.workOrderNo}`}
+                      >
+                        {/* Mandatory: can be changed, not cleared — the blank
+                            choice only exists while none is set yet. */}
+                        {!p.responsibleUserId && <option value="" disabled>Assign engineer *</option>}
+                        {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
+                        {/* keep a current assignee who's no longer in the list selectable */}
+                        {p.responsibleUser && p.responsibleUserId && !employees.some(u => u.id === p.responsibleUserId) && (
+                          <option value={p.responsibleUserId}>{p.responsibleUser.userName || p.responsibleUser.email}</option>
+                        )}
+                      </select>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="date"
+                          value={toDateInput(p.startDate)}
+                          max={toDateInput(p.completionDate) || undefined}
+                          disabled={savingId === p.id}
+                          required
+                          onChange={e => e.target.value && patchProject(p.id, { startDate: e.target.value })}
+                          className={`${cellInputCls} ${p.startDate ? '' : missingCls}`}
+                          aria-label={`Start date for ${p.workOrderNo}`}
+                          title="Start date"
+                        />
+                        <span className="text-xs text-gray-400">→</span>
+                        <input
+                          type="date"
+                          value={toDateInput(p.completionDate)}
+                          min={toDateInput(p.startDate) || undefined}
+                          disabled={savingId === p.id}
+                          required
+                          onChange={e => e.target.value && patchProject(p.id, { completionDate: e.target.value })}
+                          className={`${cellInputCls} ${p.completionDate ? '' : missingCls}`}
+                          aria-label={`Completion date for ${p.workOrderNo}`}
+                          title="Completion date"
+                        />
+                      </div>
+                    </td>
                     <td className="px-3 py-3">
                       <select
                         value={p.status}

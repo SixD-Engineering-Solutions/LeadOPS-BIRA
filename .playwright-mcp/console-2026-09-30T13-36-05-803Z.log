@@ -1,1 +1,56 @@
 [   72151ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/leads/cmuo4whpz001668ex8httwptu:0
+[ 4406347ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 4407195ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 4506041ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4509055ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4514065ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4529537ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4537125ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4561412ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4564421ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 4605005ms] ReferenceError: missingCls is not defined
+    at http://localhost:5173/src/pages/projects.tsx?t=1790779970661:593:69
+    at Array.map (<anonymous>)
+    at Projects (http://localhost:5173/src/pages/projects.tsx?t=1790779970661:543:72)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:12867:12)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:4212:19)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:5568:16)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:6139:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:850:66)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:8428:92)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:8324:37)
+[ 4605005ms] [WARNING] %s
+
+%s
+ An error occurred in the <Projects> component. Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://react.dev/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:5256
+[ 5045536ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5178653ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/leads/cmuo7lied0009lcex18s1il2k:0
+[ 5183042ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5183798ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5186555ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5190541ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5193508ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5197504ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5201533ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5205457ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5208261ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5212391ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5216447ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5220584ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5224621ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5228775ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5232977ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5237148ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5241276ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5351524ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 5941534ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 5944550ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 5960801ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 5963809ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 5978653ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[ 6160895ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 6167749ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/leads/cmuo8so5z001n8cexnpn5jqvo:0
+[ 6585798ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 6586649ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[ 6684782ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/leads/cmuo94jrz000dw8exuus11fb1:0

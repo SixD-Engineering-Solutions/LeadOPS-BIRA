@@ -13,7 +13,7 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [loadingProposals, setLoadingProposals] = useState(true)
   const [proposalsError, setProposalsError] = useState<string | null>(null)
-  const [propForm, setPropForm] = useState({ projectName: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
+  const [propForm, setPropForm] = useState({ value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
   const [creatingProp, setCreatingProp] = useState(false)
   const [propError, setPropError] = useState<string | null>(null)
 
@@ -43,14 +43,13 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
         auth: true,
         body: {
           leadId,
-          projectName: propForm.projectName || undefined,
           value: propForm.value ? Number(propForm.value) : undefined,
           submissionDate: propForm.submissionDate || undefined,
           probabilityPct: propForm.probabilityPct ? Number(propForm.probabilityPct) : undefined,
           expectedOrderDate: propForm.expectedOrderDate || undefined,
         },
       })
-      setPropForm({ projectName: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
+      setPropForm({ value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
       loadProposals()
     } catch (e) {
       setPropError(e instanceof Error ? e.message : 'Could not create proposal.')
@@ -67,7 +66,6 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
     <DetailSection title="Proposals">
       {canAdd && (
       <form onSubmit={createProposal} className="mb-3 grid grid-cols-2 gap-2">
-        <input value={propForm.projectName} onChange={e => setPropForm({ ...propForm, projectName: e.target.value })} placeholder="Project name" className={`${inputCls} col-span-2`} />
         <input type="number" value={propForm.value} onChange={e => setPropForm({ ...propForm, value: e.target.value })} placeholder="Value (₹)" className={inputCls} />
         <input type="number" min={0} max={100} value={propForm.probabilityPct} onChange={e => setPropForm({ ...propForm, probabilityPct: e.target.value })} placeholder="Probability %" className={inputCls} />
         <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -96,13 +94,21 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
       ) : (
         <ul className="space-y-2 border-t border-gray-50 pt-3 dark:border-gray-800/60">
           {proposals.map(p => (
-            <li key={p.id} className="flex items-center justify-between gap-2 text-xs">
-              <div className="min-w-0">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">{p.proposalNumber}</span>
-                {p.projectName && <span className="ml-1 text-gray-500 dark:text-gray-400">{p.projectName}</span>}
-                {p.value != null && <span className="ml-1 text-gray-400 dark:text-gray-400">{formatINR(p.value)}</span>}
+            <li key={p.id} className="text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">{p.proposalNumber}</span>
+                  {p.projectName && <span className="ml-1 text-gray-500 dark:text-gray-400">{p.projectName}</span>}
+                  {p.value != null && <span className="ml-1 text-gray-400 dark:text-gray-400">{formatINR(p.value)}</span>}
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${PROPOSAL_STATUS_STYLES[p.status] ?? DEFAULT_STATUS_STYLE}`}>{p.status}</span>
               </div>
-              <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${PROPOSAL_STATUS_STYLES[p.status] ?? DEFAULT_STATUS_STYLE}`}>{p.status}</span>
+              {p.lostReason && (
+                <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 dark:border-rose-500/40 dark:bg-rose-500/10">
+                  <span className="font-semibold text-rose-600 dark:text-rose-300">Reason lost</span>
+                  <p className="mt-0.5 whitespace-pre-line text-sm text-gray-900 dark:text-gray-100">{p.lostReason}</p>
+                </div>
+              )}
             </li>
           ))}
         </ul>

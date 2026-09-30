@@ -44,6 +44,7 @@ export type Lead = {
   statusId: string | null
   status?: { id: string; statusName: string; statusCategory: string | null } | null
   remark: string | null
+  lostReason: string | null // required while status is Dead
   createdByUserId: string
   createdByUser?: { id: string; userName: string | null; email: string }
   createdAt: string
@@ -82,6 +83,7 @@ export type Proposal = {
   status: string
   probabilityPct: number | null
   expectedOrderDate: string | null
+  lostReason: string | null // required while status is Lost
   createdByUserId: string
   createdByUser?: { id: string; userName: string | null; email: string }
   createdAt: string

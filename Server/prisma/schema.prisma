@@ -250,6 +250,9 @@ model Lead {
   statusId         String?        @map("status_id")
   status           LeadStatus?    @relation(fields: [statusId], references: [id])
   remark           String?
+  // Mandatory whenever the status is "Dead" — why the lead was lost. Cleared
+  // if the lead is revived. (Proposal.lostReason is the same for "Lost".)
+  lostReason       String?        @map("lost_reason")
   createdByUserId  String         @map("created_by_user_id")
   createdByUser    User           @relation("CreatedBy", fields: [createdByUserId], references: [id])
   createdAt        DateTime       @default(now()) @map("created_at")
@@ -326,6 +329,8 @@ model Proposal {
   status            String    @default("Draft")
   probabilityPct    Int?      @map("probability_pct")
   expectedOrderDate DateTime? @map("expected_order_date")
+  // Mandatory whenever the status is "Lost"; cleared if it moves off Lost.
+  lostReason        String?   @map("lost_reason")
   createdByUserId   String    @map("created_by_user_id")
   createdByUser     User      @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
   createdAt         DateTime  @default(now()) @map("created_at")

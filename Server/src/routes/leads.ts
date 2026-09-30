@@ -134,8 +134,15 @@ const createSchema = z.object({
   assignedToName: z.string().optional(),
   statusName: z.string().optional(),
   remark: z.string().optional(),
+  lostReason: z.string().optional(),
 })
 const clean = (s?: string) => s?.trim() || ''
+
+// A lead marked Dead must say why — required on create and on every change
+// to Dead, and cleared when the lead is revived.
+const isDead = (statusName?: string | null) => clean(statusName ?? undefined).toLowerCase() === 'dead'
+const LOST_REASON_REQUIRED = 'Give a reason why the lead was lost (at least 3 characters).'
+const validReason = (r?: string | null) => clean(r ?? undefined).length >= 3
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
@@ -144,6 +151,10 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
   const d = parse.data
+  if (isDead(d.statusName) && !validReason(d.lostReason)) {
+    sendError(res, 400, LOST_REASON_REQUIRED)
+    return
+  }
   try {
     const location = clean(d.city) ? await foreLocation(clean(d.city)) : null
     const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
@@ -173,6 +184,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         assignedByUserId: assigned?.id ? req.userId! : null,
         statusId: status.id,
         remark: clean(d.remark) || null,
+        lostReason: isDead(d.statusName) ? clean(d.lostReason) : null,
         createdByUserId: req.userId!,
       },
       include: leadInclude,
@@ -194,6 +206,7 @@ const updateSchema = z.object({
   statusName: z.string().optional(),
   assignedToUserId: z.string().nullable().optional(),
   remark: z.string().nullable().optional(),
+  lostReason: z.string().optional(),
 })
 
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -202,14 +215,30 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, 'Invalid update data.')
     return
   }
-  const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
+  const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: { status: { select: { statusName: true } } } })
   if (!existing) {
     sendError(res, 404, 'Lead not found.')
     return
   }
 
-  const data: { statusId?: string; assignedToUserId?: string | null; assignedByUserId?: string | null; remark?: string | null } = {}
-  if (parse.data.statusName?.trim()) data.statusId = (await foreStatus(parse.data.statusName.trim())).id
+  const data: { statusId?: string; assignedToUserId?: string | null; assignedByUserId?: string | null; remark?: string | null; lostReason?: string | null } = {}
+  if (parse.data.statusName?.trim()) {
+    const toDead = isDead(parse.data.statusName)
+    if (toDead && !isDead(existing.status?.statusName) && !validReason(parse.data.lostReason)) {
+      sendError(res, 400, LOST_REASON_REQUIRED)
+      return
+    }
+    data.statusId = (await foreStatus(parse.data.statusName.trim())).id
+    if (toDead && validReason(parse.data.lostReason)) data.lostReason = clean(parse.data.lostReason)
+    if (!toDead) data.lostReason = null
+  } else if (parse.data.lostReason !== undefined && isDead(existing.status?.statusName)) {
+    // Editing the reason on an already-dead lead — still can't be emptied.
+    if (!validReason(parse.data.lostReason)) {
+      sendError(res, 400, LOST_REASON_REQUIRED)
+      return
+    }
+    data.lostReason = clean(parse.data.lostReason)
+  }
   if ('assignedToUserId' in parse.data) {
     if (parse.data.assignedToUserId) {
       const target = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { role: true } })

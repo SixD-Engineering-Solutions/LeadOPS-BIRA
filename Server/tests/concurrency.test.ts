@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { adminToken, api, createTestLead, createTestProject, deleteLead, deleteProject, deleteProposal, deleteInvoiceAndPayments } from './helpers'
+import { adminToken, api, createTestLead, createTestProject, deleteLead, deleteProject, deleteProposal, deleteInvoiceAndPayments, projectDetails } from './helpers'
 
 type Proposal = { id: string; proposalNumber: string }
 type Project = { id: string; workOrderNo: string; proposal?: { id: string } | null }
@@ -22,41 +22,58 @@ describe('Concurrency (Phase 3)', () => {
     await deleteLead(admin, leadId)
   })
 
-  it('concurrent proposal creates never collide on a number', async () => {
+  // One proposal per lead: of N simultaneous creates on the same lead, exactly
+  // one lands and the rest are refused — never two, and never a burned number.
+  it('N simultaneous proposal creates on one lead: exactly one succeeds', async () => {
     const N = 10
     const results = await Promise.all(
       Array.from({ length: N }, () =>
-        api<{ proposal: Proposal }>('/proposals', { method: 'POST', token: admin, body: { leadId, projectName: 'Vitest concurrency' } })
+        api<{ proposal: Proposal }>('/proposals', { method: 'POST', token: admin, body: { leadId } })
       )
     )
-    expect(results.every(r => r.status === 201)).toBe(true)
-    const numbers = results.map(r => r.body.proposal.proposalNumber)
-    expect(new Set(numbers).size).toBe(N)
+    const created = results.filter(r => r.status === 201)
+    expect(created.length).toBe(1)
+    expect(results.filter(r => r.status === 409).length).toBe(N - 1)
 
-    await Promise.all(results.map(r => deleteProposal(admin, r.body.proposal.id)))
+    await deleteProposal(admin, created[0].body.proposal.id)
   })
 
-  it('concurrent project creates never collide on a work order number', async () => {
+  // Same rule for projects.
+  it('N simultaneous project creates on one lead: exactly one succeeds', async () => {
+    const details = await projectDetails(admin)
     const N = 8
     const results = await Promise.all(
       Array.from({ length: N }, () =>
-        api<{ project: Project }>('/projects', { method: 'POST', token: admin, body: { leadId, projectName: 'Vitest concurrency project' } })
+        api<{ project: Project }>('/projects', { method: 'POST', token: admin, body: { leadId, projectName: 'Vitest concurrency project', ...details } })
       )
     )
-    expect(results.every(r => r.status === 201)).toBe(true)
-    const numbers = results.map(r => r.body.project.workOrderNo)
-    expect(new Set(numbers).size).toBe(N)
+    const created = results.filter(r => r.status === 201)
+    expect(created.length).toBe(1)
+    expect(results.filter(r => r.status === 409).length).toBe(N - 1)
 
-    await Promise.all(results.map(r => deleteProject(admin, r.body.project.id)))
+    await deleteProject(admin, created[0].body.project.id)
+  })
+
+  it('marking Won without the project’s engineer and dates is refused, and leaves the proposal unchanged', async () => {
+    const { body: created } = await api<{ proposal: Proposal & { status: string } }>('/proposals', { method: 'POST', token: admin, body: { leadId } })
+    const proposalId = created.proposal.id
+
+    const res = await api(`/proposals/${proposalId}`, { method: 'PATCH', token: admin, body: { status: 'Won' } })
+    expect(res.status).toBe(400)
+    const { body: after } = await api<{ proposal: { status: string } }>(`/proposals/${proposalId}`, { token: admin })
+    expect(after.proposal.status).toBe('Draft')
+
+    await deleteProposal(admin, proposalId)
   })
 
   it('N simultaneous "mark Won" requests on the same proposal create exactly one project', async () => {
-    const { body: created } = await api<{ proposal: Proposal }>('/proposals', { method: 'POST', token: admin, body: { leadId, projectName: 'Vitest won-race' } })
+    const { body: created } = await api<{ proposal: Proposal }>('/proposals', { method: 'POST', token: admin, body: { leadId } })
     const proposalId = created.proposal.id
+    const project = await projectDetails(admin)
 
     const N = 6
     const results = await Promise.all(
-      Array.from({ length: N }, () => api(`/proposals/${proposalId}`, { method: 'PATCH', token: admin, body: { status: 'Won' } }))
+      Array.from({ length: N }, () => api(`/proposals/${proposalId}`, { method: 'PATCH', token: admin, body: { status: 'Won', project } }))
     )
     expect(results.every(r => r.status === 200)).toBe(true)
 

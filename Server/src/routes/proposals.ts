@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastProposalUpdate, broadcastProjectUpdate } from '../services/notify'
-import { nextWorkOrderNo } from './projects'
+import { nextWorkOrderNo, checkEngineer } from './projects'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 import { isAdmin, canAccessLead } from '../utils/access'
@@ -60,7 +60,13 @@ const createSchema = z.object({
   status: z.enum(PROPOSAL_STATUSES).optional(),
   probabilityPct: z.coerce.number().int().min(0).max(100).optional(),
   expectedOrderDate: z.coerce.date().optional(),
+  lostReason: z.string().optional(),
 })
+
+// A proposal marked Lost must say why — required on create and on every change
+// to Lost, and cleared if it moves off Lost.
+const LOST_REASON_REQUIRED = 'Give a reason why the proposal was lost (at least 3 characters).'
+const validReason = (r?: string | null) => (r?.trim().length ?? 0) >= 3
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
@@ -69,6 +75,10 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
   const d = parse.data
+  if (d.status === 'Lost' && !validReason(d.lostReason)) {
+    sendError(res, 400, LOST_REASON_REQUIRED)
+    return
+  }
   const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(d.leadId, req.userId, admin)
   if (!lead) {
@@ -102,6 +112,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
           status: d.status ?? 'Draft',
           probabilityPct: d.probabilityPct ?? null,
           expectedOrderDate: d.expectedOrderDate ?? null,
+          lostReason: d.status === 'Lost' ? d.lostReason!.trim() : null,
           createdByUserId: req.userId!,
         },
         include: proposalInclude,
@@ -132,13 +143,28 @@ const updateSchema = z.object({
   status: z.enum(PROPOSAL_STATUSES).optional(),
   probabilityPct: z.coerce.number().int().min(0).max(100).nullable().optional(),
   expectedOrderDate: z.coerce.date().nullable().optional(),
+  lostReason: z.string().optional(),
+  // Required with status "Won" whenever that creates the lead's project —
+  // engineer and dates are mandatory on every project (see projects.ts).
+  project: z.object({
+    responsibleUserId: z.string().min(1, 'Responsible engineer is required.'),
+    startDate: z.coerce.date({ message: 'Start date is required.' }),
+    completionDate: z.coerce.date({ message: 'Completion date is required.' }),
+  }).refine(p => p.completionDate >= p.startDate, { message: 'Completion date can’t be before the start date.' }).optional(),
 })
 
 router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
-    sendError(res, 400, 'Invalid update data.')
+    sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid update data.')
     return
+  }
+  if (parse.data.project) {
+    const engineerError = await checkEngineer(parse.data.project.responsibleUserId)
+    if (engineerError) {
+      sendError(res, 400, engineerError)
+      return
+    }
   }
   const admin = await isAdmin(req.userId)
   const existing = await prisma.proposal.findFirst({
@@ -157,6 +183,19 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if (d.status) data.status = d.status
   if ('probabilityPct' in d) data.probabilityPct = d.probabilityPct
   if ('expectedOrderDate' in d) data.expectedOrderDate = d.expectedOrderDate
+  const willBeLost = (d.status ?? existing.status) === 'Lost'
+  if (d.status === 'Lost' && existing.status !== 'Lost' && !validReason(d.lostReason)) {
+    sendError(res, 400, LOST_REASON_REQUIRED)
+    return
+  }
+  if (d.lostReason !== undefined && willBeLost) {
+    if (!validReason(d.lostReason)) {
+      sendError(res, 400, LOST_REASON_REQUIRED)
+      return
+    }
+    data.lostReason = d.lostReason.trim()
+  }
+  if (d.status && d.status !== 'Lost') data.lostReason = null
 
   try {
     // The status update and the Won→Project auto-create are one transaction:
@@ -189,6 +228,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
           await tx.project.update({ where: { id: alreadyHasProject.id }, data: { proposalId: proposal.id } })
         }
         if (!alreadyHasProject) {
+          // Rolls back the Won status too — a proposal is never left Won
+          // without its project.
+          if (!d.project) throw new ProjectDetailsRequiredError()
           const lead = await tx.lead.findUnique({ where: { id: proposal.leadId }, select: { plant: { select: { plantName: true, locationId: true } } } })
           project = await tx.project.create({
             data: {
@@ -197,6 +239,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
               leadId: proposal.leadId,
               projectName: proposal.projectName || lead?.plant.plantName || 'Untitled project',
               locationId: lead?.plant.locationId ?? null,
+              responsibleUserId: d.project.responsibleUserId,
+              startDate: d.project.startDate,
+              completionDate: d.project.completionDate,
               createdByUserId: req.userId!,
             },
           })
@@ -210,10 +255,18 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     broadcastProposalUpdate(result.proposal.id)
     if (result.project) broadcastProjectUpdate(result.project.id)
     res.json({ proposal: result.proposal })
-  } catch {
+  } catch (err) {
+    if (err instanceof ProjectDetailsRequiredError) {
+      sendError(res, 400, 'Marking a proposal Won creates its project — assign a responsible engineer and start/completion dates.')
+      return
+    }
     sendError(res, 400, 'Could not update proposal.')
   }
 })
+
+class ProjectDetailsRequiredError extends Error {
+  constructor() { super('Project details required to mark Won.') }
+}
 
 // DELETE /proposals/:id — admin-only soft delete, same pattern as leads/tasks.
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
