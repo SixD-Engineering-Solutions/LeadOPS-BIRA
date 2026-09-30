@@ -1,0 +1,42 @@
+# Portainer Web editor stack for Docker Standalone.
+# Build and upload both images before deploying; this file does not build source.
+# Keep DATABASE_URL pointed at the existing Aiven PostgreSQL database.
+# See PORTAINER_DEPLOYMENT.md for image preparation and environment values.
+services:
+  leadops-api:
+    image: ${LEADOPS_API_IMAGE:?set LEADOPS_API_IMAGE to an available image}
+    pull_policy: ${IMAGE_PULL_POLICY:-missing}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?set the existing Aiven DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random secret of at least 32 characters}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:?set the public LeadOps URL}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      FROM_EMAIL: ${FROM_EMAIL:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+    volumes:
+      - leadops-uploads:/app/uploads
+    # Exactly one API instance; reminders and live notifications run in process.
+    # Only nginx reaches this service; do not publish its port on the host.
+
+  leadops-web:
+    image: ${LEADOPS_WEB_IMAGE:?set LEADOPS_WEB_IMAGE to an available image}
+    pull_policy: ${IMAGE_PULL_POLICY:-missing}
+    restart: unless-stopped
+    depends_on:
+      - leadops-api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  leadops-uploads:
+    # Explicit name keeps uploads attached when the Portainer stack is renamed.
+    # For an existing destination volume, supply its exact name instead.
+    name: ${UPLOADS_VOLUME_NAME:-leadops-uploads}

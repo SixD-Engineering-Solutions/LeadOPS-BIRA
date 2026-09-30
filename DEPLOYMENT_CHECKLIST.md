@@ -88,8 +88,18 @@ and a disallowed browser origin now gets a clean **403** instead of a 500 with a
 **Now in the repo** (added 30 Sep): `Server/Dockerfile`, `Server/.dockerignore`, `Client/Dockerfile`,
 `Client/nginx.conf`, `Client/.dockerignore`, `docker-compose.yml`. The repo versions are the source
 of truth — they refine the sketches below (health checks, caching headers, required-variable checks).
-Not yet built as images: Docker isn't running on the development PC — build once locally or in
-Portainer before relying on them.
+**Built and verified locally on 30 Sep** (Docker Desktop, full stack against the real database):
+both containers healthy · `/api` routing · security headers · CORS 403 for foreign origins ·
+login rate limit can't be bypassed by faking X-Forwarded-For · live notifications arrive through
+nginx unbuffered · an uploaded file survived the API container being destroyed/recreated and a full
+rebuild · with the API stopped the site stays up (`/api` → 502) and recovers without a restart ·
+`prisma migrate status` runs inside the image ("up to date") · browser: login, dashboard, Leads,
+Tracker, Team load with 0 API/console errors · images: Alpine 3.24, 0 outstanding OS updates,
+nginx 1.30 stable, API runs as non-root `node`, no `.env`/tests/scripts inside.
+Fixes made during that test: nginx now resolves the API per request (it previously refused to start
+if the API wasn't up yet); `Referrer-Policy` header restored; web base image moved to
+`nginx:stable-alpine` + `apk upgrade` in both images; Aiven cert env set after the cert is copied;
+new `DB_POOL_MAX` setting (default 10) to share Aiven's 20-connection cap.
 
 ☐ **`Server/Dockerfile`**
 ```dockerfile
@@ -276,7 +286,7 @@ Do these in order; each builds on the previous.
 
 **Access & security**
 - ☐ `https://<site>` loads, tab title reads **LeadOps**.
-- ☐ `https://<site>/LeadOps%20sheet.xlsx` → **404** (B8).
+- ☐ `https://<site>/LeadOps%20sheet.xlsx` → returns the **app page (HTML)**, not a spreadsheet (B8). The single-page app answers unknown paths with its own page, so 200 is expected.
 - ☐ Log in with `dev@leadops.local` / `devmode123` → **rejected** (B1).
 - ☐ `https://<site>/api/auth/dev-login` (POST) → **404**.
 - ☐ 11 wrong passwords in a row → **rate-limited** (B7).

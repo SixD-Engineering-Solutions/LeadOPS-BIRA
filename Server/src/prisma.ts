@@ -47,7 +47,9 @@ const pool = new Pool({
   // Fail fast instead of hanging when the DB is unreachable/flapping.
   connectionTimeoutMillis: 10000, // give up acquiring a connection after 10s
   idleTimeoutMillis: 30000, // drop idle connections after 30s
-  max: 10,
+  // Aiven's plan allows 20 connections in total, shared by every server that
+  // points at this database — lower DB_POOL_MAX when more than one runs.
+  max: Number(process.env.DB_POOL_MAX) || 10,
 })
 pool.on('error', (err) => {
   console.error('[db pool] idle client error (recovering):', err.message)

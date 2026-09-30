@@ -19,6 +19,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       FROM_EMAIL: ${FROM_EMAIL:-}
+      # Aiven allows 20 DB connections in total across everything using the database.
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
     volumes:
       - leadops-uploads:/app/uploads        # uploaded documents — keep across redeploys
     # Exactly one API instance: live notifications and reminders are in-process.

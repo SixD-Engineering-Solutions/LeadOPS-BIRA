@@ -12,11 +12,10 @@ RUN npx prisma generate && npm run build
 
 # ── runtime: production deps + compiled output only ──────────────────────────
 FROM node:22-alpine
+# Pick up OS security fixes released since the base image was published.
+RUN apk upgrade --no-cache
 WORKDIR /app
 ENV NODE_ENV=production
-# Lets `npx prisma migrate deploy` (run from this image) verify Aiven's TLS cert;
-# the API itself pins the same CA in src/prisma.ts.
-ENV NODE_EXTRA_CA_CERTS=/app/certs/aiven-ca.pem
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
@@ -25,6 +24,9 @@ COPY prisma/schema.prisma ./prisma/schema.prisma
 COPY prisma/migrations ./prisma/migrations
 COPY prisma.config.ts ./
 COPY certs ./certs
+# Lets `npx prisma migrate deploy` (run from this image) verify Aiven's TLS cert;
+# the API itself pins the same CA in src/prisma.ts. Set after the cert is copied.
+ENV NODE_EXTRA_CA_CERTS=/app/certs/aiven-ca.pem
 # Uploaded documents — mount a persistent volume here, or every redeploy deletes them.
 RUN mkdir -p /app/uploads/documents && chown -R node:node /app/uploads
 USER node

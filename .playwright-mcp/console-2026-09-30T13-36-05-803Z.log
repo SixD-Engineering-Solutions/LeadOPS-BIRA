@@ -116,3 +116,10 @@ Visit https://react.dev/link/error-boundaries to learn more about error boundari
 [10588880ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/leads:0
 [10605167ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/users:0
 [10605168ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/leads:0
+[11534751ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:3000/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXJuNDZncWIwMDAwZmdvOTlsYzl5emppIiwiaWF0IjoxNzkwNjgwNzY1LCJleHAiOjE3OTEyODU1NjV9.4n6mdjjyJz6GOysovnTRWLO88iCbyuwNBLA-Ma1KGwY:0
+[11710865ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[11711736ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[11711886ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/auth/me:0
+[11712002ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/auth/me:0
+[12023896ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=a60b3a79:14336
+[12200156ms] [ERROR] Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ http://localhost:8080/api/notifications/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXVvMnAxZHMwMDA2NjhleHBpc2tmMGNyIiwiaWF0IjoxNzkwNzg3MzE0LCJleHAiOjE3OTA3ODg1MTR9.Kj8r1zHS1x08ZlHf7Uxl8Yan5776t2CAvwLbg85IUXY:0
