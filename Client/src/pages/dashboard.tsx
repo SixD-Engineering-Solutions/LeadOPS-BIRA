@@ -87,7 +87,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard, isAdmin)
   const { proposalStats, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
   const { pendingInvoices, error: pendingInvoicesError, reload: reloadPendingInvoices } = usePendingInvoices(onDashboard)
-  const { myTasks, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
+  const { myTasks, loaded: myTasksLoaded, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
   const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard)
 
   // Opens the full lead detail modal from a follow-up entry (which only carries
@@ -141,9 +141,9 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       />
 
       {/* ── Main ────────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 scroll-pt-20 overflow-y-auto">
         {/* top bar */}
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 sm:px-6">
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}
             <button onClick={() => setMobileNavOpen(true)} className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden" aria-label="Open menu">
@@ -175,7 +175,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'invoices' ? (
           <Invoices isAdmin={isAdmin} />
         ) : active === 'tracker' ? (
-          <Tracker isAdmin={isAdmin} />
+          <Tracker />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (
@@ -194,6 +194,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             onRetryProposalStats={reloadProposalStats}
             onOpenAssignments={() => setShowAssignments(true)}
             onOpenProposals={() => openModule({ key: 'proposals', label: 'Proposals' })}
+            onOpenPipeline={() => openModule({ key: 'tracker', label: 'Tracker' })}
           />
 
           <FollowUpsPanel
@@ -213,6 +214,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <TasksPanel
             isAdmin={isAdmin}
             myTasks={myTasks}
+            loaded={myTasksLoaded}
             error={myTasksError}
             onRetry={reloadMyTasks}
             onViewAll={() => openModule({ key: 'tasks', label: 'Tasks' })}
@@ -221,7 +223,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           {/* modules */}
           <div className="mt-8 mb-3 flex items-center justify-between">
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Modules</h2>
-            <span className="text-xs text-gray-400 dark:text-gray-500">Demo — select any card</span>
+            <span className="text-xs text-gray-400 dark:text-gray-400">Demo — select any card</span>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {modules.map(m => (

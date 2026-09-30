@@ -77,9 +77,8 @@ async function recomputeStatus(db: Db, invoiceId: string): Promise<void> {
 // Mirrors a Paid invoice into `InvoiceRegisterItem` (the Tracker's Invoice
 // Register) so it shows up alongside the imported historical data —
 // `sourceInvoiceId` marks the row as live-synced (vs. `null` for everything
-// from the original Excel import); the client uses that to pin/highlight
-// these as trial entries, and `DELETE /tracker/invoices/trial-entries`
-// (admin-only) uses it to clear them before a real deployment. Keyed by
+// from the original Excel import); the client uses that to list these rows
+// separately from the imported ones. Keyed by
 // `sourceInvoiceId` (unique), so re-running this on the same invoice updates
 // its one row rather than creating duplicates.
 //
@@ -151,7 +150,7 @@ async function syncInvoiceToTracker(db: Db, invoiceId: string, status: string): 
 
   const data = {
     sourceInvoiceId: invoice.id,
-    sortOrder: -1, // always sorts ahead of every imported row (sortOrder >= 0); the client re-sorts trial rows among themselves
+    sortOrder: -1, // always sorts ahead of every imported row (sortOrder >= 0); the client re-sorts app rows among themselves
     sector: invoice.project.lead.sector?.sectorName ?? null,
     client: invoice.project.lead.plant.client?.clientName ?? null,
     location: invoice.project.lead.plant.location?.city ?? null,
@@ -172,8 +171,8 @@ async function syncInvoiceToTracker(db: Db, invoiceId: string, status: string): 
     balanceOutstandingLakhs: toLakhs(balanceOutstanding),
     daysToCollect,
     remarks: paidTotal > 0
-      ? 'Auto-synced from a live paid invoice — trial entry, safe to clear before deployment.'
-      : 'Auto-synced from an invoice marked Paid manually (no payment logged) — trial entry, safe to clear before deployment.',
+      ? 'Auto-synced from an invoice paid in the app.'
+      : 'Auto-synced from an invoice marked Paid manually in the app (no payment logged).',
   }
 
   await db.invoiceRegisterItem.upsert({

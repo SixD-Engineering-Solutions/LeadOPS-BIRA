@@ -4,6 +4,7 @@ import Dashboard from './pages/dashboard'
 import { api, getToken, clearToken } from './lib/api'
 import type { AuthUser } from './lib/api'
 import { hasDevSession, endDevSession, DEV_USER } from './lib/devAuth'
+import { SkeletonScreen } from './components/Skeleton'
 
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -35,7 +36,7 @@ export default function App() {
 
   if (restoring) {
     return (
-      <div className="h-screen flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+      <SkeletonScreen />
     )
   }
 

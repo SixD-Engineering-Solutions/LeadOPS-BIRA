@@ -4,6 +4,9 @@ import type { Lead, EmployeeUser, Event } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
+import { EmptyState } from '../components/EmptyState'
+import { focusCreateForm } from '../lib/focusCreateForm'
+import { SkeletonRows } from '../components/Skeleton'
 
 // Fixed status options.
 const STATUSES = ['Submitted', 'In Process', 'Dead'] as const
@@ -208,21 +211,21 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       {/* list */}
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Leads {leads.length > 0 && <span className="text-gray-400 dark:text-gray-500">({leads.length})</span>}</h3>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Leads {leads.length > 0 && <span className="text-gray-400 dark:text-gray-400">({leads.length})</span>}</h3>
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+          <SkeletonRows />
         ) : leads.length === 0 && !error ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No leads yet. Create one above.</p>
+          <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: focusCreateForm }} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[920px] text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-500">
+                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                   <th className="px-5 py-3 font-semibold">Plant / Contact</th>
                   <th className="px-3 py-3 font-semibold">Vertical / Sector</th>
                   <th className="px-3 py-3 font-semibold">Status</th>
@@ -245,7 +248,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
                       <p>{lead.vertical?.verticalName ?? '—'}</p>
-                      <p className="text-gray-400 dark:text-gray-500">{lead.sector?.sectorName ?? '—'}</p>
+                      <p className="text-gray-400 dark:text-gray-400">{lead.sector?.sectorName ?? '—'}</p>
                     </td>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                       <select

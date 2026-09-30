@@ -35,7 +35,7 @@ model User {
   createdProjects     Project[]      @relation("ProjectCreatedBy")
   documents           Document[]
   createdInvoices     Invoice[]
-  recordedPayments    Payment[]
+  recordedPayments    Payment[]
   createdEvents       Event[]
 
   @@map("users")
@@ -97,7 +97,7 @@ model Client {
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  plants  Plant[]
+  plants  Plant[]
 
   @@index([categoryId])
   @@map("clients")
@@ -453,9 +453,8 @@ model PipelineTrackerItem {
   // Set only on a row synced live from a real, non-deleted Lead (see
   // syncLeadToPipeline in utils/pipelineSync.ts) —
   // null for every row from the original Excel import. Same convention as
-  // InvoiceRegisterItem.sourceInvoiceId: doubles as the "is this a trial
-  // entry" flag the client uses to highlight/pin these rows, and as the key
-  // `DELETE /tracker/pipeline/trial-entries` clears before a real deployment.
+  // InvoiceRegisterItem.sourceInvoiceId: the client lists these rows
+  // separately from the imported ones.
   sourceLeadId   String?  @unique @map("source_lead_id")
   vertical       String?
   client         String?
@@ -487,9 +486,8 @@ model InvoiceRegisterItem {
   sortOrder               Int       @map("sort_order")
   // Set only on a row synced live from a real, fully-paid Invoice (see
   // syncInvoiceToTracker in routes/invoices.ts) — null for every row that
-  // came from the original Excel import. Doubles as the "is this a trial
-  // entry" flag the client uses to highlight/pin these rows, and as the key
-  // `DELETE /tracker/invoices/trial-entries` clears before a real deployment.
+  // came from the original Excel import. The client lists these rows
+  // separately from the imported ones.
   sourceInvoiceId         String?   @unique @map("source_invoice_id")
   sector                  String?
   client                  String?

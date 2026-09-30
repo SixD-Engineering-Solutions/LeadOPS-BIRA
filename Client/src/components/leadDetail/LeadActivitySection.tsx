@@ -3,6 +3,8 @@ import { api, ACTIVITY_SYNC_EVENT, ACTIVITY_TYPES } from '../../lib/api'
 import type { Activity, ActivityType } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
 import { DetailSection, inputCls, fmtDay } from './shared'
+import { EmptyState } from '../EmptyState'
+import { SkeletonRows } from '../Skeleton'
 
 const todayInput = () => new Date().toISOString().slice(0, 10)
 
@@ -83,23 +85,23 @@ export function LeadActivitySection({ leadId }: { leadId: string }) {
       {activitiesError ? (
         <ErrorBanner message={activitiesError} onRetry={loadActivities} className="my-2" />
       ) : loadingActivities ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">Loading…</p>
+        <SkeletonRows rows={2} compact />
       ) : activities.length === 0 ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">No activity logged yet.</p>
+        <EmptyState compact icon="clock" title="No activity logged yet" message="Log calls, visits and meetings — add a next action date to get a reminder." />
       ) : (
         <ul className="space-y-2.5 border-t border-gray-50 pt-3 dark:border-gray-800/60">
           {activities.map(a => (
             <li key={a.id} className="text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-gray-900 dark:text-gray-100">{a.activityType}</span>
-                <span className="text-gray-400 dark:text-gray-500">{fmtDay(a.activityDate)}</span>
+                <span className="text-gray-400 dark:text-gray-400">{fmtDay(a.activityDate)}</span>
               </div>
               {a.notes && (
                 <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-gray-600 dark:text-gray-400">
                   {a.notes.split('\n').map(line => line.trim()).filter(Boolean).map((line, i) => <li key={i}>{line}</li>)}
                 </ul>
               )}
-              <p className="mt-0.5 text-gray-400 dark:text-gray-500">
+              <p className="mt-0.5 text-gray-400 dark:text-gray-400">
                 {a.user ? `by ${a.user.userName || a.user.email}` : ''}
                 {a.nextActionDate ? ` · next: ${fmtDay(a.nextActionDate)}` : ''}
               </p>

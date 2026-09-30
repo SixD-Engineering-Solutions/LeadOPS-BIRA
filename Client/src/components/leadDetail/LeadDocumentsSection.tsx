@@ -3,6 +3,8 @@ import { api, uploadDocument, downloadDocument } from '../../lib/api'
 import type { LeadDocument } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
 import { DetailSection, fmtDay } from './shared'
+import { EmptyState } from '../EmptyState'
+import { SkeletonRows } from '../Skeleton'
 
 const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`)
 
@@ -65,24 +67,24 @@ export function LeadDocumentsSection({ leadId }: { leadId: string }) {
     <DetailSection title="Documents">
       <div className="mb-3">
         <input ref={fileInputRef} type="file" accept={ALLOWED_DOCUMENT_EXTENSIONS.join(',')} onChange={handleFileSelected} disabled={uploading} className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-600 hover:file:bg-orange-100 dark:text-gray-400 dark:file:bg-orange-950/40 dark:file:text-orange-400" />
-        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">PDF, Excel, or CSV, up to 10MB.</p>
-        {uploading && <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Uploading…</p>}
+        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-400">PDF, Excel, or CSV, up to 10MB.</p>
+        {uploading && <p className="mt-1 text-xs text-gray-400 dark:text-gray-400">Uploading…</p>}
         {uploadError && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{uploadError}</p>}
       </div>
 
       {documentsError ? (
         <ErrorBanner message={documentsError} onRetry={loadDocuments} className="my-2" />
       ) : loadingDocuments ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">Loading…</p>
+        <SkeletonRows rows={2} compact />
       ) : documents.length === 0 ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">No documents uploaded yet.</p>
+        <EmptyState compact icon="paperclip" title="No documents uploaded yet" message="Attach PDF, Excel or CSV files for this lead." />
       ) : (
         <ul className="space-y-2 border-t border-gray-50 pt-3 dark:border-gray-800/60">
           {documents.map(doc => (
             <li key={doc.id} className="flex items-center justify-between gap-2 text-xs">
               <div className="min-w-0">
                 <p className="truncate font-medium text-gray-900 dark:text-gray-100">{doc.fileName}</p>
-                <p className="text-gray-400 dark:text-gray-500">
+                <p className="text-gray-400 dark:text-gray-400">
                   {fmtSize(doc.fileSize)} · {doc.uploadedByUser ? (doc.uploadedByUser.userName || doc.uploadedByUser.email) : 'Unknown'} · {fmtDay(doc.createdAt)}
                 </p>
               </div>

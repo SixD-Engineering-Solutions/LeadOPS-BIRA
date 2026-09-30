@@ -6,6 +6,7 @@ import { useTheme } from '../../lib/theme'
 import { ErrorBanner } from '../ErrorBanner'
 import WeeklyLineChart from '../WeeklyLineChart'
 import PipelineStatusModal from './PipelineStatusModal'
+import { SkeletonCards } from '../Skeleton'
 
 type FyMonthKey = 'apr' | 'may' | 'jun' | 'jul' | 'aug' | 'sep' | 'oct' | 'nov' | 'dec' | 'jan' | 'feb' | 'mar'
 const FY_MONTHS: { key: FyMonthKey; label: string }[] = [
@@ -32,6 +33,26 @@ function classifyPipelineStatus(status: string | null): 'Won' | 'Lost' | 'Active
 }
 
 const STATUS_COLORS: Record<string, string> = { Won: '#10b981', Lost: '#f43f5e', Active: '#0ea5e9' }
+
+// "Grouped" view of Pipeline by status: folds the sheet's freehand
+// near-duplicates ("🔵 Quoted", "Quoted By this week", "Bid Submited"…) and the
+// app's "<stage>: <status>" values into a handful of sales stages. Display
+// only — the rows keep their exact status. Listed in pipeline order.
+const STATUS_GROUPS = ['Enquiry / Discussion', 'Quoted / Offer Sent', 'Negotiation / Follow-up', 'On Hold', 'Won', 'Lost'] as const
+type StatusGroup = (typeof STATUS_GROUPS)[number]
+
+function groupPipelineStatus(status: string | null): StatusGroup {
+  const outcome = classifyPipelineStatus(status)
+  if (outcome !== 'Active') return outcome
+  const s = (status ?? '').toLowerCase()
+  if (/\bhold\b/.test(s)) return 'On Hold'
+  if (/negotiation|follow-up|po is in|under process|awaiting|value case/.test(s)) return 'Negotiation / Follow-up'
+  if (/tender floated/.test(s)) return 'Enquiry / Discussion' // tender only just released — nothing quoted yet
+  if (/quot|offer|bid|tendering|proposal: (draft|submitted)/.test(s)) return 'Quoted / Offer Sent'
+  return 'Enquiry / Discussion'
+}
+
+const outcomeColor = (group: string) => STATUS_COLORS[group] ?? STATUS_COLORS.Active
 const DSO_COLORS: Record<string, string> = {
   '🟢 Collected': '#10b981',
   '🔴 Overdue': '#f43f5e',
@@ -49,11 +70,16 @@ function countBy<T>(items: T[], keyOf: (item: T) => string): { name: string; val
   return [...counts.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
 }
 
-function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function ChartCard({ title, subtitle, action, children }: { title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-      <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
+        </div>
+        {action}
+      </div>
       {children}
     </div>
   )
@@ -93,7 +119,13 @@ function BarCategoryTick({ x, y, payload, fill }: { x?: number; y?: number; payl
   )
 }
 
-function BarBreakdown({ data, color = '#f97316', height, onSelect }: { data: { name: string; value: number }[]; color?: string; height?: number; onSelect?: (name: string) => void }) {
+function BarBreakdown({ data, color = '#f97316', colorOf, height, onSelect }: {
+  data: { name: string; value: number }[]
+  color?: string
+  colorOf?: (name: string) => string // per-bar color; falls back to `color`
+  height?: number
+  onSelect?: (name: string) => void
+}) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
   const tickColor = isDark ? '#9ca3af' : '#4b5563'
@@ -112,6 +144,7 @@ function BarBreakdown({ data, color = '#f97316', height, onSelect }: { data: { n
         <YAxis type="category" dataKey="name" width={BAR_LABEL_WIDTH} interval={0} tick={<BarCategoryTick fill={tickColor} />} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }} contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
         <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} maxBarSize={22}>
+          {colorOf && data.map(d => <Cell key={d.name} fill={colorOf(d.name)} />)}
           <LabelList dataKey="value" position="right" fontSize={11} fill={tickColor} />
         </Bar>
       </BarChart>
@@ -148,6 +181,7 @@ export default function ReportsTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
+  const [statusView, setStatusView] = useState<'grouped' | 'exact'>('grouped')
 
   function load() {
     setLoading(true)
@@ -168,12 +202,17 @@ export default function ReportsTab() {
   }
   useEffect(load, [])
 
-  if (loading) return <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+  if (loading) return <SkeletonCards count={4} />
   if (error) return <ErrorBanner message={error} onRetry={load} />
 
   const statusCounts = countBy(pipeline, p => classifyPipelineStatus(p.status))
   const rawStatusOf = (p: PipelineTrackerItem) => p.status?.trim() || 'Unspecified'
-  const rawStatusCounts = countBy(pipeline, rawStatusOf)
+  const statusKeyOf = statusView === 'grouped' ? (p: PipelineTrackerItem) => groupPipelineStatus(p.status) : rawStatusOf
+  const statusBars = statusView === 'grouped'
+    ? STATUS_GROUPS.map(name => ({ name, value: pipeline.filter(p => groupPipelineStatus(p.status) === name).length })).filter(g => g.value > 0)
+    : countBy(pipeline, rawStatusOf)
+  // Same green/red/blue as the Pipeline health pie beside it.
+  const statusBarColor = (name: string) => outcomeColor(statusView === 'grouped' ? name : classifyPipelineStatus(name))
   // The sheet's sector summary is a fixed FY2026–27 table; collections from
   // invoices paid in the app are added on top, by payment month and sector.
   const liveCollected = register.filter(r => r.sourceInvoiceId && r.paymentDate && r.amountCollectedLakhs)
@@ -210,19 +249,41 @@ export default function ReportsTab() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Pipeline</h3>
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Pipeline</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ChartCard title="Pipeline health" subtitle="Every open lead classified as Won, Lost, or still Active">
             <PieBreakdown data={statusCounts} colors={STATUS_COLORS} />
           </ChartCard>
-          <ChartCard title="Pipeline by status" subtitle="Leads per status, from the imported sheet and the app · click a row to see its leads">
-            <BarBreakdown data={rawStatusCounts} onSelect={setSelectedStatus} />
+          <ChartCard
+            title="Pipeline by status"
+            subtitle={statusView === 'grouped'
+              ? 'Similar statuses grouped into sales stages · click a row to see its leads'
+              : 'Every exact status, from the imported sheet and the app · click a row to see its leads'}
+            action={
+              <div className="flex shrink-0 rounded-lg border border-gray-200 p-0.5 text-[11px] font-semibold dark:border-gray-700" role="group" aria-label="Status view">
+                {(['grouped', 'exact'] as const).map(v => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setStatusView(v)}
+                    aria-pressed={statusView === v}
+                    className={`rounded-md px-2.5 py-1 transition ${statusView === v
+                      ? 'bg-orange-500 text-white'
+                      : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    {v === 'grouped' ? 'Grouped' : 'Exact'}
+                  </button>
+                ))}
+              </div>
+            }
+          >
+            <BarBreakdown data={statusBars} colorOf={statusBarColor} onSelect={setSelectedStatus} />
           </ChartCard>
         </div>
       </div>
 
       <div>
-        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Invoices</h3>
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Invoices</h3>
         <div className="flex flex-col gap-4">
           <WeeklyLineChart
             title="Monthly collections"
@@ -250,7 +311,8 @@ export default function ReportsTab() {
       {selectedStatus && (
         <PipelineStatusModal
           status={selectedStatus}
-          rows={pipeline.filter(p => rawStatusOf(p) === selectedStatus)}
+          rows={pipeline.filter(p => statusKeyOf(p) === selectedStatus)}
+          showRowStatus={statusView === 'grouped'}
           onClose={() => setSelectedStatus(null)}
         />
       )}

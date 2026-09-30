@@ -12,6 +12,10 @@ const ROSE = 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/20 dark
 
 export const DEFAULT_STATUS_STYLE = GRAY
 
+// The raw palette, for badges that aren't a record status (e.g. a follow-up's
+// "Overdue" / "Today", an invoice's "₹… due") but should match the same look.
+export const BADGE_TONES = { gray: GRAY, sky: SKY, amber: AMBER, orange: ORANGE, violet: VIOLET, emerald: EMERALD, rose: ROSE } as const
+
 export const LEAD_STATUS_STYLES: Record<string, string> = {
   Submitted: SKY,
   'In Process': AMBER,

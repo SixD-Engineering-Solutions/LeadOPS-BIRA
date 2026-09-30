@@ -82,7 +82,15 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // could still hand two concurrent requests the same number in the gap
     // between reading the count and either one's create landing; the atomic
     // counter here can't be read the same way twice.)
+    // One proposal per lead: revise the existing one instead of raising
+    // another. Locking the lead row first makes the check hold under two
+    // simultaneous creates (the second waits, then sees the first's row).
+    // Checked before the number is reserved, and the transaction rolls back
+    // on refusal either way, so no proposal number is burned.
     const proposal = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM leads WHERE id = ${d.leadId} FOR UPDATE`
+      const existing = await tx.proposal.findFirst({ where: { leadId: d.leadId, deletedAt: null }, select: { proposalNumber: true } })
+      if (existing) throw new DuplicateProposalError(existing.proposalNumber)
       const proposalNumber = await nextSequenceNumber(tx, 'proposal', 'PROP')
       return tx.proposal.create({
         data: {
@@ -102,10 +110,18 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
     broadcastProposalUpdate(proposal.id)
     res.status(201).json({ proposal })
-  } catch {
+  } catch (err) {
+    if (err instanceof DuplicateProposalError) {
+      sendError(res, 409, `This lead already has a proposal (${err.proposalNumber}). Update that one instead of raising a new one.`)
+      return
+    }
     sendError(res, 400, 'Could not create proposal.')
   }
 })
+
+class DuplicateProposalError extends Error {
+  constructor(readonly proposalNumber: string) { super('Lead already has a proposal.') }
+}
 
 // PATCH /proposals/:id — update status/value/probability/dates. Same
 // visibility rule as GET: employees can only touch proposals on their own leads.
@@ -162,7 +178,16 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       const proposal = await tx.proposal.update({ where: { id: existing.id }, data, include: proposalInclude })
       let project = null
       if (data.status === 'Won') {
-        const alreadyHasProject = await tx.project.findUnique({ where: { proposalId: proposal.id } })
+        // One project per lead: if the lead already has one (say, raised by
+        // hand before the proposal was won), link it to this proposal rather
+        // than creating a second.
+        await tx.$queryRaw`SELECT id FROM leads WHERE id = ${proposal.leadId} FOR UPDATE`
+        const alreadyHasProject =
+          (await tx.project.findUnique({ where: { proposalId: proposal.id } })) ??
+          (await tx.project.findFirst({ where: { leadId: proposal.leadId, deletedAt: null } }))
+        if (alreadyHasProject && !alreadyHasProject.proposalId) {
+          await tx.project.update({ where: { id: alreadyHasProject.id }, data: { proposalId: proposal.id } })
+        }
         if (!alreadyHasProject) {
           const lead = await tx.lead.findUnique({ where: { id: proposal.leadId }, select: { plant: { select: { plantName: true, locationId: true } } } })
           project = await tx.project.create({

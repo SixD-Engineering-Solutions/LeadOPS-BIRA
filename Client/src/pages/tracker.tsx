@@ -3,12 +3,15 @@ import { api } from '../lib/api'
 import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary } from '../lib/api'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { stageStatusStyle } from '../lib/statusStyles'
+import { formatLakhs, formatSheetValue } from '../lib/format'
 import ReportsTab from '../components/tracker/ReportsTab'
+import { EmptyState } from '../components/EmptyState'
+import { SkeletonRows } from '../components/Skeleton'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
 const dash = <span className="text-gray-300 dark:text-gray-600">—</span>
-const fmtLakhs = (v: number | null) => (v == null ? dash : `₹${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}L`)
+const fmtLakhs = (v: number | null) => (v == null ? dash : formatLakhs(v))
 const fmtPct = (v: number | null, fraction = false) => (v == null ? dash : `${Math.round(fraction ? v * 100 : v)}%`)
 const fmtText = (v: string | null) => (v && v.trim() ? v.trim() : dash)
 const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : dash)
@@ -45,7 +48,7 @@ function DataTable<T>({ columns, rows, getKey, minWidth = 900 }: { columns: Col<
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm" style={{ minWidth }}>
         <thead>
-          <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-500">
+          <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
             {columns.map(c => <th key={c.label} className="whitespace-nowrap px-3 py-3 font-semibold first:pl-5">{c.label}</th>)}
           </tr>
         </thead>
@@ -77,7 +80,7 @@ function Card({ title, subtitle, headerAction, highlight = false, children }: {
       <div className={`flex items-start justify-between gap-3 border-b px-5 py-3 ${highlight ? 'border-amber-200 dark:border-amber-800' : 'border-gray-100 dark:border-gray-800'}`}>
         <div>
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-          <p className="text-xs text-gray-400 dark:text-gray-500">{subtitle}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-400">{subtitle}</p>
         </div>
         {headerAction}
       </div>
@@ -88,12 +91,10 @@ function Card({ title, subtitle, headerAction, highlight = false, children }: {
 
 // ─── Pipeline tab ────────────────────────────────────────────────────────────
 
-function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
+function PipelineTab() {
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [clearing, setClearing] = useState(false)
-  const [clearError, setClearError] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -104,22 +105,8 @@ function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
   }
   useEffect(load, [])
 
-  const trialItems = items.filter(i => i.sourceLeadId)
+  const appItems = items.filter(i => i.sourceLeadId)
   const importedItems = items.filter(i => !i.sourceLeadId)
-
-  async function handleClearTrialEntries() {
-    if (!confirm(`Clear all ${trialItems.length} trial entr${trialItems.length === 1 ? 'y' : 'ies'}? This only removes live-synced rows — imported data is untouched.`)) return
-    setClearing(true)
-    setClearError(null)
-    try {
-      await api('/tracker/pipeline/trial-entries', { method: 'DELETE', auth: true })
-      load()
-    } catch (e) {
-      setClearError(e instanceof Error ? e.message : 'Could not clear trial entries.')
-    } finally {
-      setClearing(false)
-    }
-  }
 
   const columns: Col<PipelineTrackerItem>[] = [
     { label: 'Vertical', render: r => fmtText(r.vertical) },
@@ -127,7 +114,7 @@ function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
     { label: 'Location', render: r => fmtText(r.location) },
     { label: 'Service', render: r => fmtText(r.service) },
     { label: 'Description', render: r => <span className="block max-w-[220px] truncate" title={r.description ?? undefined}>{fmtText(r.description)}</span> },
-    { label: 'Value', render: r => fmtLakhs(r.valueLakhs) },
+    { label: 'Value', render: r => (r.valueLakhs == null ? dash : formatSheetValue(r.valueLakhs, r.currency)) },
     { label: 'Currency', render: r => fmtText(r.currency) },
     { label: 'Status', render: r => <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${pipelineRowStyle(r)}`}>{fmtText(r.status)}</span> },
     { label: 'Probability', render: r => fmtPct(r.probabilityPct) },
@@ -144,31 +131,21 @@ function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
     <div className="flex flex-col gap-6">
       {error && <ErrorBanner message={error} onRetry={load} />}
 
-      {!error && trialItems.length > 0 && (
+      {!error && appItems.length > 0 && (
         <Card
           highlight
-          title={`Live-synced trial entries (${trialItems.length})`}
-          subtitle="Added automatically for every lead raised in this app, showing the stage it has reached and that stage's status (e.g. Proposal: Negotiation). Clear these before a real deployment."
-          headerAction={isAdmin ? (
-            <button
-              onClick={handleClearTrialEntries}
-              disabled={clearing}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-400 dark:hover:bg-amber-950/40"
-            >
-              {clearing ? 'Clearing…' : 'Clear all'}
-            </button>
-          ) : undefined}
+          title={`Leads from the app (${appItems.length})`}
+          subtitle="Added automatically for every lead raised in this app and kept up to date, showing the stage it has reached and that stage's status (e.g. Proposal: Negotiation)."
         >
-          {clearError && <p className="px-5 pt-3 text-xs text-red-500 dark:text-red-400">{clearError}</p>}
-          <DataTable columns={columns} rows={trialItems} getKey={r => r.id} minWidth={1700} />
+          <DataTable columns={columns} rows={appItems} getKey={r => r.id} minWidth={1700} />
         </Card>
       )}
 
       <Card title={`Pipeline ${importedItems.length > 0 ? `(${importedItems.length})` : ''}`} subtitle="Imported from the FY2026–27 Pipeline Tracker sheet · read-only">
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+          <SkeletonRows />
         ) : importedItems.length === 0 && !error ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No pipeline data imported yet.</p>
+          <EmptyState icon="chart" title="No pipeline data yet" message="Imported sheet rows and leads raised in the app will appear here." />
         ) : (
           <DataTable columns={columns} rows={importedItems} getKey={r => r.id} minWidth={1700} />
         )}
@@ -179,13 +156,11 @@ function PipelineTab({ isAdmin }: { isAdmin: boolean }) {
 
 // ─── Invoices tab ────────────────────────────────────────────────────────────
 
-function InvoicesTab({ isAdmin }: { isAdmin: boolean }) {
+function InvoicesTab() {
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [clearing, setClearing] = useState(false)
-  const [clearError, setClearError] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -196,22 +171,8 @@ function InvoicesTab({ isAdmin }: { isAdmin: boolean }) {
   }
   useEffect(load, [])
 
-  const trialEntries = register.filter(r => r.sourceInvoiceId)
+  const appEntries = register.filter(r => r.sourceInvoiceId)
   const importedRegister = register.filter(r => !r.sourceInvoiceId)
-
-  async function handleClearTrialEntries() {
-    if (!confirm(`Clear all ${trialEntries.length} trial entr${trialEntries.length === 1 ? 'y' : 'ies'}? This only removes live-synced rows — imported data is untouched.`)) return
-    setClearing(true)
-    setClearError(null)
-    try {
-      await api('/tracker/invoices/trial-entries', { method: 'DELETE', auth: true })
-      load()
-    } catch (e) {
-      setClearError(e instanceof Error ? e.message : 'Could not clear trial entries.')
-    } finally {
-      setClearing(false)
-    }
-  }
 
   const summaryColumns: Col<InvoiceSectorSummary>[] = [
     { label: 'Sector', render: r => fmtText(r.sector), emphasize: true },
@@ -265,42 +226,32 @@ function InvoicesTab({ isAdmin }: { isAdmin: boolean }) {
     { label: 'Next action date', render: r => fmtText(r.nextActionDate) },
   ]
 
-  if (loading) return <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+  if (loading) return <SkeletonRows />
   if (error) return <ErrorBanner message={error} onRetry={load} className="" />
 
   return (
     <div className="flex flex-col gap-6">
       <Card title="Monthly summary by sector" subtitle="₹ Lakhs, against FY2026–27 targets · read-only">
         {summary.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No summary data imported yet.</p>
+          <EmptyState icon="chart" title="No sector summary yet" message="The FY sector summary from the tracking sheet will appear here once imported." />
         ) : (
           <DataTable columns={summaryColumns} rows={summary} getKey={r => r.id} minWidth={2000} />
         )}
       </Card>
 
-      {trialEntries.length > 0 && (
+      {appEntries.length > 0 && (
         <Card
           highlight
-          title={`Live-synced trial entries (${trialEntries.length})`}
-          subtitle="Added automatically when an invoice raised in this app is paid in full — clear these before a real deployment."
-          headerAction={isAdmin ? (
-            <button
-              onClick={handleClearTrialEntries}
-              disabled={clearing}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-400 dark:hover:bg-amber-950/40"
-            >
-              {clearing ? 'Clearing…' : 'Clear all'}
-            </button>
-          ) : undefined}
+          title={`Paid invoices from the app (${appEntries.length})`}
+          subtitle="Added automatically when an invoice raised in this app is paid in full."
         >
-          {clearError && <p className="px-5 pt-3 text-xs text-red-500 dark:text-red-400">{clearError}</p>}
-          <DataTable columns={registerColumns} rows={trialEntries} getKey={r => r.id} minWidth={2400} />
+          <DataTable columns={registerColumns} rows={appEntries} getKey={r => r.id} minWidth={2400} />
         </Card>
       )}
 
       <Card title={`Invoice register ${importedRegister.length > 0 ? `(${importedRegister.length})` : ''}`} subtitle="Order-wise invoice and collection detail · read-only">
         {importedRegister.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No invoice register data imported yet.</p>
+          <EmptyState icon="receipt" title="No invoices in the register yet" message="Imported sheet rows and invoices paid in full in the app will appear here." />
         ) : (
           <DataTable columns={registerColumns} rows={importedRegister} getKey={r => r.id} minWidth={2400} />
         )}
@@ -313,7 +264,7 @@ function InvoicesTab({ isAdmin }: { isAdmin: boolean }) {
 
 const TAB_LABELS = { pipeline: 'Pipeline', invoices: 'Invoices', report: 'Report' } as const
 
-export default function Tracker({ isAdmin }: { isAdmin: boolean }) {
+export default function Tracker() {
   const [tab, setTab] = useState<'pipeline' | 'invoices' | 'report'>('pipeline')
 
   return (
@@ -339,7 +290,7 @@ export default function Tracker({ isAdmin }: { isAdmin: boolean }) {
         ))}
       </div>
 
-      {tab === 'pipeline' ? <PipelineTab isAdmin={isAdmin} /> : tab === 'invoices' ? <InvoicesTab isAdmin={isAdmin} /> : <ReportsTab />}
+      {tab === 'pipeline' ? <PipelineTab /> : tab === 'invoices' ? <InvoicesTab /> : <ReportsTab />}
     </div>
   )
 }

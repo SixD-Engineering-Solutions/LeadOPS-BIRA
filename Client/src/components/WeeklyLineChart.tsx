@@ -29,7 +29,7 @@ function ChartTooltip({ active, payload, label, series, periodLabel, formatValue
   const valueOf = (k: string) => payload.find(p => p.dataKey === k)?.value
   return (
     <div className="rounded-lg border border-gray-100 bg-white px-3 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500">{periodLabel} {label}</p>
+      <p className="text-[11px] font-medium text-gray-400 dark:text-gray-400">{periodLabel} {label}</p>
       {series.map(s => (
         <p key={s.key} className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />

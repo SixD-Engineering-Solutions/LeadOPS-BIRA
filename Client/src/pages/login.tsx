@@ -287,7 +287,7 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
                     leftIcon={<LockIcon />}
                     rightIcon={
                       <button type="button" onClick={() => setShowPassword(v => !v)}
-                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition"
+                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition"
                         aria-label={showPassword ? 'Hide password' : 'Show password'}>
                         <EyeIcon open={showPassword} />
                       </button>
@@ -314,7 +314,7 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
 
                 <div className="my-3 flex items-center gap-3">
                   <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">Or Continue With</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-400 font-medium">Or Continue With</span>
                   <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
                 </div>
 
@@ -393,11 +393,11 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
                             <button
                               type="button"
                               onClick={() => setShowOtpPopover(false)}
-                              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition text-base leading-none"
+                              className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition text-base leading-none"
                               aria-label="Close"
                             >✕</button>
                           </div>
-                          <p className="mb-3 text-xs text-gray-400 dark:text-gray-500 truncate">Code sent to {signupForm.email}</p>
+                          <p className="mb-3 text-xs text-gray-400 dark:text-gray-400 truncate">Code sent to {signupForm.email}</p>
 
                           <input
                             type="text"
@@ -442,7 +442,7 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
                     leftIcon={<LockIcon />}
                     rightIcon={
                       <button type="button" onClick={() => setShowSignupPw(v => !v)}
-                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition">
+                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition">
                         <EyeIcon open={showSignupPw} />
                       </button>
                     }
@@ -461,7 +461,7 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
                     leftIcon={<LockIcon />}
                     rightIcon={
                       <button type="button" onClick={() => setShowConfirmPw(v => !v)}
-                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition">
+                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition">
                         <EyeIcon open={showConfirmPw} />
                       </button>
                     }

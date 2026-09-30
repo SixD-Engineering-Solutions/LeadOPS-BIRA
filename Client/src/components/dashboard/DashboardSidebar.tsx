@@ -80,7 +80,7 @@ export function DashboardSidebar({
 
         {/* nav */}
         <nav className={`flex-1 overflow-y-auto py-4 ${expanded ? 'px-3' : 'px-2'}`}>
-          {expanded && <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Menu</p>}
+          {expanded && <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-400">Menu</p>}
           <ul className="flex flex-col gap-1">
             {navItems.map(item => (
               <li key={item.key}>
@@ -93,7 +93,7 @@ export function DashboardSidebar({
                       ? 'bg-gradient-to-r from-rose-50 to-orange-50 text-orange-600 dark:from-rose-950/40 dark:to-orange-950/40 dark:text-orange-400'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
                 >
-                  <Icon d={item.icon} className={`h-5 w-5 shrink-0 ${active === item.key ? 'text-orange-500 dark:text-orange-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                  <Icon d={item.icon} className={`h-5 w-5 shrink-0 ${active === item.key ? 'text-orange-500 dark:text-orange-400' : 'text-gray-400 dark:text-gray-400'}`} />
                   {expanded && item.label}
                 </button>
               </li>

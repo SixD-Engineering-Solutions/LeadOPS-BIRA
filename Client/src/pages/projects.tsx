@@ -3,6 +3,10 @@ import { api, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT, PROJECT_STATUSES, BILLING_
 import type { Project, ProjectStatus, BillingStage, Lead, Location, EmployeeUser, Invoice } from '../lib/api'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { PROJECT_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
+import { formatINR } from '../lib/format'
+import { EmptyState } from '../components/EmptyState'
+import { focusCreateForm } from '../lib/focusCreateForm'
+import { SkeletonRows } from '../components/Skeleton'
 
 const statusStyle = (name: string) => PROJECT_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
@@ -61,10 +65,14 @@ export default function Projects() {
     if (projectInvoices.length === 0) return { label: 'No invoices', overdue: false }
     const outstanding = projectInvoices.reduce((sum, i) => sum + (i.amount - i.payments.reduce((s, p) => s + p.amountReceived, 0)), 0)
     if (outstanding <= 0) return { label: 'Fully paid', overdue: false }
-    return { label: `₹${outstanding.toLocaleString()} due`, overdue: true }
+    return { label: `${formatINR(outstanding)} due`, overdue: true }
   }
 
   const leadLabel = (l: Lead) => `${l.plant?.plantName ?? 'Unnamed plant'}${l.plant?.client?.clientName ? ` — ${l.plant.client.clientName}` : ''}`
+  // One project per lead (enforced server-side too) — a lead that already has
+  // one, including one auto-created from a Won proposal, isn't offered again.
+  const leadsWithProject = new Set(projects.map(p => p.leadId))
+  const availableLeads = leads.filter(l => !leadsWithProject.has(l.id))
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault()
@@ -121,9 +129,10 @@ export default function Projects() {
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
             Lead *
             <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
-              <option value="">Select a lead…</option>
-              {leads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
+              <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}</option>
+              {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
             </select>
+            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a project are listed — one project per lead.</span>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
             Project name *
@@ -163,21 +172,21 @@ export default function Projects() {
       {/* list */}
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Projects {projects.length > 0 && <span className="text-gray-400 dark:text-gray-500">({projects.length})</span>}</h3>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Projects {projects.length > 0 && <span className="text-gray-400 dark:text-gray-400">({projects.length})</span>}</h3>
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+          <SkeletonRows />
         ) : projects.length === 0 && !error ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No projects yet. Create one above, or mark a proposal Won.</p>
+          <EmptyState icon="briefcase" title="No projects yet" message="Marking a proposal Won creates its project automatically — or add one by hand." action={{ label: 'Create project', onClick: focusCreateForm }} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1000px] text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-500">
+                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                   <th className="px-5 py-3 font-semibold">Work Order</th>
                   <th className="px-3 py-3 font-semibold">Lead</th>
                   <th className="px-3 py-3 font-semibold">Engineer</th>
@@ -196,7 +205,7 @@ export default function Projects() {
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
                       <p>{p.lead?.plant?.plantName ?? '—'}</p>
-                      <p className="text-gray-400 dark:text-gray-500">{p.lead?.plant?.client?.clientName ?? ''}</p>
+                      <p className="text-gray-400 dark:text-gray-400">{p.lead?.plant?.client?.clientName ?? ''}</p>
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">{p.responsibleUser ? (p.responsibleUser.userName || p.responsibleUser.email) : 'Unassigned'}</td>
                     <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmtDate(p.startDate)} → {fmtDate(p.completionDate)}</td>

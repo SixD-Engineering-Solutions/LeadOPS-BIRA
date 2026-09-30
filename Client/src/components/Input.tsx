@@ -13,7 +13,7 @@ export default function Input({ label, error, id, leftIcon, rightIcon, ...props 
       </label>
       <div className="relative flex items-center">
         {leftIcon && (
-          <span className="pointer-events-none absolute left-3.5 flex items-center text-gray-400 dark:text-gray-500">
+          <span className="pointer-events-none absolute left-3.5 flex items-center text-gray-400 dark:text-gray-400">
             {leftIcon}
           </span>
         )}
@@ -28,7 +28,7 @@ export default function Input({ label, error, id, leftIcon, rightIcon, ...props 
           {...props}
         />
         {rightIcon && (
-          <span className="absolute right-3.5 flex items-center text-gray-400 dark:text-gray-500">
+          <span className="absolute right-3.5 flex items-center text-gray-400 dark:text-gray-400">
             {rightIcon}
           </span>
         )}

@@ -3,6 +3,10 @@ import { api, PROPOSAL_SYNC_EVENT } from '../../lib/api'
 import type { Proposal } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
 import { DetailSection, inputCls } from './shared'
+import { formatINR } from '../../lib/format'
+import { PROPOSAL_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../../lib/statusStyles'
+import { EmptyState } from '../EmptyState'
+import { SkeletonRows } from '../Skeleton'
 
 // Proposals raised against a lead — quick-add form and list.
 export function LeadProposalsSection({ leadId }: { leadId: string }) {
@@ -55,8 +59,13 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
     }
   }
 
+  // One proposal per lead (enforced server-side too): the quick-add form is
+  // only offered until this lead has one.
+  const canAdd = !loadingProposals && !proposalsError && proposals.length === 0
+
   return (
     <DetailSection title="Proposals">
+      {canAdd && (
       <form onSubmit={createProposal} className="mb-3 grid grid-cols-2 gap-2">
         <input value={propForm.projectName} onChange={e => setPropForm({ ...propForm, projectName: e.target.value })} placeholder="Project name" className={`${inputCls} col-span-2`} />
         <input type="number" value={propForm.value} onChange={e => setPropForm({ ...propForm, value: e.target.value })} placeholder="Value (₹)" className={inputCls} />
@@ -76,13 +85,14 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
           </button>
         </div>
       </form>
+      )}
 
       {proposalsError ? (
         <ErrorBanner message={proposalsError} onRetry={loadProposals} className="my-2" />
       ) : loadingProposals ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">Loading…</p>
+        <SkeletonRows rows={2} compact />
       ) : proposals.length === 0 ? (
-        <p className="py-2 text-center text-xs text-gray-400 dark:text-gray-500">No proposals raised yet.</p>
+        <EmptyState compact icon="document" title="No proposal raised yet" message="Add one with the form above — each lead has one proposal." />
       ) : (
         <ul className="space-y-2 border-t border-gray-50 pt-3 dark:border-gray-800/60">
           {proposals.map(p => (
@@ -90,9 +100,9 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
               <div className="min-w-0">
                 <span className="font-semibold text-gray-900 dark:text-gray-100">{p.proposalNumber}</span>
                 {p.projectName && <span className="ml-1 text-gray-500 dark:text-gray-400">{p.projectName}</span>}
-                {p.value != null && <span className="ml-1 text-gray-400 dark:text-gray-500">₹{p.value.toLocaleString()}</span>}
+                {p.value != null && <span className="ml-1 text-gray-400 dark:text-gray-400">{formatINR(p.value)}</span>}
               </div>
-              <span className="shrink-0 rounded-full border border-gray-200 px-2 py-0.5 font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300">{p.status}</span>
+              <span className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${PROPOSAL_STATUS_STYLES[p.status] ?? DEFAULT_STATUS_STYLE}`}>{p.status}</span>
             </li>
           ))}
         </ul>

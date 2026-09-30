@@ -22,8 +22,7 @@ const person = (u: { userName: string | null; email: string } | null) => (u ? u.
 // invoice and activities. Only fields the app actually has data for are
 // filled; everything else stays blank. `sourceLeadId` also marks the row as
 // live-synced (vs. `null` for the imported Excel rows), which the client uses
-// to highlight trial entries and `DELETE /tracker/pipeline/trial-entries`
-// uses to clear them.
+// to list these rows separately from the imported ones.
 export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
@@ -103,7 +102,7 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
     lastAction: lastActivity
       ? `${lastActivity.activityType} · ${day(lastActivity.activityDate)}`
       : project ? `Billing: ${project.billingStage}` : null,
-    notes: 'Auto-synced from a live lead — trial entry, safe to clear before deployment.',
+    notes: 'Auto-synced from a lead in the app.',
   }
 
   await db.pipelineTrackerItem.upsert({

@@ -3,6 +3,9 @@ import { api } from '../lib/api'
 import type { EmployeeUser, Lead } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { EmptyState } from '../components/EmptyState'
+import { SkeletonRows } from '../components/Skeleton'
+import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 
 /** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
 function displayName(email: string): string {
@@ -15,12 +18,7 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'U'
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  Submitted: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  'In Process': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  Dead: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-}
-const statusStyle = (name: string | null | undefined) => STATUS_STYLES[name ?? ''] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name ?? ''] ?? DEFAULT_STATUS_STYLE
 const fmt = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyEmpForm = { email: '', userName: '', role: 'employee' as 'employee' | 'admin', department: '', phoneNumber: '' }
@@ -194,9 +192,9 @@ export default function Team() {
       </form>
 
       {loading ? (
-        <p className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">Loading employees…</p>
+        <div className="rounded-2xl border border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"><SkeletonRows rows={4} /></div>
       ) : activeUsers.length === 0 ? (
-        <p className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">No employees registered yet.</p>
+        <EmptyState icon="users" title="No employees registered yet" message="Add your sales team with “Add employee” above, then assign them leads." />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -222,7 +220,7 @@ export default function Team() {
                         <p className="truncate text-xs text-gray-500 dark:text-gray-400">{u.email}</p>
                       </div>
                       {u.department && (
-                        <span className="hidden shrink-0 text-xs text-gray-400 dark:text-gray-500 sm:block">{u.department}</span>
+                        <span className="hidden shrink-0 text-xs text-gray-400 dark:text-gray-400 sm:block">{u.department}</span>
                       )}
                       <span
                         className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold
@@ -265,10 +263,10 @@ export default function Team() {
                         >
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-800 dark:text-gray-200">{lead.plant?.plantName ?? '—'}</p>
-                            <p className="truncate text-xs text-gray-400 dark:text-gray-500">Updated {fmt(lead.updatedAt)}</p>
+                            <p className="truncate text-xs text-gray-400 dark:text-gray-400">Updated {fmt(lead.updatedAt)}</p>
                           </div>
                           <div className="flex shrink-0 items-center gap-3">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
                               {lead.status?.statusName ?? 'Submitted'}
                             </span>
                             <button
@@ -307,7 +305,7 @@ export default function Team() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-gray-500 dark:text-gray-400">{name}</p>
-                    <p className="truncate text-xs text-gray-400 dark:text-gray-500">{u.email}</p>
+                    <p className="truncate text-xs text-gray-400 dark:text-gray-400">{u.email}</p>
                   </div>
                   <button
                     type="button"

@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import type { Location, Plant, Contact, Vertical, Sector, Client, ClientCategory, LeadSource, ServiceType, Event, EventType } from '../lib/api'
 import { EVENT_TYPES } from '../lib/api'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { SkeletonRows } from '../components/Skeleton'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const btnCls = 'rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60'
@@ -87,7 +88,7 @@ export default function Catalog() {
       </div>
 
       {error && <ErrorBanner message={error} onRetry={loadAll} className="mb-5" />}
-      {loading && <p className="mb-5 text-sm text-gray-400 dark:text-gray-500">Loading…</p>}
+      {loading && <div className="mb-5"><SkeletonRows rows={2} /></div>}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Client Category */}
@@ -97,7 +98,7 @@ export default function Catalog() {
             <input value={cliCat.description} onChange={e => setCliCat({ ...cliCat, description: e.target.value })} placeholder="Description" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'cliCat'} className={btnCls}>{busy === 'cliCat' ? 'Saving…' : 'Add Category'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{clientCategories.length}: {clientCategories.slice(0, 6).map(c => c.categoryName).join(', ')}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{clientCategories.length}: {clientCategories.slice(0, 6).map(c => c.categoryName).join(', ')}</p>
         </Section>
 
         {/* Client */}
@@ -115,7 +116,7 @@ export default function Catalog() {
             <input value={cli.region} onChange={e => setCli({ ...cli, region: e.target.value })} placeholder="Region" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'client'} className={btnCls}>{busy === 'client' ? 'Saving…' : 'Add Client'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{clients.length} client(s): {clients.slice(0, 6).map(c => c.country ? `${c.clientName} (${c.country})` : c.clientName).join(', ')}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{clients.length} client(s): {clients.slice(0, 6).map(c => c.country ? `${c.clientName} (${c.country})` : c.clientName).join(', ')}</p>
         </Section>
 
         {/* Location */}
@@ -127,7 +128,7 @@ export default function Catalog() {
             <input value={loc.address} onChange={e => setLoc({ ...loc, address: e.target.value })} placeholder="Address" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'location'} className={btnCls}>{busy === 'location' ? 'Saving…' : 'Add Location'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{locations.length} location(s): {locations.slice(0, 6).map(l => l.city).join(', ')}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{locations.length} location(s): {locations.slice(0, 6).map(l => l.city).join(', ')}</p>
         </Section>
 
         {/* Plant */}
@@ -146,7 +147,7 @@ export default function Catalog() {
             <input value={plant.plantCode} onChange={e => setPlant({ ...plant, plantCode: e.target.value })} placeholder="Plant code" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'plant' || locations.length === 0} className={btnCls}>{busy === 'plant' ? 'Saving…' : 'Add Plant'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{plants.length} plant(s){locations.length === 0 ? ' — add a location first' : ''}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{plants.length} plant(s){locations.length === 0 ? ' — add a location first' : ''}</p>
         </Section>
 
         {/* Contact */}
@@ -167,7 +168,7 @@ export default function Catalog() {
             </label>
             <div className="col-span-2"><button disabled={busy === 'contact' || plants.length === 0} className={btnCls}>{busy === 'contact' ? 'Saving…' : 'Add Contact'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{contacts.length} contact(s){plants.length === 0 ? ' — add a plant first' : ''}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{contacts.length} contact(s){plants.length === 0 ? ' — add a plant first' : ''}</p>
         </Section>
 
         {/* Vertical + Sector */}
@@ -177,14 +178,14 @@ export default function Catalog() {
             <input value={vert.description} onChange={e => setVert({ ...vert, description: e.target.value })} placeholder="Description" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'vertical'} className={btnCls}>{busy === 'vertical' ? 'Saving…' : 'Add Vertical'}</button></div>
           </form>
-          <p className="mb-4 text-xs text-gray-400 dark:text-gray-500">{verticals.length}: {verticals.slice(0, 6).map(v => v.verticalName).join(', ')}</p>
+          <p className="mb-4 text-xs text-gray-400 dark:text-gray-400">{verticals.length}: {verticals.slice(0, 6).map(v => v.verticalName).join(', ')}</p>
 
           <form onSubmit={e => { e.preventDefault(); if (!sect.sectorName) return; submit('sector', '/sectors', sect, 'sector', d => setSectors(p => [d as Sector, ...p]), () => setSect({ sectorName: '', description: '' })) }} className="grid grid-cols-2 gap-2">
             <input value={sect.sectorName} onChange={e => setSect({ ...sect, sectorName: e.target.value })} placeholder="Sector name *" className={inputCls} />
             <input value={sect.description} onChange={e => setSect({ ...sect, description: e.target.value })} placeholder="Description" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'sector'} className={btnCls}>{busy === 'sector' ? 'Saving…' : 'Add Sector'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{sectors.length}: {sectors.slice(0, 6).map(s => s.sectorName).join(', ')}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{sectors.length}: {sectors.slice(0, 6).map(s => s.sectorName).join(', ')}</p>
         </Section>
 
         {/* Lead Source + Service Type */}
@@ -194,14 +195,14 @@ export default function Catalog() {
             <input value={src.description} onChange={e => setSrc({ ...src, description: e.target.value })} placeholder="Description" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'source'} className={btnCls}>{busy === 'source' ? 'Saving…' : 'Add Source'}</button></div>
           </form>
-          <p className="mb-4 text-xs text-gray-400 dark:text-gray-500">{leadSources.length}: {leadSources.slice(0, 6).map(s => s.sourceName).join(', ')}</p>
+          <p className="mb-4 text-xs text-gray-400 dark:text-gray-400">{leadSources.length}: {leadSources.slice(0, 6).map(s => s.sourceName).join(', ')}</p>
 
           <form onSubmit={e => { e.preventDefault(); if (!svc.serviceTypeName) return; submit('service', '/service-types', svc, 'serviceType', d => setServiceTypes(p => [d as ServiceType, ...p]), () => setSvc({ serviceTypeName: '', description: '' })) }} className="grid grid-cols-2 gap-2">
             <input value={svc.serviceTypeName} onChange={e => setSvc({ ...svc, serviceTypeName: e.target.value })} placeholder="Service type * (e.g. BIM)" className={inputCls} />
             <input value={svc.description} onChange={e => setSvc({ ...svc, description: e.target.value })} placeholder="Description" className={inputCls} />
             <div className="col-span-2"><button disabled={busy === 'service'} className={btnCls}>{busy === 'service' ? 'Saving…' : 'Add Service Type'}</button></div>
           </form>
-          <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">{serviceTypes.length}: {serviceTypes.slice(0, 6).map(s => s.serviceTypeName).join(', ')}</p>
+          <p className="mt-3 text-xs text-gray-400 dark:text-gray-400">{serviceTypes.length}: {serviceTypes.slice(0, 6).map(s => s.serviceTypeName).join(', ')}</p>
         </Section>
 
         {/* Events (Expo / Visit) */}
@@ -218,8 +219,8 @@ export default function Catalog() {
             <ul className="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
               {events.slice(0, 6).map(e => (
                 <li key={e.id} className="flex items-center justify-between">
-                  <span>{e.eventName} <span className="text-gray-400 dark:text-gray-500">({e.eventType})</span></span>
-                  <span className="text-gray-400 dark:text-gray-500">{e.leadsGenerated} lead{e.leadsGenerated === 1 ? '' : 's'}</span>
+                  <span>{e.eventName} <span className="text-gray-400 dark:text-gray-400">({e.eventType})</span></span>
+                  <span className="text-gray-400 dark:text-gray-400">{e.leadsGenerated} lead{e.leadsGenerated === 1 ? '' : 's'}</span>
                 </li>
               ))}
             </ul>

@@ -8,12 +8,14 @@ import type { Task } from '../lib/api'
 export function useMyTasks(active: boolean, isAdmin: boolean) {
   const [myTasks, setMyTasks] = useState<Task[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   function reload() {
     if (isAdmin) return Promise.resolve()
     return api<{ tasks: Task[] }>('/tasks', { auth: true })
       .then(({ tasks }) => { setMyTasks(tasks); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load tasks.'))
+      .finally(() => setLoaded(true))
   }
 
   useEffect(() => {
@@ -28,5 +30,5 @@ export function useMyTasks(active: boolean, isAdmin: boolean) {
     return () => window.removeEventListener(TASK_SYNC_EVENT, onTaskSync)
   }, [active, isAdmin])
 
-  return { myTasks, error, reload }
+  return { myTasks, loaded, error, reload }
 }

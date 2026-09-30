@@ -3,6 +3,8 @@ import { api } from '../lib/api'
 import type { Lead, Proposal, EmployeeUser } from '../lib/api'
 import WeeklyLineChart from '../components/WeeklyLineChart'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { formatINR } from '../lib/format'
+import { EmptyState } from '../components/EmptyState'
 
 const WEEKS = 8
 const MONTHS = 6
@@ -127,7 +129,7 @@ export default function Reports() {
       {error && <ErrorBanner message={error} onRetry={load} className="mb-5" />}
 
       {loading ? (
-        <p className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">Loading reports…</p>
+        <p className="py-16 text-center text-sm text-gray-400 dark:text-gray-400">Loading reports…</p>
       ) : (
         <div className="space-y-5">
           <WeeklyLineChart
@@ -160,12 +162,12 @@ export default function Reports() {
               <p className="text-xs text-gray-500 dark:text-gray-400">Leads, proposal outcomes and conversion by team member.</p>
             </div>
             {employeeRows.length === 0 ? (
-              <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No leads assigned to anyone yet.</p>
+              <EmptyState icon="users" title="No leads assigned to anyone yet" message="Employee performance appears once leads are assigned from the Leads page." />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-500">
+                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                       <th className="px-5 py-3 font-semibold">Employee</th>
                       <th className="px-3 py-3 font-semibold">Leads Assigned</th>
                       <th className="px-3 py-3 font-semibold">Won</th>
@@ -182,7 +184,7 @@ export default function Reports() {
                         <td className="px-3 py-3 text-emerald-600 dark:text-emerald-400">{row.won}</td>
                         <td className="px-3 py-3 text-rose-500 dark:text-rose-400">{row.lost}</td>
                         <td className="px-3 py-3 text-gray-600 dark:text-gray-400">{row.conversion}%</td>
-                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-gray-100">₹{row.wonValue.toLocaleString()}</td>
+                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-gray-100">{formatINR(row.wonValue)}</td>
                       </tr>
                     ))}
                   </tbody>

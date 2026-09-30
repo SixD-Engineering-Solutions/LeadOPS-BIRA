@@ -2,5 +2,6 @@
   "watch": ["src"],
   "ext": "ts,json",
   "ignore": ["src/generated"],
+  "legacyWatch": true,
   "exec": "node -r ts-node/register/transpile-only src/index.ts"
 }

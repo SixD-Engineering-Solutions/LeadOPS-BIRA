@@ -98,7 +98,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // whole transaction rolls back rather than burning a number on a project
     // that was never actually created (a rolled-back number is a harmless gap
     // either way, but there's no reason not to keep them together).
+    // One project per lead — same rule as proposals. The lead row is locked
+    // first so two simultaneous creates can't both pass the check; refusing
+    // before the number's reserved (and rolling back) burns no work order no.
     const project = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM leads WHERE id = ${d.leadId} FOR UPDATE`
+      const existing = await tx.project.findFirst({ where: { leadId: d.leadId, deletedAt: null }, select: { workOrderNo: true } })
+      if (existing) throw new DuplicateProjectError(existing.workOrderNo)
       const workOrderNo = await nextWorkOrderNo(tx)
       const created = await tx.project.create({
         data: {
@@ -122,10 +128,18 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
     broadcastProjectUpdate(project.id)
     res.status(201).json({ project })
-  } catch {
+  } catch (err) {
+    if (err instanceof DuplicateProjectError) {
+      sendError(res, 409, `This lead already has a project (${err.workOrderNo}). Update that one instead of creating a new one.`)
+      return
+    }
     sendError(res, 400, 'Could not create project.')
   }
 })
+
+class DuplicateProjectError extends Error {
+  constructor(readonly workOrderNo: string) { super('Lead already has a project.') }
+}
 
 // PATCH /projects/:id
 const updateSchema = z.object({

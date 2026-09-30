@@ -3,10 +3,14 @@ import { api, INVOICE_SYNC_EVENT, INVOICE_STATUSES } from '../lib/api'
 import type { Invoice, InvoiceStatus, Project } from '../lib/api'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { INVOICE_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
+import { formatINR } from '../lib/format'
+import { EmptyState } from '../components/EmptyState'
+import { focusCreateForm } from '../lib/focusCreateForm'
+import { SkeletonRows } from '../components/Skeleton'
 
 const statusStyle = (name: string) => INVOICE_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
-const fmtMoney = (v: number) => `₹${v.toLocaleString()}`
+const fmtMoney = formatINR
 const paidOf = (inv: Invoice) => inv.payments.reduce((sum, p) => sum + p.amountReceived, 0)
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
@@ -171,16 +175,16 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
       {/* list */}
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Invoices {invoices.length > 0 && <span className="text-gray-400 dark:text-gray-500">({invoices.length})</span>}</h3>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Invoices {invoices.length > 0 && <span className="text-gray-400 dark:text-gray-400">({invoices.length})</span>}</h3>
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+          <SkeletonRows />
         ) : invoices.length === 0 && !error ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">No invoices yet. Create one above.</p>
+          <EmptyState icon="receipt" title="No invoices yet" message="Bill a project, then log payments against it as they come in." action={{ label: 'Create invoice', onClick: focusCreateForm }} />
         ) : (
           <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
             {invoices.map(inv => {
@@ -228,14 +232,14 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
                       {payError && <p className="mb-2 text-xs text-red-500 dark:text-red-400">{payError}</p>}
 
                       {inv.payments.length === 0 ? (
-                        <p className="text-xs text-gray-400 dark:text-gray-500">No payments recorded yet.</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-400">No payments recorded yet.</p>
                       ) : (
                         <ul className="space-y-1.5">
                           {inv.payments.map(p => (
                             <li key={p.id} className="flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-400">
                               <span>{fmtMoney(p.amountReceived)} on {fmtDate(p.paymentDate)}{p.notes ? ` — ${p.notes}` : ''}</span>
                               <span className="flex shrink-0 items-center gap-2">
-                                <span className="text-gray-400 dark:text-gray-500">{p.recordedByUser ? (p.recordedByUser.userName || p.recordedByUser.email) : ''}</span>
+                                <span className="text-gray-400 dark:text-gray-400">{p.recordedByUser ? (p.recordedByUser.userName || p.recordedByUser.email) : ''}</span>
                                 {isAdmin && (
                                   <button
                                     type="button"

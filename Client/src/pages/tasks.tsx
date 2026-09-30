@@ -3,6 +3,9 @@ import { api, TASK_SYNC_EVENT } from '../lib/api'
 import type { Task, EmployeeUser } from '../lib/api'
 import { taskStatusStyle as statusStyle, fmtTaskDeadline as fmtDeadline, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { EmptyState } from '../components/EmptyState'
+import { focusCreateForm } from '../lib/focusCreateForm'
+import { SkeletonRows } from '../components/Skeleton'
 
 const STATUSES = ['Pending', 'In Progress', 'Done'] as const
 
@@ -155,21 +158,23 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
       {/* list */}
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{isAdmin ? 'All Tasks' : 'My Tasks'} {tasks.length > 0 && <span className="text-gray-400 dark:text-gray-500">({tasks.length})</span>}</h3>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{isAdmin ? 'All Tasks' : 'My Tasks'} {tasks.length > 0 && <span className="text-gray-400 dark:text-gray-400">({tasks.length})</span>}</h3>
           <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
         </div>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</p>
+          <SkeletonRows />
         ) : tasks.length === 0 && !error ? (
-          <p className="px-5 py-10 text-center text-sm text-gray-400 dark:text-gray-500">{isAdmin ? 'No tasks yet. Assign one above.' : 'No tasks assigned to you yet.'}</p>
+          isAdmin
+            ? <EmptyState icon="check" title="No tasks yet" message="Assign a to-do with a deadline to anyone on the team." action={{ label: 'Assign task', onClick: focusCreateForm }} />
+            : <EmptyState icon="check" title="Nothing assigned to you 🎉" message="Tasks your admin assigns you will show up here." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-500">
+                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                   <th className="px-5 py-3 font-semibold">Task</th>
                   {isAdmin && <th className="px-3 py-3 font-semibold">Assigned to</th>}
                   <th className="px-3 py-3 font-semibold">Deadline</th>
