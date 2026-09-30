@@ -215,7 +215,13 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, 'Invalid update data.')
     return
   }
-  const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: { status: { select: { statusName: true } } } })
+  // Same visibility rule as GET: an employee can only change (or hand off)
+  // a lead that's currently assigned to them; admins can change any.
+  const admin = await isAdmin(req.userId)
+  const existing = await prisma.lead.findFirst({
+    where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : visibilityFilter(req.userId)) },
+    include: { status: { select: { statusName: true } } },
+  })
   if (!existing) {
     sendError(res, 404, 'Lead not found.')
     return

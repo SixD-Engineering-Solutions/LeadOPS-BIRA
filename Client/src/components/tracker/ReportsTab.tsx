@@ -162,7 +162,7 @@ function SectorBarChart({ data }: { data: { sector: string; fyTotal: number; fyT
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
         <XAxis dataKey="sector" tick={{ fontSize: 10, fill: tickColor }} axisLine={false} tickLine={false} angle={-20} textAnchor="end" interval={0} height={50} />
         <YAxis tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}L`} />
-        <Tooltip formatter={(v: number) => `₹${v}L`} contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
+        <Tooltip formatter={v => `₹${Number(v)}L`} contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="fyTotal" name="Achieved" fill="#10b981" radius={[4, 4, 0, 0]} />
         <Bar dataKey="fyTarget" name="Target" fill="#94a3b8" radius={[4, 4, 0, 0]} />

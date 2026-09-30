@@ -3,7 +3,6 @@ import Input from '../components/Input'
 import Button from '../components/Button'
 import { api, setToken } from '../lib/api'
 import type { AuthUser, AuthResponse } from '../lib/api'
-import { isDevBypass, startDevSession, DEV_USER } from '../lib/devAuth'
 import ThemeToggle from '../components/ThemeToggle'
 
 // ─── icons ────────────────────────────────────────────────────────────────────
@@ -109,22 +108,6 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
     e.preventDefault()
     setLoginError(null)
     if (!validateLogin()) return
-
-    // DEV-ONLY bypass — lets development continue while real auth/DB is unavailable.
-    // Compiled out of production builds (see lib/devAuth.ts).
-    if (isDevBypass(credentials.email, credentials.password)) {
-      startDevSession()
-      // Try to obtain a real access token so authenticated calls (e.g. /leads)
-      // work. If the backend/DB is down, still enter the app (offline dashboard).
-      try {
-        const res = await api<AuthResponse>('/auth/dev-login', { method: 'POST' })
-        setToken(res.accessToken)
-      } catch {
-        /* backend/DB unavailable — dashboard works, data features will show errors */
-      }
-      onAuthed(DEV_USER)
-      return
-    }
 
     setLoginLoading(true)
     try {

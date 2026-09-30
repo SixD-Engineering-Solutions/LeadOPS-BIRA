@@ -23,6 +23,9 @@ router.get('/stream', (req: Request, res: Response): void => {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
+    // Tells nginx-style proxies not to buffer the stream — otherwise
+    // notifications arrive in delayed batches instead of instantly.
+    'X-Accel-Buffering': 'no',
   })
   res.write(': connected\n\n')
 

@@ -3,21 +3,15 @@ import Login from './pages/login'
 import Dashboard from './pages/dashboard'
 import { api, getToken, clearToken } from './lib/api'
 import type { AuthUser } from './lib/api'
-import { hasDevSession, endDevSession, DEV_USER } from './lib/devAuth'
 import { SkeletonScreen } from './components/Skeleton'
 
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [restoring, setRestoring] = useState(true)
 
-  // On load, restore the session.
+  // On load, restore the session — /auth/me also re-reads the role, so a
+  // promotion/demotion shows up in the menus on the next page load.
   useEffect(() => {
-    // DEV-ONLY: restore the bypass session without hitting the DB-backed /auth/me.
-    if (hasDevSession()) {
-      setUser(DEV_USER)
-      setRestoring(false)
-      return
-    }
     if (!getToken()) {
       setRestoring(false)
       return
@@ -30,7 +24,6 @@ export default function App() {
 
   function handleSignOut() {
     clearToken()
-    endDevSession()
     setUser(null)
   }
 

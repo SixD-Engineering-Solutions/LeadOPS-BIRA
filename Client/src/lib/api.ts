@@ -1,4 +1,3 @@
-import { hasDevSession } from './devAuth'
 
 export type Role = 'admin' | 'employee'
 export type AuthUser = { id: string; email: string; role?: Role }
@@ -254,8 +253,12 @@ export type InvoiceSectorSummary = {
   remarks: string | null
 }
 
-// Base URL of the backend. Override with VITE_API_URL in a .env file if needed.
-export const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+// Base URL of the backend. In development that's the local API server; in a
+// production build it's `/api` on the same origin, which the web container's
+// nginx forwards to the API (see DEPLOYMENT_CHECKLIST.md) — never localhost,
+// which would point at each user's own machine. VITE_API_URL overrides both
+// (an empty value counts as unset — a Docker build arg left blank arrives as "").
+export const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '/api')
 
 export type Notification = { id: string; userId: string; leadId: string | null; message: string; isRead: boolean; createdAt: string }
 
@@ -298,33 +301,15 @@ export function clearToken(): void {
   sessionStorage.removeItem(TOKEN_KEY)
 }
 
-// DEV-ONLY self-heal: mint a real access token via the dev-login endpoint.
-// Returns true if a token was obtained. Needs the backend + DB to be up.
-async function acquireDevToken(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/auth/dev-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-    if (!res.ok) return false
-    const d = (await res.json()) as { accessToken?: string }
-    if (d.accessToken) { setToken(d.accessToken); return true }
-  } catch { /* backend/DB unavailable */ }
-  return false
-}
-
 /**
  * Thin fetch wrapper. Sends/receives JSON, attaches the bearer token when present,
  * and throws an Error carrying the backend's `error` message on any non-2xx response.
- * In a dev session it auto-acquires a token when missing/expired so authenticated
- * calls recover automatically once the backend + database are reachable.
  */
 export async function api<T = unknown>(
   path: string,
   options: { method?: string; body?: unknown; auth?: boolean } = {},
-  retried = false,
 ): Promise<T> {
   const { method = 'GET', body, auth = false } = options
-
-  // Auth requested but no token yet — in a dev session, try to mint one first.
-  if (auth && !getToken() && hasDevSession()) await acquireDevToken()
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (auth) {
@@ -342,11 +327,6 @@ export async function api<T = unknown>(
   } catch {
     // Network error / server not running
     throw new Error('Cannot reach the server. Please try again.')
-  }
-
-  // Token missing/expired — in a dev session, refresh it once and retry.
-  if (res.status === 401 && auth && !retried && hasDevSession()) {
-    if (await acquireDevToken()) return api<T>(path, options, true)
   }
 
   const data = await res.json().catch(() => ({}))

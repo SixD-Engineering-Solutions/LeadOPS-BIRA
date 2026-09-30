@@ -1,4 +1,4 @@
-// One-time import of the FY2026–27 "LeadOps sheet.xlsx" (Client/public) into
+// One-time import of the FY2026–27 "LeadOps sheet.xlsx" (Server/prisma/data — kept out of the public web folder) into
 // the tracker tables (see schema.prisma). Safe to re-run: it clears and
 // re-inserts all three tables each time, so it stays in sync if the sheet is
 // replaced later.
@@ -16,7 +16,7 @@ import zlib from 'zlib'
 import { prisma } from '../src/prisma'
 import { Prisma } from '../src/generated/prisma/client'
 
-const SHEET_PATH = path.join(__dirname, '..', '..', 'Client', 'public', 'LeadOps sheet.xlsx')
+const SHEET_PATH = path.join(__dirname, 'data', 'LeadOps sheet.xlsx')
 
 // ─── minimal ZIP reader ─────────────────────────────────────────────────────
 // Reads the End Of Central Directory, walks the Central Directory, and

@@ -7,11 +7,12 @@ import { signAccessToken, signEmailVerifiedToken, verifyEmailVerifiedToken } fro
 import { sendOtpEmail } from '../services/email'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
 import { sendError } from '../utils/errors'
+import { loginLimiter, verifyOtpLimiter, sendOtpPerEmailLimiter, sendOtpPerIpLimiter, signupLimiter } from '../utils/rateLimits'
 
 const router = Router()
 
 // POST /auth/send-otp
-router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
+router.post('/send-otp', sendOtpPerIpLimiter, sendOtpPerEmailLimiter, async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email() }).safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, 'Invalid email address.')
@@ -45,7 +46,7 @@ router.post('/send-otp', async (req: Request, res: Response): Promise<void> => {
 })
 
 // POST /auth/verify-otp
-router.post('/verify-otp', async (req: Request, res: Response): Promise<void> => {
+router.post('/verify-otp', verifyOtpLimiter, async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email(), otp: z.string().length(6) }).safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, 'Email and 6-digit OTP are required.')
@@ -76,7 +77,7 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
 })
 
 // POST /auth/signup
-router.post('/signup', async (req: Request, res: Response): Promise<void> => {
+router.post('/signup', signupLimiter, async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({
     emailVerifiedToken: z.string(),
     password: z.string().min(6),
@@ -111,7 +112,7 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
 })
 
 // POST /auth/login
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
+router.post('/login', loginLimiter, async (req: Request, res: Response): Promise<void> => {
   const parse = z.object({ email: z.string().email(), password: z.string() }).safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, 'Email and password are required.')
@@ -134,35 +135,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
   const accessToken = signAccessToken(user.id)
   res.json({ accessToken, user: { id: user.id, email: user.email, role: user.role } })
-})
-
-// POST /auth/dev-login
-// DEV-ONLY: upserts a fixed dev user and returns a real access token so the
-// frontend dev bypass can call authenticated endpoints (e.g. /leads). Requires
-// explicit opt-in (ENABLE_DEV_LOGIN=true) rather than just "not production" —
-// so it stays off by default in every environment, including a staging/local
-// setup where NODE_ENV was never set — and the production check stays as a
-// hard backstop even if the flag were ever set there by mistake.
-// Remove alongside the frontend dev bypass once real auth is used everywhere.
-router.post('/dev-login', async (_req: Request, res: Response): Promise<void> => {
-  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_LOGIN !== 'true') {
-    sendError(res, 404, 'Not found.')
-    return
-  }
-  const email = 'dev@leadops.local'
-  try {
-    const passwordHash = await bcrypt.hash('devmode123', 12)
-    const user = await prisma.user.upsert({
-      where: { email },
-      update: {},
-      create: { email, passwordHash, userName: 'Dev Admin', role: 'admin' },
-    })
-    const accessToken = signAccessToken(user.id)
-    res.json({ accessToken, user: { id: user.id, email: user.email } })
-  } catch (err) {
-    console.error('dev-login failed:', err)
-    sendError(res, 503, 'Database unavailable — cannot issue a dev token yet.')
-  }
 })
 
 // GET /auth/me

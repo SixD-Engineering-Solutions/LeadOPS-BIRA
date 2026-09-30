@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
-import type { Lead, EmployeeUser, Event } from '../lib/api'
+import type { Lead, EmployeeUser, Event as ExpoEvent } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { LostReasonModal } from '../components/LostReasonModal'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -24,7 +24,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [employees, setEmployees] = useState<EmployeeUser[]>([])
-  const [events, setEvents] = useState<Event[]>([])
+  const [events, setEvents] = useState<ExpoEvent[]>([])
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
@@ -80,7 +80,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
 
   useEffect(() => {
-    api<{ events: Event[] }>('/events', { auth: true }).then(({ events }) => setEvents(events)).catch(() => {})
+    api<{ events: ExpoEvent[] }>('/events', { auth: true }).then(({ events }) => setEvents(events)).catch(() => {})
   }, [])
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>

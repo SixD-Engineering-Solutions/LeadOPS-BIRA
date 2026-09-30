@@ -1,0 +1,10 @@
+# Never ship local secrets, dependencies, build output or uploaded files into the image.
+.env
+.env.*
+node_modules
+dist
+uploads
+src/generated
+tests
+scripts
+*.log

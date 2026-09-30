@@ -4,6 +4,9 @@ import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { isAdmin } from '../utils/access'
 import { sendError } from '../utils/errors'
+import { TX_OPTS } from '../utils/sequence'
+import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
+import { broadcastLeadUpdate } from '../services/notify'
 
 // List + create endpoints for the supporting tables (locations, plants,
 // contacts, verticals, sectors, lead statuses, users). All require auth;
@@ -195,6 +198,86 @@ router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res:
   res.json({ user })
 })
 
+// PATCH /users/:id/role — admin-only. Two levels: "admin" (everything) and
+// "employee" (their own assigned work). Every permission check in the API
+// reads the role from the database on each request, so the change applies to
+// the user's very next request — no other code needs to know about it.
+//
+// Kept consistent with the rule that admins are never assignees (leads, tasks
+// and project engineers are employees only):
+//   • promoting unassigns the user's leads — a lead can be unassigned, and
+//     admins see every lead anyway; they show as "Unassigned" to hand back out;
+//   • promoting is refused while they hold open tasks or are engineer on an
+//     active project — both must always have an (employee) owner, so those are
+//     handed over first.
+// Nobody can change their own role, and the last active admin can't be
+// demoted — so the app can never be left without an admin.
+router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parse = z.object({ role: z.enum(['admin', 'employee']) }).safeParse(req.body)
+  if (!parse.success) {
+    sendError(res, 400, 'Role must be "admin" or "employee".')
+    return
+  }
+  const { role } = parse.data
+  const id = String(req.params.id)
+  if (id === req.userId) {
+    sendError(res, 400, 'You cannot change your own role.')
+    return
+  }
+  const target = await prisma.user.findUnique({ where: { id }, select: { isActive: true, role: true, email: true, userName: true } })
+  if (!target || !target.isActive) {
+    sendError(res, 404, 'Employee not found.')
+    return
+  }
+  if (target.role === role) {
+    sendError(res, 409, `${target.userName || target.email} is already ${role === 'admin' ? 'an admin' : 'an employee'}.`)
+    return
+  }
+
+  try {
+    const result = await prisma.$transaction(async tx => {
+      if (role === 'employee') {
+        const otherAdmins = await tx.user.count({ where: { role: 'admin', isActive: true, id: { not: id } } })
+        if (otherAdmins === 0) throw new RoleChangeRefused(409, 'There must always be at least one admin.')
+        return { user: await tx.user.update({ where: { id }, data: { role }, select: userSelect }), unassignedLeadIds: [] as string[] }
+      }
+      const [openTasks, activeProjects] = await Promise.all([
+        tx.task.count({ where: { assignedToUserId: id, deletedAt: null, status: { not: 'Done' } } }),
+        tx.project.count({ where: { responsibleUserId: id, deletedAt: null, status: { not: 'Completed' } } }),
+      ])
+      if (openTasks || activeProjects) {
+        const held = [openTasks && `${openTasks} open task${openTasks === 1 ? '' : 's'}`, activeProjects && `engineer on ${activeProjects} active project${activeProjects === 1 ? '' : 's'}`].filter(Boolean).join(' and ')
+        throw new RoleChangeRefused(409, `Hand over their work first — they have ${held}. Admins can't be assigned tasks or projects.`)
+      }
+      const leads = await tx.lead.findMany({ where: { assignedToUserId: id, deletedAt: null }, select: { id: true } })
+      if (leads.length) {
+        await tx.lead.updateMany({ where: { id: { in: leads.map(l => l.id) } }, data: { assignedToUserId: null, assignedByUserId: null } })
+      }
+      return { user: await tx.user.update({ where: { id }, data: { role }, select: userSelect }), unassignedLeadIds: leads.map(l => l.id) }
+    }, TX_OPTS)
+
+    // After the transaction: refresh the Tracker's owner column and tell open
+    // screens the leads changed.
+    for (const leadId of result.unassignedLeadIds) {
+      await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, leadId))
+      broadcastLeadUpdate(leadId)
+    }
+    res.json({ user: result.user, unassignedLeads: result.unassignedLeadIds.length })
+  } catch (err) {
+    if (err instanceof RoleChangeRefused) {
+      sendError(res, err.status, err.message)
+      return
+    }
+    sendError(res, 400, 'Could not change the role.')
+  }
+})
+
+const userSelect = { id: true, userName: true, email: true, role: true, department: true, phoneNumber: true, isActive: true } as const
+
+class RoleChangeRefused extends Error {
+  constructor(readonly status: number, message: string) { super(message) }
+}
+
 // DELETE /users/:id — admin-only. Soft delete (isActive: false), same pattern
 // as leads: the row (and their lead history — createdBy/assignedTo/assignedBy
 // references) stays intact, they just disappear from the team list and
@@ -205,10 +288,19 @@ router.delete('/users/:id', requireAdmin, async (req: AuthRequest, res: Response
     sendError(res, 400, 'You cannot delete your own account.')
     return
   }
-  const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true } })
+  const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true, role: true } })
   if (!existing || !existing.isActive) {
     sendError(res, 404, 'Employee not found.')
     return
+  }
+  // Backstop for "never zero admins" (the caller is an admin and can't remove
+  // themselves, so in practice another admin always remains).
+  if (existing.role === 'admin') {
+    const otherAdmins = await prisma.user.count({ where: { role: 'admin', isActive: true, id: { not: id } } })
+    if (otherAdmins === 0) {
+      sendError(res, 409, 'There must always be at least one admin.')
+      return
+    }
   }
   await prisma.user.update({ where: { id }, data: { isActive: false } })
   res.json({ message: 'Employee removed.' })

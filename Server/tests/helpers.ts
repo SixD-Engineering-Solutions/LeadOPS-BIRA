@@ -8,18 +8,33 @@ const EMPLOYEE_PASSWORD = 'demo123'
 let adminTokenCache: string | undefined
 let employeeTokenCache: string | undefined
 
+// There's no dev-login backdoor any more: the tests sign a short-lived token
+// for a real active admin directly with the server's own JWT_SECRET (read
+// from Server/.env), exactly as the server would after a password login —
+// so no password ever needs to live in the code. TEST_ADMIN_EMAIL picks a
+// specific admin; otherwise the earliest active admin is used.
 export async function adminToken(): Promise<string> {
   if (adminTokenCache) return adminTokenCache
-  const res = await fetch(`${BASE_URL}/auth/dev-login`, { method: 'POST' })
-  if (!res.ok) {
-    throw new Error(
-      `Could not get an admin token via /auth/dev-login (${res.status}). ` +
-      `Is ENABLE_DEV_LOGIN="true" set in Server/.env?`
+  const { config } = await import('dotenv')
+  config()
+  const [{ Client }, fs, jwt] = await Promise.all([import('pg'), import('fs'), import('jsonwebtoken')])
+  const db = new Client({
+    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
+    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
+  })
+  await db.connect()
+  try {
+    const email = process.env.TEST_ADMIN_EMAIL
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT id FROM users WHERE role = 'admin' AND is_active ${email ? 'AND email = $1' : ''} ORDER BY created_at LIMIT 1`,
+      email ? [email] : [],
     )
+    if (!rows[0]) throw new Error(`No active admin found${email ? ` with email ${email}` : ''} to run the tests as.`)
+    adminTokenCache = jwt.default.sign({ sub: rows[0].id }, process.env.JWT_SECRET!, { expiresIn: '30m' })
+    return adminTokenCache
+  } finally {
+    await db.end()
   }
-  const data = (await res.json()) as { accessToken: string }
-  adminTokenCache = data.accessToken
-  return adminTokenCache
 }
 
 export async function employeeToken(): Promise<string> {

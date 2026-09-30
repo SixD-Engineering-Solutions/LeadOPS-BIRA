@@ -165,7 +165,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'reports' && isAdmin ? (
           <Reports />
         ) : active === 'team' ? (
-          <Team />
+          <Team currentUserId={user.id} />
         ) : active === 'tasks' ? (
           <Tasks isAdmin={isAdmin} />
         ) : active === 'proposals' ? (

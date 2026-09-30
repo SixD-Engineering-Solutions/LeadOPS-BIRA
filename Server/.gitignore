@@ -6,3 +6,6 @@ node_modules
 
 # Uploaded documents — local disk storage, not versioned
 /uploads
+
+# Compiled output
+/dist

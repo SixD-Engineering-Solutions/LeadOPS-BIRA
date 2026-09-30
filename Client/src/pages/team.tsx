@@ -23,7 +23,7 @@ const fmt = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyEmpForm = { email: '', userName: '', role: 'employee' as 'employee' | 'admin', department: '', phoneNumber: '' }
 
-export default function Team() {
+export default function Team({ currentUserId }: { currentUserId: string }) {
   // Includes removed (isActive: false) accounts too — this page is admin-only,
   // and an admin needs to see who's removed in order to reactivate them.
   const [users, setUsers] = useState<EmployeeUser[]>([])
@@ -98,6 +98,35 @@ export default function Team() {
       setError(e instanceof Error ? e.message : 'Could not remove employee.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  // Two roles: admin (full access) and employee (their own assigned work).
+  // The server enforces it on every request; this just asks for it. Promoting
+  // unassigns the person's leads (admins are never assignees) — the prompt
+  // says so first; the server refuses if they still hold open tasks/projects.
+  const [changingRoleId, setChangingRoleId] = useState<string | null>(null)
+  async function changeRole(u: EmployeeUser, role: 'admin' | 'employee', assignedCount: number) {
+    const name = u.userName || displayName(u.email)
+    const message = role === 'admin'
+      ? `Make ${name} an admin?\n\nThey'll get full admin access: every lead, Reports, Team, deleting records and managing roles.` +
+        (assignedCount > 0 ? `\n\nTheir ${assignedCount} assigned lead${assignedCount === 1 ? '' : 's'} will become Unassigned — admins aren't assigned leads — so you can hand ${assignedCount === 1 ? 'it' : 'them'} to someone else.` : '')
+      : `Make ${name} an employee?\n\nThey'll lose admin access and only see the leads assigned to them.`
+    if (!confirm(message)) return
+    setChangingRoleId(u.id)
+    try {
+      const res = await api<{ user: EmployeeUser; unassignedLeads: number }>(`/users/${u.id}/role`, { method: 'PATCH', auth: true, body: { role } })
+      setUsers(prev => prev.map(x => (x.id === u.id ? res.user : x)))
+      if (res.unassignedLeads > 0) {
+        // Their leads are now unassigned — refresh so the counts are right.
+        const { leads } = await api<{ leads: Lead[] }>('/leads', { auth: true })
+        setLeads(leads)
+      }
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change the role.')
+    } finally {
+      setChangingRoleId(null)
     }
   }
 
@@ -241,6 +270,18 @@ export default function Team() {
                         </svg>
                       )}
                     </button>
+                    {u.id === currentUserId ? (
+                      <span className="shrink-0 text-xs text-gray-400 dark:text-gray-400">You</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => changeRole(u, isAdmin ? 'employee' : 'admin', assigned.length)}
+                        disabled={changingRoleId === u.id}
+                        className="shrink-0 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500 dark:hover:text-orange-300"
+                      >
+                        {changingRoleId === u.id ? 'Saving…' : isAdmin ? 'Make employee' : 'Make admin'}
+                      </button>
+                    )}
                     {!isAdmin && (
                       <button
                         type="button"

@@ -1,0 +1,37 @@
+# LeadOps stack for Portainer (Stacks → Add stack). Secrets come from the
+# stack's environment variables — never put real values in this file.
+# See DEPLOYMENT_CHECKLIST.md for every step.
+services:
+  leadops-api:
+    build: ./Server
+    image: leadops-api:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (at least 32 characters)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL (the public https:// address)}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      FROM_EMAIL: ${FROM_EMAIL:-}
+    volumes:
+      - leadops-uploads:/app/uploads        # uploaded documents — keep across redeploys
+    # Exactly one API instance: live notifications and reminders are in-process.
+    # (no `ports:` — only reachable through the web container)
+
+  leadops-web:
+    build: ./Client
+    image: leadops-web:latest
+    restart: unless-stopped
+    depends_on:
+      - leadops-api
+    ports:
+      - "${WEB_PORT:-8080}:80"             # put your HTTPS reverse proxy in front of this
+
+volumes:
+  leadops-uploads:

@@ -29,7 +29,12 @@ const ALLOWED_MIME_TYPES = new Set([
   'text/plain', // some browsers report .csv this way
 ])
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'documents')
+// <app>/uploads/documents by default — /app/uploads in the container, which
+// must be a persistent volume or every redeploy deletes the uploaded files.
+// UPLOAD_DIR overrides it (point it at any mounted disk).
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '..', '..', 'uploads', 'documents')
 fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 
 // Storage name is derived from a bcrypt hash of a per-upload random value, so

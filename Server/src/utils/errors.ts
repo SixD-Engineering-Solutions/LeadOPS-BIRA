@@ -10,6 +10,7 @@ const CODES: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  429: 'RATE_LIMITED',
   500: 'INTERNAL_ERROR',
   502: 'UPSTREAM_ERROR',
   503: 'SERVICE_UNAVAILABLE',

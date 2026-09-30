@@ -16,6 +16,9 @@ import trackerRoutes from './routes/tracker'
 import { startFollowUpReminderJob } from './services/reminders'
 import { sendError } from './utils/errors'
 import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
+import { assertRequiredEnv } from './utils/env'
+
+assertRequiredEnv()
 
 // Safety nets: keep the server alive through transient failures (e.g. the DB
 // briefly dropping) instead of the process dying and restarting repeatedly.
@@ -28,6 +31,11 @@ process.on('uncaughtException', (err) => {
 
 const app = express()
 const PORT = process.env.PORT ?? 3000
+// In production the API sits behind one proxy hop (the web container's nginx),
+// so req.ip — used by the login/sign-up rate limits — must come from
+// X-Forwarded-For, or every client would share nginx's address. Not trusted
+// in development, where there's no proxy and the header could be spoofed.
+app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false)
 
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:5173'
 app.use(cors({
@@ -70,6 +78,12 @@ app.use((_req, res) => {
 // an uncaught error would fall through to Express's default handler and
 // leak a stack trace as an HTML response instead of this app's JSON shape.
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  // A browser request from a site other than FRONTEND_URL — an expected
+  // refusal, not a server fault: answer 403 without a stack trace in the logs.
+  if (err instanceof Error && err.message === 'Not allowed by CORS') {
+    if (!res.headersSent) sendError(res, 403, 'Requests from this origin are not allowed.')
+    return
+  }
   console.error('[unhandled route error]', err instanceof Error ? err.stack ?? err.message : err)
   if (res.headersSent) {
     return
