@@ -26,6 +26,7 @@ model User {
   assignedLeads       Lead[]         @relation("AssignedTo")
   assignedByMeLeads   Lead[]         @relation("AssignedBy")
   createdLeads        Lead[]         @relation("CreatedBy")
+  bmLeads             Lead[]         @relation("BranchManager")
   notifications       Notification[]
   assignedTasks       Task[]         @relation("TaskAssignedTo")
   assignedByMeTasks   Task[]         @relation("TaskAssignedBy")
@@ -247,6 +248,10 @@ model Lead {
   assignedToUser   User?          @relation("AssignedTo", fields: [assignedToUserId], references: [id])
   assignedByUserId String?        @map("assigned_by_user_id")
   assignedByUser   User?          @relation("AssignedBy", fields: [assignedByUserId], references: [id])
+  // Branch manager — one of our own users, shown as "BM/Contact" in the
+  // Tracker pipeline (not the client's contact person).
+  bmUserId         String?        @map("bm_user_id")
+  bmUser           User?          @relation("BranchManager", fields: [bmUserId], references: [id])
   statusId         String?        @map("status_id")
   status           LeadStatus?    @relation(fields: [statusId], references: [id])
   remark           String?

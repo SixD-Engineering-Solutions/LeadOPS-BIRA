@@ -55,12 +55,14 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
         <DetailRow label="Sector" value={lead.sector?.sectorName} />
         <DetailRow label="Source" value={lead.source?.sourceName} />
         <DetailRow label="Service type" value={lead.serviceType?.serviceTypeName} />
-        <DetailRow label="Event" value={lead.event?.eventName} />
+        {/* No longer captured on new leads; still shown for older ones that have it. */}
+        {lead.event && <DetailRow label="Event" value={lead.event.eventName} />}
       </DetailSection>
 
       <DetailSection title="Ownership">
         <DetailRow label="Assigned to" value={lead.assignedToUser ? (lead.assignedToUser.userName || lead.assignedToUser.email) : undefined} />
         <DetailRow label="Assigned by" value={lead.assignedByUser ? (lead.assignedByUser.userName || lead.assignedByUser.email) : undefined} />
+        <DetailRow label="BM/Contact" value={lead.bmUser ? (lead.bmUser.userName || lead.bmUser.email) : undefined} />
         <DetailRow label="Created by" value={lead.createdByUser ? (lead.createdByUser.userName || lead.createdByUser.email) : undefined} />
       </DetailSection>
 

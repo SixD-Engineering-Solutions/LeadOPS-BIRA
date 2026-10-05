@@ -29,8 +29,8 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
     include: {
       vertical: { select: { verticalName: true } },
       serviceType: { select: { serviceTypeName: true } },
-      contact: { select: { contactPersonName: true } },
       assignedToUser: { select: { userName: true, email: true } },
+      bmUser: { select: { userName: true, email: true } },
       status: { select: { statusName: true } },
       plant: { select: { plantName: true, client: { select: { clientName: true } }, location: { select: { city: true } } } },
       proposals: {
@@ -97,7 +97,7 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
     probabilityPct: project ? 100 : proposal?.probabilityPct ?? null,
     expectedClose: day(project?.completionDate) ?? day(proposal?.expectedOrderDate),
     owner: person(lead.assignedToUser),
-    bmContact: lead.contact?.contactPersonName ?? null,
+    bmContact: person(lead.bmUser),
     followUpDate: day(nextFollowUp),
     lastAction: lastActivity
       ? `${lastActivity.activityType} · ${day(lastActivity.activityDate)}`

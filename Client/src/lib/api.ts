@@ -40,6 +40,8 @@ export type Lead = {
   assignedToUser?: { id: string; userName: string | null; email: string } | null
   assignedByUserId: string | null
   assignedByUser?: { id: string; userName: string | null; email: string } | null
+  bmUserId: string | null // branch manager — one of our own users
+  bmUser?: { id: string; userName: string | null; email: string } | null
   statusId: string | null
   status?: { id: string; statusName: string; statusCategory: string | null } | null
   remark: string | null

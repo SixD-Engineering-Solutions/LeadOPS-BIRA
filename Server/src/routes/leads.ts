@@ -22,6 +22,7 @@ const leadInclude = {
   contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true, isPrimaryContact: true } },
   assignedToUser: { select: { id: true, userName: true, email: true } },
   assignedByUser: { select: { id: true, userName: true, email: true } },
+  bmUser: { select: { id: true, userName: true, email: true } },
   createdByUser: { select: { id: true, userName: true, email: true } },
   status: { select: { id: true, statusName: true, statusCategory: true } },
 } as const
@@ -118,6 +119,13 @@ async function foreUser(input: string) {
   return (await prisma.user.findUnique({ where: { email } })) ?? prisma.user.create({ data: { userName: isEmail ? null : input, email } })
 }
 
+// The branch manager must be one of our own active users — never a made-up
+// name — so it's picked by id, unlike the find-or-create fields above.
+async function activeUser(id: string) {
+  return prisma.user.findFirst({ where: { id, isActive: true }, select: { id: true } })
+}
+const BM_INVALID = 'Branch manager must be an active team member.'
+
 // POST /leads — accepts typed names; reuses or creates the linked records.
 const createSchema = z.object({
   plantName: z.string().min(1, 'Plant is required.'),
@@ -130,7 +138,7 @@ const createSchema = z.object({
   sectorName: z.string().optional(),
   sourceName: z.string().optional(),
   serviceTypeName: z.string().optional(),
-  eventId: z.string().optional(),
+  bmUserId: z.string().optional(),
   assignedToName: z.string().optional(),
   statusName: z.string().optional(),
   remark: z.string().optional(),
@@ -153,6 +161,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const d = parse.data
   if (isDead(d.statusName) && !validReason(d.lostReason)) {
     sendError(res, 400, LOST_REASON_REQUIRED)
+    return
+  }
+  const bm = clean(d.bmUserId) ? await activeUser(clean(d.bmUserId)) : null
+  if (clean(d.bmUserId) && !bm) {
+    sendError(res, 400, BM_INVALID)
     return
   }
   try {
@@ -179,7 +192,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
         sectorId: sector?.id ?? null,
         sourceId: source?.id ?? null,
         serviceTypeId: serviceType?.id ?? null,
-        eventId: clean(d.eventId) || null,
+        bmUserId: bm?.id ?? null,
         assignedToUserId: assigned?.id ?? null,
         assignedByUserId: assigned?.id ? req.userId! : null,
         statusId: status.id,
@@ -201,10 +214,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 })
 
-// PATCH /leads/:id — change status (by name), reassign, or edit the remark.
+// PATCH /leads/:id — change status (by name), reassign, set the branch
+// manager, or edit the remark.
 const updateSchema = z.object({
   statusName: z.string().optional(),
   assignedToUserId: z.string().nullable().optional(),
+  bmUserId: z.string().nullable().optional(),
   remark: z.string().nullable().optional(),
   lostReason: z.string().optional(),
 })
@@ -227,7 +242,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
 
-  const data: { statusId?: string; assignedToUserId?: string | null; assignedByUserId?: string | null; remark?: string | null; lostReason?: string | null } = {}
+  const data: { statusId?: string; assignedToUserId?: string | null; assignedByUserId?: string | null; bmUserId?: string | null; remark?: string | null; lostReason?: string | null } = {}
   if (parse.data.statusName?.trim()) {
     const toDead = isDead(parse.data.statusName)
     if (toDead && !isDead(existing.status?.statusName) && !validReason(parse.data.lostReason)) {
@@ -257,6 +272,13 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     // Whoever performs the (re)assignment becomes "assigned by" — clearing the
     // assignee (unassigning) clears this too, since no one is assigning it anymore.
     data.assignedByUserId = data.assignedToUserId ? req.userId! : null
+  }
+  if ('bmUserId' in parse.data) {
+    if (parse.data.bmUserId && !(await activeUser(parse.data.bmUserId))) {
+      sendError(res, 400, BM_INVALID)
+      return
+    }
+    data.bmUserId = parse.data.bmUserId || null
   }
   if ('remark' in parse.data) data.remark = parse.data.remark ?? null
 

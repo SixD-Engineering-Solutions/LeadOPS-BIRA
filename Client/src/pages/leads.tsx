@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, LEAD_SYNC_EVENT } from '../lib/api'
-import type { Lead, EmployeeUser, Event as ExpoEvent } from '../lib/api'
+import type { Lead, EmployeeUser } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { LostReasonModal } from '../components/LostReasonModal'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -16,15 +16,14 @@ const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name
 const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', eventId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
+const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [employees, setEmployees] = useState<EmployeeUser[]>([])
-  const [events, setEvents] = useState<ExpoEvent[]>([])
+  const [team, setTeam] = useState<EmployeeUser[]>([])
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
@@ -69,19 +68,17 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
   }, [])
 
-  // Employees, for the assignment dropdown — keyed by email so two people who
-  // happen to share a name can never be confused with each other. Admins are
-  // excluded: leads are worked by employees, not assigned to admin accounts.
+  // Team members, for the assignment and branch-manager dropdowns — keyed by
+  // email so two people who happen to share a name can never be confused with
+  // each other. Admins are excluded from assignment (leads are worked by
+  // employees, not assigned to admin accounts) but can be a lead's BM.
   useEffect(() => {
     api<{ users: EmployeeUser[] }>('/users', { auth: true })
-      .then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin')))
+      .then(({ users }) => setTeam(users))
       .catch(() => {})
   }, [])
+  const employees = team.filter(u => u.role !== 'admin')
   const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
-
-  useEffect(() => {
-    api<{ events: ExpoEvent[] }>('/events', { auth: true }).then(({ events }) => setEvents(events)).catch(() => {})
-  }, [])
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
@@ -146,6 +143,20 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
+  async function setBm(id: string, bmUserId: string) {
+    setSavingId(id)
+    try {
+      const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { bmUserId: bmUserId || null } })
+      setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
+      setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not set the branch manager.')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   async function removeLead(id: string) {
     if (!confirm('Delete this lead? Its proposals, projects, invoices, payments and documents will be deleted too. This cannot be undone.')) return
     setSavingId(id)
@@ -189,10 +200,10 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
           {field('Source', 'sourceName', 'e.g. Expo / Reference / Website')}
           {field('Service type', 'serviceTypeName', 'e.g. Laser scanning / BIM')}
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Event (expo/visit)
-            <select value={form.eventId} onChange={set('eventId')} className={inputCls}>
+            BM/Contact (branch manager)
+            <select value={form.bmUserId} onChange={set('bmUserId')} className={inputCls}>
               <option value="">None</option>
-              {events.map(e => <option key={e.id} value={e.id}>{e.eventName}</option>)}
+              {team.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -242,7 +253,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
           <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: focusCreateForm }} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-sm">
+            <table className="w-full min-w-[1040px] text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
                   <th className="px-5 py-3 font-semibold">Plant / Contact</th>
@@ -250,6 +261,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
                   <th className="px-3 py-3 font-semibold">Status</th>
                   <th className="px-3 py-3 font-semibold">Assigned to</th>
                   <th className="px-3 py-3 font-semibold">Assigned by</th>
+                  <th className="px-3 py-3 font-semibold">BM/Contact</th>
                   <th className="px-3 py-3 font-semibold">Updated</th>
                   {isAdmin && <th className="px-3 py-3 font-semibold"></th>}
                 </tr>
@@ -294,6 +306,21 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
                       </select>
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">{lead.assignedByUser ? (lead.assignedByUser.userName || lead.assignedByUser.email) : '—'}</td>
+                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400" onClick={e => e.stopPropagation()}>
+                      <select
+                        value={lead.bmUserId ?? ''}
+                        disabled={savingId === lead.id}
+                        onChange={e => setBm(lead.id, e.target.value)}
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      >
+                        <option value="">None</option>
+                        {/* Keep a BM who has since left the team visible rather than silently showing "None". */}
+                        {lead.bmUser && !team.some(u => u.id === lead.bmUser!.id) && (
+                          <option value={lead.bmUser.id}>{lead.bmUser.userName || lead.bmUser.email}</option>
+                        )}
+                        {team.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
+                      </select>
+                    </td>
                     <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmt(lead.updatedAt)}</td>
                     {isAdmin && (
                       <td className="px-3 py-3 text-right" onClick={e => e.stopPropagation()}>
