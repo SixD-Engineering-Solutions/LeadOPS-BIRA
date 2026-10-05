@@ -8,14 +8,11 @@ export type Theme = 'light' | 'dark'
 // useTheme() below.
 const THEME_CHANGE_EVENT = 'leadops:theme-change'
 
-function systemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-}
-
+// Light by default, whatever the computer's own setting — dark only once
+// someone picks it with the toggle (remembered per browser).
 export function getTheme(): Theme {
   const stored = localStorage.getItem(THEME_KEY)
-  if (stored === 'light' || stored === 'dark') return stored
-  return systemPrefersDark() ? 'dark' : 'light'
+  return stored === 'dark' ? 'dark' : 'light'
 }
 
 export function applyTheme(theme: Theme): void {
