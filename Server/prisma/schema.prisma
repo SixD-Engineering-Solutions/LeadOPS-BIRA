@@ -19,6 +19,10 @@ model User {
   role         String   @default("employee")
   department   String?
   passwordHash String?  @map("password_hash")
+  // Microsoft Entra object id (`oid`), saved on first "Sign in with Microsoft".
+  // The permanent link to their Microsoft account — email is only used to
+  // find the user that first time. Cleared when an admin changes the email.
+  microsoftOid String?  @unique @map("microsoft_oid")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

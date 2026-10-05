@@ -12,7 +12,7 @@ services:
       PORT: "3000"
       DATABASE_URL: ${DATABASE_URL:?set the existing Aiven DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random secret of at least 32 characters}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
       FRONTEND_URL: ${FRONTEND_URL:?set the public LeadOps URL}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -20,6 +20,12 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       FROM_EMAIL: ${FROM_EMAIL:-}
+      # "Sign in with Microsoft" — the Azure app registration's ids. When set,
+      # Microsoft is the only sign-in. Leave both empty for password login.
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      # Emergency: "true" re-enables password sign-in for admins only.
+      ADMIN_PASSWORD_LOGIN: ${ADMIN_PASSWORD_LOGIN:-false}
       DB_POOL_MAX: ${DB_POOL_MAX:-5}
     volumes:
       - leadops-uploads:/app/uploads

@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Input from '../components/Input'
 import Button from '../components/Button'
 import { api, setToken } from '../lib/api'
 import type { AuthUser, AuthResponse } from '../lib/api'
 import ThemeToggle from '../components/ThemeToggle'
+import { microsoftRedirectIdToken, startMicrosoftSignIn } from '../lib/microsoft'
+import type { MicrosoftConfig } from '../lib/microsoft'
 
 // ─── icons ────────────────────────────────────────────────────────────────────
 
@@ -64,29 +66,299 @@ const cardCls = `absolute inset-0 flex gap-3 p-3
 
 const panelCls = 'flex-1 bg-white dark:bg-gray-900 px-8 sm:px-10 py-6 flex flex-col overflow-y-auto rounded-[1.4rem]'
 
+// ─── forgot password ──────────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+type ResetStep = 'email' | 'otp' | 'password'
+
+const RESET_COPY: Record<ResetStep, { title: string; subtitle: string }> = {
+  email: { title: 'Forgot Password?', subtitle: "Enter your account email and we'll send you a reset code" },
+  otp: { title: 'Check Your Email', subtitle: 'Enter the 6-digit code we sent you' },
+  password: { title: 'Set New Password', subtitle: 'Choose a new password for your account' },
+}
+
+function ForgotPassword({ initialEmail, onBack, onDone }: {
+  initialEmail: string
+  onBack: () => void
+  onDone: (email: string) => void
+}) {
+  const [step, setStep] = useState<ResetStep>('email')
+  const [email, setEmail] = useState(initialEmail)
+  const [otp, setOtp] = useState('')
+  const [resetToken, setResetToken] = useState<string | null>(null)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
+  const [errors, setErrors] = useState<{ email?: string; otp?: string; password?: string; confirmPassword?: string }>({})
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function sendCode() {
+    if (!EMAIL_RE.test(email)) {
+      setErrors({ email: 'Enter a valid email.' })
+      return
+    }
+    setErrors({})
+    setError(null)
+    setLoading(true)
+    try {
+      await api('/auth/forgot-password', { method: 'POST', body: { email } })
+      setOtp('')
+      setNotice(`Code sent to ${email}.`)
+      setStep('otp')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send the reset code.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function verifyCode() {
+    if (otp.length < 6) {
+      setErrors({ otp: 'Enter the 6-digit code.' })
+      return
+    }
+    setErrors({})
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await api<{ resetToken: string }>('/auth/verify-otp', {
+        method: 'POST',
+        body: { email, otp },
+      })
+      setResetToken(res.resetToken)
+      setNotice(null)
+      setStep('password')
+    } catch (err) {
+      setErrors({ otp: err instanceof Error ? err.message : 'Invalid code. Please try again.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function resetPassword() {
+    const next: typeof errors = {}
+    if (!password) next.password = 'Password is required.'
+    else if (password.length < 6) next.password = 'Must be at least 6 characters.'
+    if (!confirmPassword) next.confirmPassword = 'Please confirm your password.'
+    else if (password !== confirmPassword) next.confirmPassword = 'Passwords do not match.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
+
+    setError(null)
+    setLoading(true)
+    try {
+      await api('/auth/reset-password', { method: 'POST', body: { resetToken, password } })
+      onDone(email)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset your password.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleSubmit(e: { preventDefault(): void }) {
+    e.preventDefault()
+    if (step === 'email') void sendCode()
+    else if (step === 'otp') void verifyCode()
+    else void resetPassword()
+  }
+
+  const { title, subtitle } = RESET_COPY[step]
+
+  return (
+    <>
+      <div className="mb-5 text-center">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3">
+        {step === 'email' && (
+          <Input
+            id="reset-email"
+            label="Email"
+            type="email"
+            placeholder="you@example.com"
+            autoComplete="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setErrors({}) }}
+            error={errors.email}
+            leftIcon={<MailIcon />}
+            autoFocus
+          />
+        )}
+
+        {step === 'otp' && (
+          <div className="flex flex-col gap-1.5">
+            {notice && <p className="text-xs text-gray-500 dark:text-gray-400 break-all">{notice}</p>}
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="000000"
+              value={otp}
+              onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setErrors({}) }}
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-center text-xl tracking-[0.4em] text-gray-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              autoFocus
+            />
+            {errors.otp && <p className="text-xs text-red-500 dark:text-red-400">{errors.otp}</p>}
+            <div className="flex items-center justify-between text-xs">
+              <button type="button" onClick={() => { setStep('email'); setErrors({}); setError(null) }}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition cursor-pointer">
+                Change email
+              </button>
+              <button type="button" onClick={() => void sendCode()} disabled={loading}
+                className="font-medium text-rose-500 hover:text-rose-600 transition cursor-pointer disabled:opacity-50">
+                Resend code
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'password' && (
+          <>
+            <Input
+              id="reset-password"
+              label="New Password"
+              type={showPw ? 'text' : 'password'}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setErrors(prev => ({ ...prev, password: undefined })) }}
+              error={errors.password}
+              leftIcon={<LockIcon />}
+              autoFocus
+              rightIcon={
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition"
+                  aria-label={showPw ? 'Hide password' : 'Show password'}>
+                  <EyeIcon open={showPw} />
+                </button>
+              }
+            />
+            <Input
+              id="reset-confirm-password"
+              label="Confirm Password"
+              type={showConfirmPw ? 'text' : 'password'}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={e => { setConfirmPassword(e.target.value); setErrors(prev => ({ ...prev, confirmPassword: undefined })) }}
+              error={errors.confirmPassword}
+              leftIcon={<LockIcon />}
+              rightIcon={
+                <button type="button" onClick={() => setShowConfirmPw(v => !v)}
+                  className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition"
+                  aria-label={showConfirmPw ? 'Hide password' : 'Show password'}>
+                  <EyeIcon open={showConfirmPw} />
+                </button>
+              }
+            />
+          </>
+        )}
+
+        {error && (
+          <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:border-red-800 dark:text-red-400">{error}</p>
+        )}
+
+        <Button type="submit" variant="gradient" loading={loading} className="mt-0.5 py-2.5">
+          {step === 'email' ? 'Send Reset Code' : step === 'otp' ? 'Verify Code' : 'Reset Password'}
+        </Button>
+      </form>
+
+      <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        Remembered it?{' '}
+        <button type="button" onClick={onBack}
+          className="font-semibold text-rose-500 hover:text-rose-600 transition cursor-pointer">
+          Back to sign in
+        </button>
+      </p>
+    </>
+  )
+}
+
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type Credentials = { email: string; password: string }
 type LoginErrors = Partial<Record<keyof Credentials, string>>
+type PasswordLogin = 'everyone' | 'admins' | 'off'
 
-type SignupForm = { email: string; otp: string; password: string; confirmPassword: string }
-type SignupErrors = Partial<Record<keyof SignupForm, string>>
+function MicrosoftLogo() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 23 23" aria-hidden="true">
+      <path fill="#f25022" d="M1 1h10v10H1z" />
+      <path fill="#7fba00" d="M12 1h10v10H12z" />
+      <path fill="#00a4ef" d="M1 12h10v10H1z" />
+      <path fill="#ffb900" d="M12 12h10v10H12z" />
+    </svg>
+  )
+}
 
 // ─── component ────────────────────────────────────────────────────────────────
 
+// There's no self sign-up: an admin adds people on the Team page. Once
+// Microsoft sign-in is configured on the server, that's the main way in and
+// the password form is the admins' backup; until then it's password only.
 export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void }) {
-
-  // ── flip ──
-  const [isFlipped, setIsFlipped] = useState(false)
-
-  // ── login state ──
   const [credentials, setCredentials] = useState<Credentials>({ email: '', password: '' })
   const [rememberMe, setRememberMe] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loginErrors, setLoginErrors] = useState<LoginErrors>({})
   const [loginError, setLoginError] = useState<string | null>(null)
   const [loginLoading, setLoginLoading] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [loginNotice, setLoginNotice] = useState<string | null>(null)
 
+  // ── Microsoft sign-in ──
+  const [msConfig, setMsConfig] = useState<MicrosoftConfig | null>(null)
+  const [msLoading, setMsLoading] = useState(false)
+  // Which password sign-in the server allows; null until it answers, so a
+  // Microsoft-only login page never flashes the password form first.
+  const [passwordLogin, setPasswordLogin] = useState<PasswordLogin | null>(null)
+
+  // Ask the server whether Microsoft sign-in is on, and if this page load is
+  // the return trip from Microsoft's account picker, finish signing in.
+  useEffect(() => {
+    let cancelled = false
+    api<{ microsoft: MicrosoftConfig | null; passwordLogin?: PasswordLogin }>('/auth/config')
+      .then(async ({ microsoft, passwordLogin: mode }) => {
+        if (!cancelled) setPasswordLogin(mode ?? 'everyone')
+        if (cancelled || !microsoft) return
+        setMsConfig(microsoft)
+        const idToken = await microsoftRedirectIdToken(microsoft)
+        if (!idToken || cancelled) return
+        setMsLoading(true)
+        const res = await api<AuthResponse>('/auth/microsoft', { method: 'POST', body: { idToken } })
+        setToken(res.accessToken)
+        onAuthed(res.user)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setPasswordLogin(prev => prev ?? 'everyone')
+        setLoginError(err instanceof Error ? err.message : 'Microsoft sign-in failed.')
+        setMsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [onAuthed])
+
+  async function handleMicrosoft() {
+    if (!msConfig) return
+    setLoginError(null)
+    setMsLoading(true)
+    try {
+      await startMicrosoftSignIn(msConfig)
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Could not open Microsoft sign-in.')
+      setMsLoading(false)
+    }
+  }
+
+  // ── password sign-in ──
   function updateLogin(field: keyof Credentials) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
       setCredentials(prev => ({ ...prev, [field]: e.target.value }))
@@ -97,7 +369,7 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
   function validateLogin(): boolean {
     const next: LoginErrors = {}
     if (!credentials.email) next.email = 'Email is required.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(credentials.email)) next.email = 'Enter a valid email.'
+    else if (!EMAIL_RE.test(credentials.email)) next.email = 'Enter a valid email.'
     if (!credentials.password) next.password = 'Password is required.'
     else if (credentials.password.length < 6) next.password = 'Must be at least 6 characters.'
     setLoginErrors(next)
@@ -124,100 +396,6 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
     }
   }
 
-  // ── signup state ──
-  const [signupForm, setSignupForm] = useState<SignupForm>({ email: '', otp: '', password: '', confirmPassword: '' })
-  const [otpVerified, setOtpVerified] = useState(false)
-  const [emailVerifiedToken, setEmailVerifiedToken] = useState<string | null>(null)
-  const [showOtpPopover, setShowOtpPopover] = useState(false)
-  const [otpLoading, setOtpLoading] = useState(false)
-  const [showSignupPw, setShowSignupPw] = useState(false)
-  const [showConfirmPw, setShowConfirmPw] = useState(false)
-  const [signupErrors, setSignupErrors] = useState<SignupErrors>({})
-  const [signupError, setSignupError] = useState<string | null>(null)
-  const [signupLoading, setSignupLoading] = useState(false)
-
-  function updateSignup(field: keyof SignupForm) {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setSignupForm(prev => ({ ...prev, [field]: e.target.value }))
-      if (signupErrors[field]) setSignupErrors(prev => ({ ...prev, [field]: undefined }))
-    }
-  }
-
-  async function handleSendOtp() {
-    if (!signupForm.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signupForm.email)) {
-      setSignupErrors(prev => ({ ...prev, email: 'Enter a valid email first.' }))
-      return
-    }
-    setOtpLoading(true)
-    try {
-      await api('/auth/send-otp', { method: 'POST', body: { email: signupForm.email } })
-      setSignupErrors(prev => ({ ...prev, email: undefined }))
-      setShowOtpPopover(true)
-    } catch (err) {
-      setSignupErrors(prev => ({ ...prev, email: err instanceof Error ? err.message : 'Could not send OTP.' }))
-    } finally {
-      setOtpLoading(false)
-    }
-  }
-
-  async function handleVerifyOtp() {
-    if (signupForm.otp.length < 6) {
-      setSignupErrors(prev => ({ ...prev, otp: 'Enter the 6-digit OTP.' }))
-      return
-    }
-    setOtpLoading(true)
-    try {
-      const res = await api<{ emailVerifiedToken: string }>('/auth/verify-otp', {
-        method: 'POST',
-        body: { email: signupForm.email, otp: signupForm.otp },
-      })
-      setEmailVerifiedToken(res.emailVerifiedToken)
-      setOtpVerified(true)
-      setShowOtpPopover(false)
-      setSignupErrors(prev => ({ ...prev, otp: undefined }))
-    } catch (err) {
-      setSignupErrors(prev => ({ ...prev, otp: err instanceof Error ? err.message : 'Invalid OTP. Please try again.' }))
-    } finally {
-      setOtpLoading(false)
-    }
-  }
-
-  function validateSignup(): boolean {
-    const next: SignupErrors = {}
-    if (!signupForm.email) next.email = 'Email is required.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signupForm.email)) next.email = 'Enter a valid email.'
-    if (!otpVerified) next.email = next.email ?? 'Please verify your email with OTP first.'
-    if (!signupForm.password) next.password = 'Password is required.'
-    else if (signupForm.password.length < 6) next.password = 'Must be at least 6 characters.'
-    if (!signupForm.confirmPassword) next.confirmPassword = 'Please confirm your password.'
-    else if (signupForm.password !== signupForm.confirmPassword) next.confirmPassword = 'Passwords do not match.'
-    setSignupErrors(next)
-    return Object.keys(next).length === 0
-  }
-
-  async function handleSignup(e: { preventDefault(): void }) {
-    e.preventDefault()
-    setSignupError(null)
-    if (!validateSignup()) return
-    if (!emailVerifiedToken) {
-      setSignupError('Your email verification expired. Please verify your email again.')
-      return
-    }
-    setSignupLoading(true)
-    try {
-      const res = await api<AuthResponse>('/auth/signup', {
-        method: 'POST',
-        body: { emailVerifiedToken, password: signupForm.password },
-      })
-      setToken(res.accessToken)
-      onAuthed(res.user)
-    } catch (err) {
-      setSignupError(err instanceof Error ? err.message : 'Account creation failed.')
-    } finally {
-      setSignupLoading(false)
-    }
-  }
-
   // ── render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -228,23 +406,54 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
       <div className="absolute right-5 top-5 z-30">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-5xl" style={{ perspective: '1400px' }}>
-        <div
-          className={`relative h-[calc(100vh-2rem)] [transform-style:preserve-3d] transition-[transform] duration-700 ease-in-out
-            ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}
-        >
-
-          {/* ══ FRONT — Login ══════════════════════════════════════════════════ */}
+      <div className="w-full max-w-5xl">
+        <div className="relative h-[calc(100vh-2rem)]">
           <div className={cardCls}>
             <ImagePanel />
 
             <div className={panelCls}>
               <div className="flex-1 flex flex-col justify-center">
+                {forgotOpen ? (
+                  <ForgotPassword
+                    initialEmail={credentials.email}
+                    onBack={() => setForgotOpen(false)}
+                    onDone={email => {
+                      setCredentials({ email, password: '' })
+                      setLoginErrors({})
+                      setLoginError(null)
+                      setLoginNotice('Password updated. Sign in with your new password.')
+                      setForgotOpen(false)
+                    }}
+                  />
+                ) : (<>
                 <div className="mb-5 text-center">
                   <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Welcome Back</h1>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Sign in to access your LeadOps dashboard</p>
                 </div>
 
+                {msConfig && (
+                  <Button variant={passwordLogin === 'off' ? 'gradient' : 'outline'} type="button" onClick={handleMicrosoft} loading={msLoading} className="py-2.5">
+                    <span className="flex items-center justify-center gap-2">
+                      <MicrosoftLogo />
+                      Sign in with Microsoft
+                    </span>
+                  </Button>
+                )}
+
+                {msConfig && passwordLogin === 'admins' && (
+                  <div className="my-4 flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                    <span className="text-xs text-gray-400 dark:text-gray-400 font-medium">Admins: sign in with password</span>
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                )}
+
+                {/* Microsoft-only: no password form, so errors show under the button. */}
+                {(passwordLogin === 'off' || passwordLogin === null) && loginError && (
+                  <p className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:border-red-800 dark:text-red-400">{loginError}</p>
+                )}
+
+                {(passwordLogin === 'everyone' || passwordLogin === 'admins') && (
                 <form onSubmit={handleLogin} noValidate className="flex flex-col gap-3">
                   <Input
                     id="email"
@@ -283,195 +492,33 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
                         className="h-4 w-4 rounded border-gray-300 accent-rose-400" />
                       Remember me
                     </label>
-                    <a href="#" className="font-medium text-rose-500 hover:text-rose-600 transition">Forgot Password?</a>
+                    <button type="button" onClick={() => { setLoginNotice(null); setForgotOpen(true) }}
+                      className="font-medium text-rose-500 hover:text-rose-600 transition cursor-pointer">
+                      Forgot Password?
+                    </button>
                   </div>
+
+                  {loginNotice && (
+                    <p className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700 dark:bg-green-950/40 dark:border-green-800 dark:text-green-400">{loginNotice}</p>
+                  )}
 
                   {loginError && (
                     <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:border-red-800 dark:text-red-400">{loginError}</p>
                   )}
 
-                  <Button type="submit" variant="gradient" loading={loginLoading} className="mt-0.5 py-2.5">
+                  <Button type="submit" variant={msConfig ? 'outline' : 'gradient'} loading={loginLoading} className="mt-0.5 py-2.5">
                     Sign In
                   </Button>
                 </form>
-
-                <div className="my-3 flex items-center gap-3">
-                  <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-                  <span className="text-xs text-gray-400 dark:text-gray-400 font-medium">Or Continue With</span>
-                  <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-                </div>
-
-                <Button variant="outline" type="button">
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                    </svg>
-                    Google
-                  </span>
-                </Button>
+                )}
 
                 <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                  Don't have an account?{' '}
-                  <button type="button" onClick={() => setIsFlipped(true)}
-                    className="font-semibold text-rose-500 hover:text-rose-600 transition cursor-pointer">
-                    Sign up
-                  </button>
+                  Need access? Ask an admin to add you on the Team page.
                 </p>
+                </>)}
               </div>
             </div>
           </div>
-
-          {/* ══ BACK — Signup ══════════════════════════════════════════════════ */}
-          <div className={`${cardCls} [transform:rotateY(180deg)]`}>
-
-            <div className={panelCls}>
-              <div className="flex-1 flex flex-col justify-center">
-                <div className="mb-5 text-center">
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Create Account</h1>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Start your journey with LeadOps</p>
-                </div>
-
-                <form onSubmit={handleSignup} noValidate className="flex flex-col gap-3">
-
-                  {/* Email + Send OTP */}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-gray-600 dark:text-gray-400">Email</label>
-                    <div className="relative flex gap-2 items-start">
-                      <div className="flex-1">
-                        <Input
-                          id="signup-email"
-                          label=""
-                          type="email"
-                          placeholder="you@example.com"
-                          autoComplete="email"
-                          value={signupForm.email}
-                          onChange={updateSignup('email')}
-                          error={signupErrors.email}
-                          leftIcon={<MailIcon />}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={otpVerified ? undefined : handleSendOtp}
-                        disabled={otpLoading || otpVerified}
-                        className={`mt-0 h-[42px] px-3.5 rounded-xl text-xs font-semibold border transition whitespace-nowrap
-                          ${otpVerified
-                            ? 'bg-green-50 text-green-600 border-green-200 cursor-default dark:bg-green-950/40 dark:text-green-400 dark:border-green-800'
-                            : 'bg-orange-50 text-orange-500 border-orange-200 hover:bg-orange-100 disabled:opacity-50 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800 dark:hover:bg-orange-900/40'}`}
-                      >
-                        {otpLoading ? '…' : otpVerified ? '✓ Verified' : 'Send OTP'}
-                      </button>
-
-                      {/* OTP Popover */}
-                      {showOtpPopover && (
-                        <div className="absolute right-0 top-full mt-2 z-50 w-64 rounded-2xl border border-gray-100 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-                          {/* caret */}
-                          <div className="absolute -top-1.75 right-10 h-3.5 w-3.5 rotate-45 border-l border-t border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800" />
-
-                          <div className="mb-1 flex items-center justify-between">
-                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Enter OTP</p>
-                            <button
-                              type="button"
-                              onClick={() => setShowOtpPopover(false)}
-                              className="text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition text-base leading-none"
-                              aria-label="Close"
-                            >✕</button>
-                          </div>
-                          <p className="mb-3 text-xs text-gray-400 dark:text-gray-400 truncate">Code sent to {signupForm.email}</p>
-
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            placeholder="000000"
-                            value={signupForm.otp}
-                            onChange={e => {
-                              const v = e.target.value.replace(/\D/g, '')
-                              setSignupForm(prev => ({ ...prev, otp: v }))
-                              if (signupErrors.otp) setSignupErrors(prev => ({ ...prev, otp: undefined }))
-                            }}
-                            className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-center text-xl tracking-[0.4em] text-gray-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-                            autoFocus
-                          />
-                          {signupErrors.otp && (
-                            <p className="mt-1 text-xs text-red-500 dark:text-red-400">{signupErrors.otp}</p>
-                          )}
-                          <button
-                            type="button"
-                            onClick={handleVerifyOtp}
-                            disabled={otpLoading || signupForm.otp.length < 6}
-                            className="mt-3 w-full rounded-xl bg-linear-to-r from-rose-400 to-orange-400 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {otpLoading ? 'Verifying…' : 'Verify OTP'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Password */}
-                  <Input
-                    id="signup-password"
-                    label="Password"
-                    type={showSignupPw ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    value={signupForm.password}
-                    onChange={updateSignup('password')}
-                    error={signupErrors.password}
-                    leftIcon={<LockIcon />}
-                    rightIcon={
-                      <button type="button" onClick={() => setShowSignupPw(v => !v)}
-                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition">
-                        <EyeIcon open={showSignupPw} />
-                      </button>
-                    }
-                  />
-
-                  {/* Confirm password */}
-                  <Input
-                    id="confirm-password"
-                    label="Confirm Password"
-                    type={showConfirmPw ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    value={signupForm.confirmPassword}
-                    onChange={updateSignup('confirmPassword')}
-                    error={signupErrors.confirmPassword}
-                    leftIcon={<LockIcon />}
-                    rightIcon={
-                      <button type="button" onClick={() => setShowConfirmPw(v => !v)}
-                        className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition">
-                        <EyeIcon open={showConfirmPw} />
-                      </button>
-                    }
-                  />
-
-                  {signupError && (
-                    <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:border-red-800 dark:text-red-400">{signupError}</p>
-                  )}
-
-                  <Button type="submit" variant="gradient" loading={signupLoading} className="mt-0.5 py-2.5">
-                    Create Account
-                  </Button>
-                </form>
-
-                <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                  Already have an account?{' '}
-                  <button type="button" onClick={() => setIsFlipped(false)}
-                    className="font-semibold text-rose-500 hover:text-rose-600 transition cursor-pointer">
-                    Sign in
-                  </button>
-                </p>
-              </div>
-            </div>
-
-            <ImagePanel />
-          </div>
-
         </div>
       </div>
     </div>

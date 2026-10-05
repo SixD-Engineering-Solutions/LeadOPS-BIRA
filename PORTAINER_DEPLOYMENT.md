@@ -19,6 +19,12 @@ docker build -t leadops-api:2026-09-30 ./Server
 docker build --build-arg VITE_API_URL=/api -t leadops-web:2026-09-30 ./Client
 ```
 
+**On Windows Git Bash**, prefix the web build with `MSYS_NO_PATHCONV=1` (or run it
+from PowerShell/cmd). Git Bash otherwise rewrites `/api` to
+`C:/Program Files/Git/api`, and the built site can't reach the API. Check with:
+`docker run --rm --entrypoint sh leadops-web:<tag> -c 'grep -c "Program Files" /usr/share/nginx/html/assets/index-*.js'`
+— it must print `0`.
+
 If built directly on the destination Docker host, the images are ready for
 Portainer. Images built on a PC are not automatically available on that server.
 To transfer them without publishing to a registry:
@@ -57,7 +63,10 @@ secrets into the YAML, commit them, or publish an environment file.
 | `WEB_PORT` | `8080`, or another free server port |
 | `DB_POOL_MAX` | `5` initially; account for all other processes using Aiven's connection limit |
 | `UPLOADS_VOLUME_NAME` | `leadops-uploads`, or the exact existing destination volume name |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL` | Working SMTP settings for signup codes |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL` | Working SMTP settings for password-reset codes |
+| `JWT_EXPIRES_IN` | How long a sign-in lasts. Default `24h`; remove any old `7d` value |
+| `MS_CLIENT_ID`, `MS_TENANT_ID` | "Sign in with Microsoft": the Application (client) ID and Directory (tenant) ID from the Azure app registration. Leave empty for password-only login. When set, Microsoft is the only way to sign in. |
+| `ADMIN_PASSWORD_LOGIN` | `false`. Emergency switch: `true` brings back password sign-in for admins only, if Microsoft sign-in breaks. Restart the API after changing it. |
 
 Retaining a production JWT secret preserves existing tokens; changing it requires
 users to sign in again. Do not reuse a weak development secret.
@@ -91,7 +100,7 @@ click **Deploy the stack**. Check both container logs for startup errors.
 
 - Verify login and that existing leads, proposals, invoices, and totals load.
 - Download an existing document, then test an upload and download.
-- Test the email signup-code flow and live notifications.
+- Test "Sign in with Microsoft" (and, while `ADMIN_PASSWORD_LOGIN=true`, an admin password reset email) and live notifications.
 - Restart the API and confirm uploaded files remain available.
 - Test through the actual HTTPS URL, including its `/api` proxy.
 

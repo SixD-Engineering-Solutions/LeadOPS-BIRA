@@ -274,6 +274,49 @@ router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Resp
 
 const userSelect = { id: true, userName: true, email: true, role: true, department: true, phoneNumber: true, isActive: true } as const
 
+// PATCH /users/:id/email — admin-only, including an admin's own address.
+// Mainly for moving people onto their company Microsoft email: "Sign in with
+// Microsoft" finds them by this address the first time. Changing it unlinks
+// any Microsoft account already tied to them, so the next Microsoft sign-in
+// has to come from the new address.
+router.patch('/users/:id/email', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parse = z.object({ email: z.string().trim().email() }).safeParse(req.body)
+  if (!parse.success) {
+    sendError(res, 400, 'Enter a valid email address.')
+    return
+  }
+  const email = parse.data.email.toLowerCase()
+  const id = String(req.params.id)
+  const target = await prisma.user.findUnique({ where: { id }, select: { isActive: true, email: true } })
+  if (!target || !target.isActive) {
+    sendError(res, 404, 'Employee not found.')
+    return
+  }
+  if (target.email.toLowerCase() === email) {
+    sendError(res, 409, 'That is already their email.')
+    return
+  }
+  const taken = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, id: { not: id } }, select: { id: true } })
+  if (taken) {
+    sendError(res, 409, 'Another account already uses that email.')
+    return
+  }
+
+  const user = await prisma.user.update({ where: { id }, data: { email, microsoftOid: null }, select: userSelect })
+
+  // The Tracker shows people by name, falling back to email — refresh the
+  // rows of leads they own or manage.
+  const leads = await prisma.lead.findMany({
+    where: { deletedAt: null, OR: [{ assignedToUserId: id }, { bmUserId: id }] },
+    select: { id: true },
+  })
+  for (const lead of leads) {
+    await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, lead.id))
+    broadcastLeadUpdate(lead.id)
+  }
+  res.json({ user })
+})
+
 class RoleChangeRefused extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }

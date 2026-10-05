@@ -130,6 +130,31 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
     }
   }
 
+  // Changing someone's email — mainly moving people onto their company
+  // Microsoft address, which "Sign in with Microsoft" matches on.
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null)
+  const [emailDraft, setEmailDraft] = useState('')
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [savingEmail, setSavingEmail] = useState(false)
+  function startEmailEdit(u: EmployeeUser) {
+    setEditingEmailId(u.id)
+    setEmailDraft(u.email)
+    setEmailError(null)
+  }
+  async function saveEmail(id: string) {
+    setSavingEmail(true)
+    setEmailError(null)
+    try {
+      const { user } = await api<{ user: EmployeeUser }>(`/users/${id}/email`, { method: 'PATCH', auth: true, body: { email: emailDraft.trim() } })
+      setUsers(prev => prev.map(u => (u.id === id ? user : u)))
+      setEditingEmailId(null)
+    } catch (e) {
+      setEmailError(e instanceof Error ? e.message : 'Could not change the email.')
+    } finally {
+      setSavingEmail(false)
+    }
+  }
+
   async function reactivateEmployee(id: string) {
     setReactivatingId(id)
     try {
@@ -270,6 +295,13 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
                         </svg>
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => (editingEmailId === u.id ? setEditingEmailId(null) : startEmailEdit(u))}
+                      className="shrink-0 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:border-orange-300 hover:text-orange-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500 dark:hover:text-orange-300"
+                    >
+                      Change email
+                    </button>
                     {u.id === currentUserId ? (
                       <span className="shrink-0 text-xs text-gray-400 dark:text-gray-400">You</span>
                     ) : (
@@ -293,6 +325,32 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
                       </button>
                     )}
                   </div>
+
+                  {editingEmailId === u.id ? (
+                    <form
+                      onSubmit={e => { e.preventDefault(); saveEmail(u.id) }}
+                      className="flex flex-wrap items-center gap-2 border-t border-gray-100 bg-gray-50/60 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/30"
+                    >
+                      <label htmlFor={`email-${u.id}`} className="text-xs font-medium text-gray-600 dark:text-gray-400">New email</label>
+                      <input
+                        id={`email-${u.id}`}
+                        type="email"
+                        value={emailDraft}
+                        onChange={e => setEmailDraft(e.target.value)}
+                        placeholder="name@sixdengineering.com"
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                      />
+                      <button type="submit" disabled={savingEmail} className="rounded-lg bg-gradient-to-r from-rose-400 to-orange-400 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+                        {savingEmail ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" onClick={() => setEditingEmailId(null)} className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        Cancel
+                      </button>
+                      {emailError && <p className="w-full text-xs text-red-500 dark:text-red-400">{emailError}</p>}
+                      <p className="w-full text-[11px] text-gray-400 dark:text-gray-400">They’ll sign in with this address from now on. Any Microsoft account already linked to them is unlinked.</p>
+                    </form>
+                  ) : null}
 
                   {isExpanded && assigned.length > 0 && (
                     <ul className="border-t border-gray-100 bg-gray-50/60 px-5 py-2 dark:border-gray-800 dark:bg-gray-800/30">

@@ -32,6 +32,18 @@ export const loginLimiter = rateLimit({
   ...tooMany('Too many failed login attempts. Please wait 15 minutes and try again.'),
 })
 
+/** "Sign in with Microsoft": its own counter, so failures here never lock
+ *  anyone out of password login (or the reverse). Microsoft-signed tokens
+ *  can't be guessed, so this only stops floods — and it's generous because a
+ *  whole office usually shares one IP: 50 failures per 15 minutes per IP. */
+export const microsoftLoginLimiter = rateLimit({
+  windowMs: 15 * MIN,
+  limit: 50,
+  skipSuccessfulRequests: true,
+  keyGenerator: ipKey,
+  ...tooMany('Too many failed sign-in attempts. Please wait 15 minutes and try again.'),
+})
+
 /** Code guessing: 5 wrong guesses per email per 10 minutes — the life of one
  *  code — so no single code can be brute-forced. */
 export const verifyOtpLimiter = rateLimit({
@@ -57,10 +69,10 @@ export const sendOtpPerIpLimiter = rateLimit({
   ...tooMany('Too many verification requests. Please try again in an hour.'),
 })
 
-/** Account creation: 10 per IP per hour. */
-export const signupLimiter = rateLimit({
+/** Password resets: 10 per IP per hour. */
+export const resetPasswordLimiter = rateLimit({
   windowMs: 60 * MIN,
   limit: 10,
   keyGenerator: ipKey,
-  ...tooMany('Too many sign-up attempts. Please try again in an hour.'),
+  ...tooMany('Too many password reset attempts. Please try again in an hour.'),
 })

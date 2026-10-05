@@ -14,11 +14,11 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
   await transporter.sendMail({
     from: process.env.FROM_EMAIL ?? process.env.SMTP_USER,
     to,
-    subject: 'Your LeadOps verification code',
+    subject: 'Your LeadOps password reset code',
     html: `
       <div style="font-family:sans-serif;max-width:440px;margin:0 auto;padding:24px">
         <h2 style="color:#f97316;margin:0 0 8px">LeadOps</h2>
-        <p style="color:#374151;margin:0 0 16px">Use the code below to verify your email address.</p>
+        <p style="color:#374151;margin:0 0 16px">Use the code below to reset your LeadOps password.</p>
         <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:24px;text-align:center">
           <span style="font-size:36px;font-weight:700;letter-spacing:0.4em;color:#111827">${otp}</span>
         </div>

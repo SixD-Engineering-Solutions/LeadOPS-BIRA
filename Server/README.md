@@ -67,7 +67,14 @@ DATABASE_URL="postgresql://user:password@host:5432/dbname?sslmode=require"
 
 # JWT — use a long random string in production
 JWT_SECRET="change-me-to-a-long-random-string"
-JWT_EXPIRES_IN="7d"
+JWT_EXPIRES_IN="24h"
+
+# "Sign in with Microsoft" (Azure app registration ids) — leave empty for
+# password-only login. When set, Microsoft is the only way to sign in.
+MS_CLIENT_ID=""
+MS_TENANT_ID=""
+# Emergency: "true" brings back password sign-in for admins only.
+ADMIN_PASSWORD_LOGIN="false"
 
 # SMTP (example uses Gmail — use an App Password, not your real password)
 SMTP_HOST="smtp.gmail.com"
@@ -239,15 +246,26 @@ Configurable statuses. `statusName`, `statusCategory?` (e.g. Open / In Progress 
 
 ## Authentication Flow
 
-3-step signup ensures the user owns the email before an account is created.
+There is no self sign-up. An admin adds each person on the Team page (`POST /users`); only those
+people can sign in.
+
+**Sign in with Microsoft** (on when `MS_CLIENT_ID` and `MS_TENANT_ID` are set). The browser sends
+the user to Microsoft's account picker (MSAL, full-page redirect), then posts the returned ID token
+to `POST /auth/microsoft`. The server verifies it against Microsoft's signing keys, this app's client
+id and this tenant only. The first sign-in finds the user by email and saves their Microsoft `oid`
+on `users.microsoft_oid`; later sign-ins match on the `oid`. While Microsoft sign-in is on, password
+login and password reset are switched off for everyone; setting `ADMIN_PASSWORD_LOGIN="true"` brings
+them back for admins only, as an emergency way in.
+
+**Password reset** (admins, or everyone while Microsoft sign-in is off):
 
 ```
-1. POST /auth/send-otp   { email }                          -> emails a 6-digit OTP
-2. POST /auth/verify-otp { email, otp }                     -> { emailVerifiedToken }  (15-min JWT)
-3. POST /auth/signup     { emailVerifiedToken, password }   -> { accessToken, user }
+1. POST /auth/forgot-password { email }                -> emails a 6-digit code
+2. POST /auth/verify-otp      { email, otp }           -> { resetToken }  (15-min JWT)
+3. POST /auth/reset-password  { resetToken, password } -> { message }
 ```
 
-The `emailVerifiedToken` is a short-lived JWT signed with a separate secret (`JWT_SECRET + '_otp_verify'`) proving email ownership. The access token is only issued once the password is set.
+The `resetToken` is signed with a separate secret (`JWT_SECRET + '_otp_verify'`) and a `purpose: "reset"` claim.
 
 ---
 
@@ -268,11 +286,12 @@ validation failures return `400`.
 
 | Method & path | Body | Result |
 |---|---|---|
-| `POST /auth/send-otp` | `{ email }` | `{ message }` · 409 if already registered |
-| `POST /auth/verify-otp` | `{ email, otp }` | `{ emailVerifiedToken }` |
-| `POST /auth/signup` | `{ emailVerifiedToken, password }` | `201 { accessToken, user }` |
-| `POST /auth/login` | `{ email, password }` | `{ accessToken, user }` · 401 on bad creds |
-| `POST /auth/dev-login` | — | `{ accessToken, user }` — **dev only** (404 in production); upserts an admin `dev@leadops.local` and returns a token |
+| `GET /auth/config` | — | `{ microsoft, passwordLogin }` — `microsoft` is `{ clientId, tenantId }` or `null`; `passwordLogin` is `"everyone"`, `"admins"` or `"off"`. What the login page offers |
+| `POST /auth/microsoft` | `{ idToken }` | `{ accessToken, user }` · 403 if the person hasn't been added on the Team page · 404 when Microsoft sign-in is off |
+| `POST /auth/login` | `{ email, password }` | `{ accessToken, user }` · 401 on bad creds · 403 while Microsoft sign-in is on (admins allowed only with `ADMIN_PASSWORD_LOGIN=true`) |
+| `POST /auth/forgot-password` | `{ email }` | `{ message }` · 404 if no active account |
+| `POST /auth/verify-otp` | `{ email, otp }` | `{ resetToken }` |
+| `POST /auth/reset-password` | `{ resetToken, password }` | `{ message }` |
 | `GET /auth/me` | — (auth) | `{ user }` |
 
 ### Leads (`/leads`) — all require auth
@@ -341,7 +360,7 @@ New signups are `employee` by default; the dev-login account is `admin`.
 
 | Token | Secret | Expiry | Purpose |
 |---|---|---|---|
-| Access token | `JWT_SECRET` | `JWT_EXPIRES_IN` (default 7d) | Authenticates API requests via `Authorization: Bearer` |
+| Access token | `JWT_SECRET` | `JWT_EXPIRES_IN` (default 24h) | Authenticates API requests via `Authorization: Bearer` |
 | Email verified token | `JWT_SECRET + '_otp_verify'` | 15 minutes | Proves email ownership during signup only |
 
 ---
