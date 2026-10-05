@@ -6,6 +6,8 @@ import type { IPublicClientApplication } from '@azure/msal-browser'
 // rather than a popup: nothing for a popup blocker to stop, and the root URL
 // is exactly the redirect URI registered in Azure.
 
+// tenantId is one organisation's id, or "organizations" when the server allows
+// several (any work or school account; the server enforces which ones).
 export type MicrosoftConfig = { clientId: string; tenantId: string }
 
 let instance: Promise<IPublicClientApplication> | null = null

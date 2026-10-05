@@ -66,6 +66,7 @@ secrets into the YAML, commit them, or publish an environment file.
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL` | Working SMTP settings for password-reset codes |
 | `JWT_EXPIRES_IN` | How long a sign-in lasts. Default `24h`; remove any old `7d` value |
 | `MS_CLIENT_ID`, `MS_TENANT_ID` | "Sign in with Microsoft": the Application (client) ID and Directory (tenant) ID from the Azure app registration. Leave empty for password-only login. When set, Microsoft is the only way to sign in. |
+| `MS_ALLOWED_TENANT_IDS` | Only when people from more than one Microsoft organisation sign in (e.g. `@sixdengineering.com` and `@sixdx.ai`): every allowed Directory (tenant) ID, comma-separated, including `MS_TENANT_ID`. The Azure app must then accept "Accounts in any organizational directory", and an admin of each other organisation must approve the app once. Empty = only `MS_TENANT_ID`. |
 | `ADMIN_PASSWORD_LOGIN` | `false`. Emergency switch: `true` brings back password sign-in for admins only, if Microsoft sign-in breaks. Restart the API after changing it. |
 
 Retaining a production JWT secret preserves existing tokens; changing it requires

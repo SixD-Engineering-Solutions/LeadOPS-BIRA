@@ -8,7 +8,7 @@ import { sendOtpEmail } from '../services/email'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
 import { sendError } from '../utils/errors'
 import { loginLimiter, microsoftLoginLimiter, verifyOtpLimiter, sendOtpPerEmailLimiter, sendOtpPerIpLimiter, resetPasswordLimiter } from '../utils/rateLimits'
-import { microsoftConfig, microsoftEnabled, verifyMicrosoftIdToken } from '../utils/microsoft'
+import { microsoftConfig, microsoftEnabled, verifyMicrosoftIdToken, OrganisationNotAllowed } from '../utils/microsoft'
 
 const router = Router()
 
@@ -50,6 +50,10 @@ router.post('/microsoft', microsoftLoginLimiter, async (req: Request, res: Respo
     identity = await verifyMicrosoftIdToken(parse.data.idToken)
   } catch (err) {
     console.error('Microsoft sign-in rejected:', err instanceof Error ? err.message : err)
+    if (err instanceof OrganisationNotAllowed) {
+      sendError(res, 403, "Accounts from your organisation can't sign in to LeadOps. Use your company Microsoft account, or ask an admin.")
+      return
+    }
     sendError(res, 401, 'Microsoft sign-in could not be verified. Please try again.')
     return
   }

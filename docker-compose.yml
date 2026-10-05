@@ -23,6 +23,9 @@ services:
       # Microsoft is the only sign-in. Leave both empty for password login.
       MS_CLIENT_ID: ${MS_CLIENT_ID:-}
       MS_TENANT_ID: ${MS_TENANT_ID:-}
+      # Other Microsoft organisations whose accounts may sign in, comma-separated
+      # (include MS_TENANT_ID). Empty = only MS_TENANT_ID.
+      MS_ALLOWED_TENANT_IDS: ${MS_ALLOWED_TENANT_IDS:-}
       # Emergency: "true" re-enables password sign-in for admins only.
       ADMIN_PASSWORD_LOGIN: ${ADMIN_PASSWORD_LOGIN:-false}
       # Aiven allows 20 DB connections in total across everything using the database.

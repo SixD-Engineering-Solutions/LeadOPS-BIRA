@@ -73,6 +73,9 @@ JWT_EXPIRES_IN="24h"
 # password-only login. When set, Microsoft is the only way to sign in.
 MS_CLIENT_ID=""
 MS_TENANT_ID=""
+# Only if a second Microsoft organisation signs in too: all allowed tenant ids,
+# comma-separated (include MS_TENANT_ID). Empty = only MS_TENANT_ID.
+MS_ALLOWED_TENANT_IDS=""
 # Emergency: "true" brings back password sign-in for admins only.
 ADMIN_PASSWORD_LOGIN="false"
 
@@ -252,7 +255,7 @@ people can sign in.
 **Sign in with Microsoft** (on when `MS_CLIENT_ID` and `MS_TENANT_ID` are set). The browser sends
 the user to Microsoft's account picker (MSAL, full-page redirect), then posts the returned ID token
 to `POST /auth/microsoft`. The server verifies it against Microsoft's signing keys, this app's client
-id and this tenant only. The first sign-in finds the user by email and saves their Microsoft `oid`
+id and the allowed organisations only (`MS_TENANT_ID`, plus any in `MS_ALLOWED_TENANT_IDS`). The first sign-in finds the user by email and saves their Microsoft `oid`
 on `users.microsoft_oid`; later sign-ins match on the `oid`. While Microsoft sign-in is on, password
 login and password reset are switched off for everyone; setting `ADMIN_PASSWORD_LOGIN="true"` brings
 them back for admins only, as an emergency way in.
