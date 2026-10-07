@@ -32,6 +32,8 @@ model User {
   createdLeads        Lead[]         @relation("CreatedBy")
   bmLeads             Lead[]         @relation("BranchManager")
   notifications       Notification[]
+  trackerRequestsMade TrackerChangeRequest[] @relation("TrackerRequestRequester")
+  trackerRequestsToMe TrackerChangeRequest[] @relation("TrackerRequestAdmin")
   assignedTasks       Task[]         @relation("TaskAssignedTo")
   assignedByMeTasks   Task[]         @relation("TaskAssignedBy")
   activities          Activity[]
@@ -566,6 +568,38 @@ model InvoiceSectorSummary {
 
   @@index([sortOrder])
   @@map("invoice_sector_summary")
+}
+
+// An employee's proposed edit to one imported tracker row, sent to one admin
+// to approve or decline (see routes/trackerRequests.ts). Only the fields being
+// changed are stored, each with its value when the request was made, so the
+// admin sees exactly what would change. A decided request is never acted on
+// again — approved applies the edit once, declined just closes it.
+model TrackerChangeRequest {
+  id          String    @id @default(cuid())
+  requesterId String    @map("requester_id")
+  requester   User      @relation("TrackerRequestRequester", fields: [requesterId], references: [id])
+  adminId     String    @map("admin_id")
+  admin       User      @relation("TrackerRequestAdmin", fields: [adminId], references: [id])
+  // "pipeline" | "invoiceRegister" | "sectorSummary"
+  tableName   String    @map("table_name")
+  rowId       String    @map("row_id")
+  // A readable name for the row at request time (client / sector), kept even
+  // if the row is later re-imported away.
+  rowLabel    String    @map("row_label")
+  // { [field]: { from, to } }
+  changes     Json
+  note        String?
+  // "pending" | "approved" | "declined"
+  status      String    @default("pending")
+  decisionNote String?  @map("decision_note")
+  decidedAt   DateTime? @map("decided_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([adminId, status])
+  @@index([requesterId, status])
+  @@map("tracker_change_requests")
 }
 
 // ─── Expo / visit tagging ────────────────────────────────────────────────

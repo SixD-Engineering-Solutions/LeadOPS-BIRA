@@ -16,6 +16,7 @@ import { DashboardSidebar, displayName, type NavItem } from '../components/dashb
 import { StatTiles } from '../components/dashboard/StatTiles'
 import { FollowUpsPanel } from '../components/dashboard/FollowUpsPanel'
 import { PendingPaymentsPanel } from '../components/dashboard/PendingPaymentsPanel'
+import { TrackerRequestsPanel } from '../components/dashboard/TrackerRequestsPanel'
 import { TasksPanel } from '../components/dashboard/TasksPanel'
 import { LeadAssignmentsModal } from '../components/dashboard/LeadAssignmentsModal'
 import { useLeadStats } from '../hooks/useLeadStats'
@@ -175,7 +176,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'invoices' ? (
           <Invoices isAdmin={isAdmin} />
         ) : active === 'tracker' ? (
-          <Tracker />
+          <Tracker isAdmin={isAdmin} currentUserId={user.id} />
         ) : (
         <div className="mx-auto max-w-6xl px-6 py-6">
           {demoNote && (
@@ -196,6 +197,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             onOpenProposals={() => openModule({ key: 'proposals', label: 'Proposals' })}
             onOpenPipeline={() => openModule({ key: 'tracker', label: 'Tracker' })}
           />
+
+          <TrackerRequestsPanel isAdmin={isAdmin} onOpenTracker={() => openModule({ key: 'tracker', label: 'Tracker' })} />
 
           <FollowUpsPanel
             followUps={followUps}

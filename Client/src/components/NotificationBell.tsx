@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, getToken, BASE_URL, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
+import { api, getToken, BASE_URL, LEAD_SYNC_EVENT, TASK_SYNC_EVENT, ACTIVITY_SYNC_EVENT, PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT, NOTIFICATION_EVENT } from '../lib/api'
 import type { Notification } from '../lib/api'
 import { ErrorBanner } from './ErrorBanner'
 import { EmptyState } from './EmptyState'
@@ -52,6 +52,7 @@ export default function NotificationBell() {
         setToasts(prev => [...prev, n])
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== n.id)), 6000)
         if (n.leadId) window.dispatchEvent(new CustomEvent(LEAD_SYNC_EVENT, { detail: { leadId: n.leadId } }))
+        window.dispatchEvent(new Event(NOTIFICATION_EVENT))
       }
       // Public "a lead changed" ping — sent to every connected user (not just
       // whoever it's personally about), so any open leads list stays in sync

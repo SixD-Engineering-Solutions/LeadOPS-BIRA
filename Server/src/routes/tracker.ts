@@ -5,8 +5,9 @@ import { authenticate, AuthRequest } from '../middleware/authenticate'
 const router = Router()
 router.use(authenticate)
 
-// Read-only. The imported sheet data never changes (see
-// prisma/importTracker.ts); the rows synced from the app are written only by
+// Reads only. Imported sheet rows (prisma/importTracker.ts) change only
+// through an admin's edit or an approved change request (see
+// routes/trackerRequests.ts); the rows synced from the app are written only by
 // syncLeadToPipeline (utils/pipelineSync.ts) and syncInvoiceToTracker
 // (routes/invoices.ts), and removed only when their lead/invoice is.
 

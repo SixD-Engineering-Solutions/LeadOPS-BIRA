@@ -170,7 +170,7 @@ export type Task = {
   updatedAt: string
 }
 
-// ─── Tracker (read-only import of the FY2026–27 Pipeline/Invoice sheet) ─────
+// ─── Tracker (the imported Pipeline/Invoice sheet, plus rows synced from the app) ─
 // These mirror the sheet's own columns rather than the app's normal
 // relational entities — see Server/prisma/importTracker.ts. Read-only: there
 // are no create/update calls for these yet.
@@ -270,6 +270,32 @@ export type Notification = { id: string; userId: string; leadId: string | null; 
 // stream (see NotificationBell) — so any open leads list can resync that one
 // lead without the viewer refreshing. detail: { leadId: string }
 export const LEAD_SYNC_EVENT = 'leadops:lead-sync'
+
+// Fired on `window` whenever this user receives any personal notification.
+// Every tracker change request event (sent, approved, declined) notifies the
+// person it concerns, so the request panels refetch on this. No detail.
+export const NOTIFICATION_EVENT = 'leadops:notification'
+
+// ─── Tracker change requests ─────────────────────────────────────────────────
+export type TrackerTable = 'pipeline' | 'invoiceRegister' | 'sectorSummary'
+export type TrackerValue = string | number | null
+export type TrackerFieldChange = { from: TrackerValue; to: TrackerValue }
+type Person = { id: string; userName: string | null; email: string }
+export type TrackerChangeRequest = {
+  id: string
+  tableName: TrackerTable
+  rowId: string
+  rowLabel: string
+  changes: Record<string, TrackerFieldChange>
+  note: string | null
+  status: 'pending' | 'approved' | 'declined'
+  createdAt: string
+  requester?: Person
+  admin?: Person
+}
+// An admin's inbox entry: also the row's current value of every field the
+// request would change (null if the row is gone).
+export type IncomingTrackerRequest = TrackerChangeRequest & { rowExists: boolean; current: Record<string, TrackerValue> | null }
 
 // Same idea as LEAD_SYNC_EVENT, for tasks. detail: { taskId: string }
 export const TASK_SYNC_EVENT = 'leadops:task-sync'

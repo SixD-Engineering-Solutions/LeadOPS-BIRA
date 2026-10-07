@@ -13,6 +13,7 @@ import eventRoutes from './routes/events'
 import referenceRoutes from './routes/reference'
 import notificationRoutes from './routes/notifications'
 import trackerRoutes from './routes/tracker'
+import trackerRequestRoutes from './routes/trackerRequests'
 import { startFollowUpReminderJob } from './services/reminders'
 import { sendError } from './utils/errors'
 import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
@@ -65,6 +66,7 @@ app.use('/invoices', invoiceRoutes)
 app.use('/events', eventRoutes)
 app.use('/notifications', notificationRoutes)
 app.use('/tracker', trackerRoutes)
+app.use('/tracker', trackerRequestRoutes)
 app.use('/', referenceRoutes)
 
 // Unmatched route — same JSON error shape as every other 404 in the app,

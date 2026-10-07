@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
-import { api } from '../lib/api'
-import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary } from '../lib/api'
+import { api, NOTIFICATION_EVENT } from '../lib/api'
+import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, TrackerTable, TrackerChangeRequest, LeadStatus } from '../lib/api'
+import { useTrackerFields, rowLabelFor } from '../lib/trackerEditFields'
+import type { TrackerFieldDefs } from '../lib/trackerEditFields'
+import { isSummaryTotal, trackerFyStart, fyLabel } from '../lib/trackerReports'
+import EditRowModal from '../components/tracker/EditRowModal'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { stageStatusStyle } from '../lib/statusStyles'
 import { formatLakhs, formatSheetValue } from '../lib/format'
 import ReportsTab from '../components/tracker/ReportsTab'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
+import { PIPELINE_SORT_OPTIONS, DEFAULT_DIRECTION, sortPipeline } from '../lib/pipelineSort'
+import type { PipelineSortKey, SortDirection } from '../lib/pipelineSort'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
@@ -89,9 +95,41 @@ function Card({ title, subtitle, headerAction, highlight = false, children }: {
   )
 }
 
+// ─── editing ─────────────────────────────────────────────────────────────────
+
+// What the tabs need to offer editing: admins edit an imported row directly,
+// employees send a change request (see EditRowModal). Rows synced from the
+// app's leads / invoices, and the summary's total row, aren't editable.
+type RowEditor = {
+  isAdmin: boolean
+  defs: TrackerFieldDefs | null // editable fields, from the server; no edit buttons until loaded
+  pendingRowIds: Set<string> // rows this employee already has a request waiting on
+  open: (table: TrackerTable, row: { id: string } & object) => void
+  reloadToken: number // bumps after an edit, a request, or a notification, so the tab refetches
+}
+
+function editColumn<T extends { id: string }>(editor: RowEditor, table: TrackerTable): Col<T> {
+  return {
+    label: '',
+    render: r => !editor.defs ? null : editor.pendingRowIds.has(r.id) ? (
+      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" title="You've asked an admin to change this row — waiting for their decision.">
+        Pending
+      </span>
+    ) : (
+      <button
+        type="button"
+        onClick={() => editor.open(table, r)}
+        className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:border-orange-300 hover:text-orange-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-700 dark:hover:text-orange-400"
+      >
+        {editor.isAdmin ? 'Edit' : 'Request change'}
+      </button>
+    ),
+  }
+}
+
 // ─── Pipeline tab ────────────────────────────────────────────────────────────
 
-function PipelineTab() {
+function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses: LeadStatus[] }) {
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -103,10 +141,14 @@ function PipelineTab() {
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the pipeline tracker.'))
       .finally(() => setLoading(false))
   }
-  useEffect(load, [])
+  useEffect(load, [editor.reloadToken])
 
-  const appItems = items.filter(i => i.sourceLeadId)
-  const importedItems = items.filter(i => !i.sourceLeadId)
+  const [sortKey, setSortKey] = useState<PipelineSortKey>('sheet')
+  const [sortDir, setSortDir] = useState<SortDirection>('asc')
+  const sortOption = PIPELINE_SORT_OPTIONS.find(o => o.key === sortKey)!
+
+  const appItems = sortPipeline(items.filter(i => i.sourceLeadId), sortKey, sortDir, leadStatuses)
+  const importedItems = sortPipeline(items.filter(i => !i.sourceLeadId), sortKey, sortDir, leadStatuses)
 
   const columns: Col<PipelineTrackerItem>[] = [
     { label: 'Vertical', render: r => fmtText(r.vertical) },
@@ -131,6 +173,32 @@ function PipelineTab() {
     <div className="flex flex-col gap-6">
       {error && <ErrorBanner message={error} onRetry={load} />}
 
+      {!error && items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <label htmlFor="pipeline-sort" className="font-medium text-gray-500 dark:text-gray-400">Sort by</label>
+          <select
+            id="pipeline-sort"
+            value={sortKey}
+            onChange={e => { const k = e.target.value as PipelineSortKey; setSortKey(k); setSortDir(DEFAULT_DIRECTION[k]) }}
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          >
+            {PIPELINE_SORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          {sortKey !== 'sheet' && (
+            <button
+              type="button"
+              onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+              title="Reverse the order"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            >
+              {sortDir === 'asc' ? '↑' : '↓'} {sortDir === 'asc' ? sortOption.asc : sortOption.desc}
+            </button>
+          )}
+          {sortKey === 'stage' && <span className="text-xs text-gray-400">On hold, lost and blank statuses are always listed last.</span>}
+          {sortKey === 'value' && <span className="text-xs text-gray-400">Non-INR values are listed after INR, blank values last.</span>}
+        </div>
+      )}
+
       {!error && appItems.length > 0 && (
         <Card
           highlight
@@ -141,13 +209,16 @@ function PipelineTab() {
         </Card>
       )}
 
-      <Card title={`Pipeline ${importedItems.length > 0 ? `(${importedItems.length})` : ''}`} subtitle="Imported from the FY2026–27 Pipeline Tracker sheet · read-only">
+      <Card
+        title={`Pipeline ${importedItems.length > 0 ? `(${importedItems.length})` : ''}`}
+        subtitle={`Imported from the Pipeline Tracker sheet · ${editor.isAdmin ? 'admins can edit any row' : 'request a change and an admin approves it'}`}
+      >
         {loading ? (
           <SkeletonRows />
         ) : importedItems.length === 0 && !error ? (
           <EmptyState icon="chart" title="No pipeline data yet" message="Imported sheet rows and leads raised in the app will appear here." />
         ) : (
-          <DataTable columns={columns} rows={importedItems} getKey={r => r.id} minWidth={1700} />
+          <DataTable columns={[editColumn<PipelineTrackerItem>(editor, 'pipeline'), ...columns]} rows={importedItems} getKey={r => r.id} minWidth={1800} />
         )}
       </Card>
     </div>
@@ -156,7 +227,7 @@ function PipelineTab() {
 
 // ─── Invoices tab ────────────────────────────────────────────────────────────
 
-function InvoicesTab() {
+function InvoicesTab({ editor }: { editor: RowEditor }) {
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,12 +240,15 @@ function InvoicesTab() {
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the invoice tracker.'))
       .finally(() => setLoading(false))
   }
-  useEffect(load, [])
+  useEffect(load, [editor.reloadToken])
 
   const appEntries = register.filter(r => r.sourceInvoiceId)
   const importedRegister = register.filter(r => !r.sourceInvoiceId)
 
+  const summaryEdit = editColumn<InvoiceSectorSummary>(editor, 'sectorSummary')
   const summaryColumns: Col<InvoiceSectorSummary>[] = [
+    // The total row is worked out from the sector rows, so it has no edit button.
+    { ...summaryEdit, render: r => (isSummaryTotal(r) ? null : summaryEdit.render(r)) },
     { label: 'Sector', render: r => fmtText(r.sector), emphasize: true },
     { label: 'BM / Owner', render: r => fmtText(r.bmOwner) },
     { label: 'Apr', render: r => fmtLakhs(r.apr) },
@@ -231,11 +305,11 @@ function InvoicesTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card title="Monthly summary by sector" subtitle="₹ Lakhs, against FY2026–27 targets · read-only">
+      <Card title="Monthly summary by sector" subtitle={`₹ Lakhs, against ${fyLabel(trackerFyStart(register))} targets · quarter, FY totals and the total row recalculate when an amount changes`}>
         {summary.length === 0 ? (
           <EmptyState icon="chart" title="No sector summary yet" message="The FY sector summary from the tracking sheet will appear here once imported." />
         ) : (
-          <DataTable columns={summaryColumns} rows={summary} getKey={r => r.id} minWidth={2000} />
+          <DataTable columns={summaryColumns} rows={summary} getKey={r => r.id} minWidth={2100} />
         )}
       </Card>
 
@@ -249,11 +323,14 @@ function InvoicesTab() {
         </Card>
       )}
 
-      <Card title={`Invoice register ${importedRegister.length > 0 ? `(${importedRegister.length})` : ''}`} subtitle="Order-wise invoice and collection detail · read-only">
+      <Card
+        title={`Invoice register ${importedRegister.length > 0 ? `(${importedRegister.length})` : ''}`}
+        subtitle={`Order-wise invoice and collection detail · ${editor.isAdmin ? 'admins can edit any row' : 'request a change and an admin approves it'}`}
+      >
         {importedRegister.length === 0 ? (
           <EmptyState icon="receipt" title="No invoices in the register yet" message="Imported sheet rows and invoices paid in full in the app will appear here." />
         ) : (
-          <DataTable columns={registerColumns} rows={importedRegister} getKey={r => r.id} minWidth={2400} />
+          <DataTable columns={[editColumn<InvoiceRegisterItem>(editor, 'invoiceRegister'), ...registerColumns]} rows={importedRegister} getKey={r => r.id} minWidth={2500} />
         )}
       </Card>
     </div>
@@ -264,14 +341,52 @@ function InvoicesTab() {
 
 const TAB_LABELS = { pipeline: 'Pipeline', invoices: 'Invoices', report: 'Report' } as const
 
-export default function Tracker() {
+export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; currentUserId: string }) {
   const [tab, setTab] = useState<'pipeline' | 'invoices' | 'report'>('pipeline')
+  const [editing, setEditing] = useState<{ table: TrackerTable; row: { id: string } & object } | null>(null)
+  const [pendingRowIds, setPendingRowIds] = useState<Set<string>>(new Set())
+  const [reloadToken, setReloadToken] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>([])
+  const { defs, error: fieldsError } = useTrackerFields()
+
+  // The app's lead statuses, whose categories decide which stage an app lead
+  // is at (see pipelineStatus.ts). Without them, statuses are read by name.
+  useEffect(() => {
+    api<{ leadStatuses: LeadStatus[] }>('/lead-statuses', { auth: true })
+      .then(({ leadStatuses }) => setLeadStatuses(leadStatuses))
+      .catch(() => {})
+  }, [])
+
+  // A notification can mean a request was approved (the tracker changed) or
+  // declined — refetch the tab and the "Pending" badges either way.
+  useEffect(() => {
+    const onNotification = () => setReloadToken(t => t + 1)
+    window.addEventListener(NOTIFICATION_EVENT, onNotification)
+    return () => window.removeEventListener(NOTIFICATION_EVENT, onNotification)
+  }, [])
+
+  // An employee's own waiting requests, to mark those rows "Pending".
+  useEffect(() => {
+    if (isAdmin) return
+    api<{ requests: TrackerChangeRequest[] }>('/tracker/requests/mine', { auth: true })
+      .then(({ requests }) => setPendingRowIds(new Set(requests.map(r => r.rowId))))
+      .catch(() => {}) // the badge is a convenience; the server still refuses a duplicate request
+  }, [isAdmin, reloadToken])
+
+  const editor: RowEditor = {
+    isAdmin,
+    defs,
+    pendingRowIds,
+    reloadToken,
+    open: (table, row) => setEditing({ table, row }),
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-6">
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Tracker</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline and invoice data imported from the FY2026–27 tracking sheet.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline and invoice data imported from the tracking sheet, kept up to date with the app.</p>
       </div>
 
       <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
@@ -290,7 +405,35 @@ export default function Tracker() {
         ))}
       </div>
 
-      {tab === 'pipeline' ? <PipelineTab /> : tab === 'invoices' ? <InvoicesTab /> : <ReportsTab />}
+      {/* The edit / request buttons need the field list from the server — say
+          so instead of silently showing none. */}
+      {fieldsError && (
+        <div role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+          {isAdmin ? 'Editing' : 'Requesting changes'} isn’t available right now: {fieldsError} Reload the page to try again.
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="text-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-200">✕</button>
+        </div>
+      )}
+
+      {tab === 'pipeline' ? <PipelineTab editor={editor} leadStatuses={leadStatuses} /> : tab === 'invoices' ? <InvoicesTab editor={editor} /> : <ReportsTab leadStatuses={leadStatuses} />}
+
+      {editing && defs && (
+        <EditRowModal
+          table={editing.table}
+          def={defs[editing.table]}
+          row={editing.row as { id: string } & Record<string, unknown>}
+          rowLabel={rowLabelFor(defs[editing.table], editing.row as Record<string, unknown>)}
+          isAdmin={isAdmin}
+          currentUserId={currentUserId}
+          onClose={() => setEditing(null)}
+          onDone={message => { setEditing(null); setNotice(message); setReloadToken(t => t + 1) }}
+        />
+      )}
     </div>
   )
 }

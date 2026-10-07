@@ -1,65 +1,19 @@
 import { useEffect, useState } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts'
 import { api } from '../../lib/api'
-import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary } from '../../lib/api'
+import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, LeadStatus } from '../../lib/api'
 import { useTheme } from '../../lib/theme'
 import { ErrorBanner } from '../ErrorBanner'
 import WeeklyLineChart from '../WeeklyLineChart'
 import PipelineStatusModal from './PipelineStatusModal'
 import { SkeletonCards } from '../Skeleton'
-
-type FyMonthKey = 'apr' | 'may' | 'jun' | 'jul' | 'aug' | 'sep' | 'oct' | 'nov' | 'dec' | 'jan' | 'feb' | 'mar'
-const FY_MONTHS: { key: FyMonthKey; label: string }[] = [
-  { key: 'apr', label: 'Apr' }, { key: 'may', label: 'May' }, { key: 'jun', label: 'Jun' },
-  { key: 'jul', label: 'Jul' }, { key: 'aug', label: 'Aug' }, { key: 'sep', label: 'Sep' },
-  { key: 'oct', label: 'Oct' }, { key: 'nov', label: 'Nov' }, { key: 'dec', label: 'Dec' },
-  { key: 'jan', label: 'Jan' }, { key: 'feb', label: 'Feb' }, { key: 'mar', label: 'Mar' },
-]
-
-// Same classification `pipelineStatusStyle` (in tracker.tsx) uses to color a
-// badge — duplicated here as plain data rather than a CSS class, so it can
-// drive a chart. The sheet's status text is freehand, so this is a
-// best-effort bucket, not a fixed enum.
-// Rows synced from app leads carry "<stage>: <status>" instead (see
-// syncLeadToPipeline on the server): reaching a project or invoice means the
-// order was won; a dead lead or lost proposal is lost.
-function classifyPipelineStatus(status: string | null): 'Won' | 'Lost' | 'Active' {
-  const s = (status ?? '').toLowerCase()
-  if (/^(project|invoice):/.test(s) || s === 'proposal: won') return 'Won'
-  if (s === 'lead: dead' || s === 'proposal: lost') return 'Lost'
-  if (s.includes('✅') || /order received|po received/.test(s)) return 'Won'
-  if (/\blost\b/.test(s) || s.startsWith('x ')) return 'Lost'
-  return 'Active'
-}
-
-const STATUS_COLORS: Record<string, string> = { Won: '#10b981', Lost: '#f43f5e', Active: '#0ea5e9' }
-
-// "Grouped" view of Pipeline by status: folds the sheet's freehand
-// near-duplicates ("🔵 Quoted", "Quoted By this week", "Bid Submited"…) and the
-// app's "<stage>: <status>" values into a handful of sales stages. Display
-// only — the rows keep their exact status. Listed in pipeline order.
-const STATUS_GROUPS = ['Enquiry / Discussion', 'Quoted / Offer Sent', 'Negotiation / Follow-up', 'On Hold', 'Won', 'Lost'] as const
-type StatusGroup = (typeof STATUS_GROUPS)[number]
-
-function groupPipelineStatus(status: string | null): StatusGroup {
-  const outcome = classifyPipelineStatus(status)
-  if (outcome !== 'Active') return outcome
-  const s = (status ?? '').toLowerCase()
-  if (/\bhold\b/.test(s)) return 'On Hold'
-  if (/negotiation|follow-up|po is in|under process|awaiting|value case/.test(s)) return 'Negotiation / Follow-up'
-  if (/tender floated/.test(s)) return 'Enquiry / Discussion' // tender only just released — nothing quoted yet
-  if (/quot|offer|bid|tendering|proposal: (draft|submitted)/.test(s)) return 'Quoted / Offer Sent'
-  return 'Enquiry / Discussion'
-}
-
-const outcomeColor = (group: string) => STATUS_COLORS[group] ?? STATUS_COLORS.Active
-const DSO_COLORS: Record<string, string> = {
-  '🟢 Collected': '#10b981',
-  '🔴 Overdue': '#f43f5e',
-  '🟡 Pending': '#f59e0b',
-  '⬛ Not Invoiced': '#9ca3af',
-}
-const PAYMENT_COLORS: Record<string, string> = { Yes: '#10b981', No: '#f43f5e', 'Not marked': '#9ca3af' }
+import ComparisonView from './ComparisonView'
+import Segmented from './Segmented'
+import {
+  FY_MONTHS, STATUS_GROUPS, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
+  outcomeOfStatus, groupOfStatus, outcomeColor, round2, dsoLabel, paymentLabel,
+  trackerFyStart, fyLabel, monthlyCollections, sectorMonthly,
+} from '../../lib/trackerReports'
 
 function countBy<T>(items: T[], keyOf: (item: T) => string): { name: string; value: number }[] {
   const counts = new Map<string, number>()
@@ -174,7 +128,7 @@ function SectorBarChart({ data }: { data: { sector: string; fyTotal: number; fyT
 // Monthly and status-driven charts covering both the Pipeline and Invoice
 // tracker data — fetches both independently of the other two tabs, same
 // per-tab-owns-its-data pattern PipelineTab/InvoicesTab already use.
-export default function ReportsTab() {
+export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[] }) {
   const [pipeline, setPipeline] = useState<PipelineTrackerItem[]>([])
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
@@ -182,6 +136,7 @@ export default function ReportsTab() {
   const [error, setError] = useState<string | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
   const [statusView, setStatusView] = useState<'grouped' | 'exact'>('grouped')
+  const [view, setView] = useState<'overview' | 'compare'>('overview')
 
   function load() {
     setLoading(true)
@@ -205,49 +160,55 @@ export default function ReportsTab() {
   if (loading) return <SkeletonCards count={4} />
   if (error) return <ErrorBanner message={error} onRetry={load} />
 
-  const statusCounts = countBy(pipeline, p => classifyPipelineStatus(p.status))
+  const viewSwitch = (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        {view === 'overview' ? 'The whole financial year at a glance.' : 'Every chart split by period and laid side by side on the same scale.'}
+      </p>
+      <Segmented
+        label="Reports view"
+        size="md"
+        value={view}
+        onChange={setView}
+        options={[{ value: 'overview', label: 'Overview' }, { value: 'compare', label: 'Comparisons' }]}
+      />
+    </div>
+  )
+
+  if (view === 'compare') {
+    return (
+      <div className="flex flex-col gap-6">
+        {viewSwitch}
+        <ComparisonView pipeline={pipeline} summary={summary} register={register} leadStatuses={leadStatuses} />
+      </div>
+    )
+  }
+
+  const statusCounts = countBy(pipeline, p => outcomeOfStatus(p.status, leadStatuses))
   const rawStatusOf = (p: PipelineTrackerItem) => p.status?.trim() || 'Unspecified'
-  const statusKeyOf = statusView === 'grouped' ? (p: PipelineTrackerItem) => groupPipelineStatus(p.status) : rawStatusOf
+  const statusKeyOf = statusView === 'grouped' ? (p: PipelineTrackerItem) => groupOfStatus(p.status, leadStatuses) : rawStatusOf
   const statusBars = statusView === 'grouped'
-    ? STATUS_GROUPS.map(name => ({ name, value: pipeline.filter(p => groupPipelineStatus(p.status) === name).length })).filter(g => g.value > 0)
+    ? STATUS_GROUPS.map(name => ({ name, value: pipeline.filter(p => groupOfStatus(p.status, leadStatuses) === name).length })).filter(g => g.value > 0)
     : countBy(pipeline, rawStatusOf)
   // Same green/red/blue as the Pipeline health pie beside it.
-  const statusBarColor = (name: string) => outcomeColor(statusView === 'grouped' ? name : classifyPipelineStatus(name))
-  // The sheet's sector summary is a fixed FY2026–27 table; collections from
-  // invoices paid in the app are added on top, by payment month and sector.
-  const liveCollected = register.filter(r => r.sourceInvoiceId && r.paymentDate && r.amountCollectedLakhs)
-  const fyMonthOf = (iso: string): FyMonthKey | null => {
-    const d = new Date(iso)
-    const inFy = (d.getFullYear() === 2026 && d.getMonth() >= 3) || (d.getFullYear() === 2027 && d.getMonth() <= 2)
-    return inFy ? FY_MONTHS[(d.getMonth() + 9) % 12].key : null
-  }
-  const round2 = (n: number) => Math.round(n * 100) / 100
-  const total = summary.find(s => s.sector === 'TOTAL')
-  const monthlyTrend = FY_MONTHS.map(({ key, label }) => ({
-    month: label,
-    collected: round2(Number(total?.[key] ?? 0) + liveCollected.filter(r => fyMonthOf(r.paymentDate!) === key).reduce((sum, r) => sum + r.amountCollectedLakhs!, 0)),
+  const statusBarColor = (name: string) => outcomeColor(statusView === 'grouped' ? name : outcomeOfStatus(name, leadStatuses))
+  // The financial year comes from the data (see trackerFyStart). The sheet's
+  // sector summary is for that year; collections from invoices paid in the
+  // app are added on top, by payment month and sector.
+  const fyStart = trackerFyStart(register)
+  const collectedByMonth = monthlyCollections(summary, register, fyStart)
+  const monthlyTrend = FY_MONTHS.map(({ key, label }) => ({ month: label, collected: collectedByMonth[key] }))
+  const sectorPerformance = sectorMonthly(summary, register, fyStart).map(s => ({
+    sector: s.sector,
+    fyTotal: round2(FY_MONTHS.reduce((sum, m) => sum + s.months[m.key], 0)),
+    fyTarget: s.fyTarget,
   }))
-  const sectorMap = new Map<string, { sector: string; fyTotal: number; fyTarget: number }>()
-  for (const s of summary.filter(s => s.sector !== 'TOTAL')) {
-    const name = s.sector ?? '—'
-    sectorMap.set(name.toLowerCase(), { sector: name, fyTotal: s.fyTotal ?? 0, fyTarget: s.fyTarget ?? 0 })
-  }
-  for (const r of liveCollected) {
-    if (!fyMonthOf(r.paymentDate!)) continue
-    const name = r.sector?.trim() || 'Unspecified'
-    const entry = sectorMap.get(name.toLowerCase()) ?? { sector: name, fyTotal: 0, fyTarget: 0 }
-    entry.fyTotal = round2(entry.fyTotal + r.amountCollectedLakhs!)
-    sectorMap.set(name.toLowerCase(), entry)
-  }
-  const sectorPerformance = [...sectorMap.values()]
-  const dsoBreakdown = countBy(register, r => r.dsoStatus?.trim() || 'Unspecified')
-  const paymentBreakdown = countBy(register, r => {
-    const v = r.paymentReceived?.trim().toUpperCase()
-    return v === 'YES' ? 'Yes' : v === 'NO' ? 'No' : 'Not marked'
-  })
+  const dsoBreakdown = countBy(register, dsoLabel)
+  const paymentBreakdown = countBy(register, paymentLabel)
 
   return (
     <div className="flex flex-col gap-6">
+      {viewSwitch}
       <div>
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Pipeline</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -287,7 +248,7 @@ export default function ReportsTab() {
         <div className="flex flex-col gap-4">
           <WeeklyLineChart
             title="Monthly collections"
-            subtitle="Total invoice value collected each month across all sectors, FY2026–27"
+            subtitle={`Total invoice value collected each month across all sectors, ${fyLabel(fyStart)}`}
             data={monthlyTrend}
             xKey="month"
             periodLabel="Month of"

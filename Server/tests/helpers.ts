@@ -1,10 +1,5 @@
 export const BASE_URL = process.env.TEST_BASE_URL ?? 'http://localhost:3000'
 
-// Seeded by prisma/seed.ts — a real non-admin account used throughout this
-// project's manual Phase 1-3 verification too.
-const EMPLOYEE_EMAIL = 'arjun.mehta@leadops.local'
-const EMPLOYEE_PASSWORD = 'demo123'
-
 let adminTokenCache: string | undefined
 let employeeTokenCache: string | undefined
 
@@ -37,25 +32,53 @@ export async function adminToken(): Promise<string> {
   }
 }
 
+// Same approach as adminToken, for a real active non-admin user —
+// TEST_EMPLOYEE_EMAIL picks one, otherwise the earliest active employee.
+// (Logging in with a password no longer works for this: the seeded employee
+// account was removed and sign-in is normally through Microsoft.)
 export async function employeeToken(): Promise<string> {
   if (employeeTokenCache) return employeeTokenCache
-  const res = await fetch(`${BASE_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: EMPLOYEE_EMAIL, password: EMPLOYEE_PASSWORD }),
+  const { config } = await import('dotenv')
+  config()
+  const [{ Client }, fs, jwt] = await Promise.all([import('pg'), import('fs'), import('jsonwebtoken')])
+  const db = new Client({
+    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
+    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
   })
-  if (!res.ok) {
-    throw new Error(
-      `Could not log in as the seeded employee ${EMPLOYEE_EMAIL} (${res.status}). ` +
-      `Has \`npm run db:seed\` been run against this database?`
+  await db.connect()
+  try {
+    const email = process.env.TEST_EMPLOYEE_EMAIL
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT id FROM users WHERE role <> 'admin' AND is_active ${email ? 'AND email = $1' : ''} ORDER BY created_at LIMIT 1`,
+      email ? [email] : [],
     )
+    if (!rows[0]) throw new Error(`No active employee found${email ? ` with email ${email}` : ''} to run the tests as.`)
+    employeeTokenCache = jwt.default.sign({ sub: rows[0].id }, process.env.JWT_SECRET!, { expiresIn: '30m' })
+    return employeeTokenCache
+  } finally {
+    await db.end()
   }
-  const data = (await res.json()) as { accessToken: string }
-  employeeTokenCache = data.accessToken
-  return employeeTokenCache
 }
 
-type ApiOptions = { method?: string; token?: string; body?: unknown }
+// Runs one query straight against the test database — for cleanup that has
+// no API (e.g. removing the notifications a test caused).
+export async function dbQuery(sql: string, params: unknown[] = []): Promise<void> {
+  const { config } = await import('dotenv')
+  config()
+  const [{ Client }, fs] = await Promise.all([import('pg'), import('fs')])
+  const db = new Client({
+    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
+    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
+  })
+  await db.connect()
+  try {
+    await db.query(sql, params)
+  } finally {
+    await db.end()
+  }
+}
+
+type ApiOptions ={ method?: string; token?: string; body?: unknown }
 
 // Thin fetch wrapper matching the client's own `api()` helper in spirit:
 // always returns the parsed body alongside the status, so tests can assert
