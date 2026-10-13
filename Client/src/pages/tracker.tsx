@@ -13,6 +13,8 @@ import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
 import { PIPELINE_SORT_OPTIONS, DEFAULT_DIRECTION, sortPipeline } from '../lib/pipelineSort'
 import type { PipelineSortKey, SortDirection } from '../lib/pipelineSort'
+import { INVOICE_SORT_OPTIONS, DEFAULT_INVOICE_DIRECTION, sortInvoices } from '../lib/invoiceSort'
+import type { InvoiceSortKey } from '../lib/invoiceSort'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
@@ -95,6 +97,44 @@ function Card({ title, subtitle, headerAction, highlight = false, children }: {
   )
 }
 
+// "Sort by" picker plus a reverse-order button, shared by the Pipeline and
+// Invoices tabs. The first option ("Sheet order") has no direction.
+function SortBar<K extends string>({ id, options, sortKey, sortDir, defaultDirection, onChange, hint }: {
+  id: string
+  options: { key: K; label: string; asc: string; desc: string }[]
+  sortKey: K
+  sortDir: SortDirection
+  defaultDirection: Record<K, SortDirection>
+  onChange: (key: K, dir: SortDirection) => void
+  hint?: string
+}) {
+  const option = options.find(o => o.key === sortKey)!
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <label htmlFor={id} className="font-medium text-gray-500 dark:text-gray-400">Sort by</label>
+      <select
+        id={id}
+        value={sortKey}
+        onChange={e => { const k = e.target.value as K; onChange(k, defaultDirection[k]) }}
+        className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+      >
+        {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      {sortKey !== options[0].key && (
+        <button
+          type="button"
+          onClick={() => onChange(sortKey, sortDir === 'asc' ? 'desc' : 'asc')}
+          title="Reverse the order"
+          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+        >
+          {sortDir === 'asc' ? '↑' : '↓'} {sortDir === 'asc' ? option.asc : option.desc}
+        </button>
+      )}
+      {hint && <span className="text-xs text-gray-400">{hint}</span>}
+    </div>
+  )
+}
+
 // ─── editing ─────────────────────────────────────────────────────────────────
 
 // What the tabs need to offer editing: admins edit an imported row directly,
@@ -145,7 +185,6 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
 
   const [sortKey, setSortKey] = useState<PipelineSortKey>('sheet')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
-  const sortOption = PIPELINE_SORT_OPTIONS.find(o => o.key === sortKey)!
 
   const appItems = sortPipeline(items.filter(i => i.sourceLeadId), sortKey, sortDir, leadStatuses)
   const importedItems = sortPipeline(items.filter(i => !i.sourceLeadId), sortKey, sortDir, leadStatuses)
@@ -174,29 +213,16 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
       {error && <ErrorBanner message={error} onRetry={load} />}
 
       {!error && items.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <label htmlFor="pipeline-sort" className="font-medium text-gray-500 dark:text-gray-400">Sort by</label>
-          <select
-            id="pipeline-sort"
-            value={sortKey}
-            onChange={e => { const k = e.target.value as PipelineSortKey; setSortKey(k); setSortDir(DEFAULT_DIRECTION[k]) }}
-            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          >
-            {PIPELINE_SORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-          {sortKey !== 'sheet' && (
-            <button
-              type="button"
-              onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
-              title="Reverse the order"
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              {sortDir === 'asc' ? '↑' : '↓'} {sortDir === 'asc' ? sortOption.asc : sortOption.desc}
-            </button>
-          )}
-          {sortKey === 'stage' && <span className="text-xs text-gray-400">On hold, lost and blank statuses are always listed last.</span>}
-          {sortKey === 'value' && <span className="text-xs text-gray-400">Non-INR values are listed after INR, blank values last.</span>}
-        </div>
+        <SortBar
+          id="pipeline-sort"
+          options={PIPELINE_SORT_OPTIONS}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          defaultDirection={DEFAULT_DIRECTION}
+          onChange={(k, d) => { setSortKey(k); setSortDir(d) }}
+          hint={sortKey === 'stage' ? 'On hold, lost and blank statuses are always listed last.'
+            : sortKey === 'value' ? 'Non-INR values are listed after INR, blank values last.' : undefined}
+        />
       )}
 
       {!error && appItems.length > 0 && (
@@ -242,8 +268,11 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
   }
   useEffect(load, [editor.reloadToken])
 
-  const appEntries = register.filter(r => r.sourceInvoiceId)
-  const importedRegister = register.filter(r => !r.sourceInvoiceId)
+  const [sortKey, setSortKey] = useState<InvoiceSortKey>('sheet')
+  const [sortDir, setSortDir] = useState<SortDirection>('asc')
+
+  const appEntries = sortInvoices(register.filter(r => r.sourceInvoiceId), sortKey, sortDir)
+  const importedRegister = sortInvoices(register.filter(r => !r.sourceInvoiceId), sortKey, sortDir)
 
   const summaryEdit = editColumn<InvoiceSectorSummary>(editor, 'sectorSummary')
   const summaryColumns: Col<InvoiceSectorSummary>[] = [
@@ -313,11 +342,23 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
         )}
       </Card>
 
+      {register.length > 0 && (
+        <SortBar
+          id="invoice-sort"
+          options={INVOICE_SORT_OPTIONS}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          defaultDirection={DEFAULT_INVOICE_DIRECTION}
+          onChange={(k, d) => { setSortKey(k); setSortDir(d) }}
+          hint={sortKey === 'sheet' ? 'Sorts the invoice lists below.' : 'Blank values are always listed last.'}
+        />
+      )}
+
       {appEntries.length > 0 && (
         <Card
           highlight
-          title={`Paid invoices from the app (${appEntries.length})`}
-          subtitle="Added automatically when an invoice raised in this app is paid in full."
+          title={`Invoices from the app (${appEntries.length})`}
+          subtitle="Added automatically when an invoice is generated in this app, and kept up to date as it is paid. Each one is also counted in the sector summary above, by invoice month."
         >
           <DataTable columns={registerColumns} rows={appEntries} getKey={r => r.id} minWidth={2400} />
         </Card>
@@ -328,7 +369,7 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
         subtitle={`Order-wise invoice and collection detail · ${editor.isAdmin ? 'admins can edit any row' : 'request a change and an admin approves it'}`}
       >
         {importedRegister.length === 0 ? (
-          <EmptyState icon="receipt" title="No invoices in the register yet" message="Imported sheet rows and invoices paid in full in the app will appear here." />
+          <EmptyState icon="receipt" title="No invoices in the register yet" message="Imported sheet rows and invoices generated in the app will appear here." />
         ) : (
           <DataTable columns={[editColumn<InvoiceRegisterItem>(editor, 'invoiceRegister'), ...registerColumns]} rows={importedRegister} getKey={r => r.id} minWidth={2500} />
         )}

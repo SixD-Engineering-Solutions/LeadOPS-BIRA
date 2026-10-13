@@ -124,40 +124,20 @@ export function paymentLabel(r: InvoiceRegisterItem): (typeof PAYMENT_LABELS)[nu
   return v === 'YES' ? 'Yes' : v === 'NO' ? 'No' : 'Not marked'
 }
 
-// Collections from invoices paid in the app — added on top of the sheet's
-// sector summary, by payment month and sector.
-export const liveCollections = (register: InvoiceRegisterItem[]) =>
-  register.filter(r => r.sourceInvoiceId && r.paymentDate && r.amountCollectedLakhs)
-
-// Amount collected per sector per month of financial year `fyStart` (₹
-// lakhs): the sheet's figures plus the app's. Sectors are matched
-// case-insensitively; the total row is left out.
-export function sectorMonthly(summary: InvoiceSectorSummary[], register: InvoiceRegisterItem[], fyStart: number) {
-  const map = new Map<string, { sector: string; fyTarget: number; months: Record<FyMonthKey, number> }>()
-  const blank = () => Object.fromEntries(MONTH_KEYS.map(m => [m, 0])) as Record<FyMonthKey, number>
-  for (const s of summary.filter(s => !isSummaryTotal(s))) {
-    const name = s.sector ?? '—'
-    const months = blank()
-    for (const key of MONTH_KEYS) months[key] = s[key] ?? 0
-    map.set(name.toLowerCase(), { sector: name, fyTarget: s.fyTarget ?? 0, months })
-  }
-  for (const r of liveCollections(register)) {
-    const m = fyMonthOf(r.paymentDate!, fyStart)
-    if (!m) continue
-    const name = r.sector?.trim() || 'Unspecified'
-    const entry = map.get(name.toLowerCase()) ?? { sector: name, fyTarget: 0, months: blank() }
-    entry.months[m] = round2(entry.months[m] + r.amountCollectedLakhs!)
-    map.set(name.toLowerCase(), entry)
-  }
-  return [...map.values()]
+// Amount invoiced per sector per month (₹ lakhs), straight from the sector
+// summary: the sheet's figures, with every invoice generated in the app
+// already added in by the server (utils/invoiceTrackerSync.ts), by invoice
+// month. The total row is left out.
+export function sectorMonthly(summary: InvoiceSectorSummary[]) {
+  return summary.filter(s => !isSummaryTotal(s)).map(s => ({
+    sector: s.sector ?? '—',
+    fyTarget: s.fyTarget ?? 0,
+    months: Object.fromEntries(MONTH_KEYS.map(key => [key, s[key] ?? 0])) as Record<FyMonthKey, number>,
+  }))
 }
 
-// Total collected per month across every sector (₹ lakhs).
-export function monthlyCollections(summary: InvoiceSectorSummary[], register: InvoiceRegisterItem[], fyStart: number): Record<FyMonthKey, number> {
+// Total invoiced per month across every sector (₹ lakhs) — the summary's total row.
+export function monthlyInvoiced(summary: InvoiceSectorSummary[]): Record<FyMonthKey, number> {
   const total = summary.find(isSummaryTotal)
-  const live = liveCollections(register)
-  return Object.fromEntries(MONTH_KEYS.map(key => [
-    key,
-    round2(Number(total?.[key] ?? 0) + live.filter(r => fyMonthOf(r.paymentDate!, fyStart) === key).reduce((sum, r) => sum + r.amountCollectedLakhs!, 0)),
-  ])) as Record<FyMonthKey, number>
+  return Object.fromEntries(MONTH_KEYS.map(key => [key, round2(Number(total?.[key] ?? 0))])) as Record<FyMonthKey, number>
 }

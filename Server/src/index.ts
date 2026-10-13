@@ -17,6 +17,7 @@ import trackerRequestRoutes from './routes/trackerRequests'
 import { startFollowUpReminderJob } from './services/reminders'
 import { sendError } from './utils/errors'
 import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
+import { resyncAllInvoicesToTracker } from './utils/invoiceTrackerSync'
 import { assertRequiredEnv } from './utils/env'
 
 assertRequiredEnv()
@@ -99,4 +100,7 @@ app.listen(PORT, () => {
   resyncAllLeadsToPipeline()
     .then(n => console.log(`Pipeline tracker: re-synced ${n} lead(s)`))
     .catch(err => console.error('Pipeline tracker resync failed:', err instanceof Error ? err.message : err))
+  resyncAllInvoicesToTracker()
+    .then(n => console.log(`Invoice tracker: re-synced ${n} invoice(s)`))
+    .catch(err => console.error('Invoice tracker resync failed:', err instanceof Error ? err.message : err))
 })

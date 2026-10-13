@@ -248,7 +248,7 @@ function totalsFor(m: MonthValues, fyTarget: number | null) {
   return { q1Total, q2Total, q3Total, q4Total, fyTotal, achievementPct }
 }
 
-async function recomputeSectorTotals(db: Db, id: string): Promise<void> {
+export async function recomputeSectorTotals(db: Db, id: string): Promise<void> {
   const row = await db.invoiceSectorSummary.findUniqueOrThrow({ where: { id } })
   await db.invoiceSectorSummary.update({ where: { id }, data: totalsFor(row, row.fyTarget) })
 

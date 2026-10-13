@@ -8,6 +8,7 @@ import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 import { isAdmin, canAccessProject } from '../utils/access'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
+import { syncInvoiceToTracker } from '../utils/invoiceTrackerSync'
 
 type Db = typeof prisma | Prisma.TransactionClient
 
@@ -74,114 +75,6 @@ async function recomputeStatus(db: Db, invoiceId: string): Promise<void> {
 }
 
 
-// Mirrors a Paid invoice into `InvoiceRegisterItem` (the Tracker's Invoice
-// Register) so it shows up alongside the imported historical data —
-// `sourceInvoiceId` marks the row as live-synced (vs. `null` for everything
-// from the original Excel import); the client uses that to list these rows
-// separately from the imported ones. Keyed by
-// `sourceInvoiceId` (unique), so re-running this on the same invoice updates
-// its one row rather than creating duplicates.
-//
-// Called from every route below with the invoice's already-current status —
-// after the payment/status-change transaction has committed, never from
-// inside one. This does a handful of extra reads/writes (the deep include
-// below, plus the upsert), which is fine on its own but is exactly the kind
-// of added latency that pushed a real concurrency test over its timeout when
-// it was first wired in *inside* the payment-creation transaction (that
-// transaction is already tuned tight — see TX_OPTS — specifically so N-way
-// concurrent requests all fit inside it under this DB plan's connection
-// cap). Keeping this call after commit means it can take its time without
-// holding a row lock or eating into that budget; `syncTrackerBestEffort`
-// (below each call site) also means a failure here never fails the request
-// that triggered it — worst case, the Tracker mirror lags until the next
-// event resyncs it, not the actual invoice/payment write.
-async function syncInvoiceToTracker(db: Db, invoiceId: string, status: string): Promise<void> {
-  if (status !== 'Paid') {
-    // Not (or no longer) fully paid — e.g. voiding a payment dropped it back
-    // to Partially Paid — remove any tracker row rather than leaving a stale
-    // "Paid" entry behind.
-    await db.invoiceRegisterItem.deleteMany({ where: { sourceInvoiceId: invoiceId } })
-    return
-  }
-  const invoice = await db.invoice.findUnique({
-    where: { id: invoiceId },
-    include: {
-      project: {
-        include: {
-          responsibleUser: { select: { userName: true, email: true } },
-          lead: {
-            include: {
-              sector: { select: { sectorName: true } },
-              serviceType: { select: { serviceTypeName: true } },
-              plant: {
-                include: {
-                  client: { select: { clientName: true } },
-                  location: { select: { city: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-      payments: { where: { deletedAt: null }, orderBy: { paymentDate: 'desc' } },
-    },
-  })
-  if (!invoice) return
-
-  const amount = Number(invoice.amount)
-  const paidTotal = invoice.payments.reduce((sum, p) => sum + Number(p.amountReceived), 0)
-  // Marked Paid with no (or only partial) real payment behind it — e.g. the
-  // status dropdown, hand-set directly rather than via a logged payment.
-  // Treat the invoice's own amount as what was collected in that case,
-  // rather than showing a contradictory "Paid, ₹0 collected" row; if there
-  // IS a real (even partial) payment on record, report that honestly instead
-  // of overriding it — so a partial payment force-marked Paid still shows
-  // its actual outstanding balance rather than pretending it's zero.
-  const amountCollected = paidTotal > 0 ? paidTotal : amount
-  const balanceOutstanding = Math.max(0, amount - amountCollected)
-  const lastPaymentDate = invoice.payments[0]?.paymentDate ?? new Date()
-  const toLakhs = (n: number) => Math.round((n / 100000) * 100) / 100
-  const bmOwner = invoice.project.responsibleUser
-    ? (invoice.project.responsibleUser.userName || invoice.project.responsibleUser.email)
-    : null
-  const daysToCollect = invoice.invoiceDate
-    ? Math.round((lastPaymentDate.getTime() - invoice.invoiceDate.getTime()) / (1000 * 60 * 60 * 24))
-    : null
-
-  const data = {
-    sourceInvoiceId: invoice.id,
-    sortOrder: -1, // always sorts ahead of every imported row (sortOrder >= 0); the client re-sorts app rows among themselves
-    sector: invoice.project.lead.sector?.sectorName ?? null,
-    client: invoice.project.lead.plant.client?.clientName ?? null,
-    location: invoice.project.lead.plant.location?.city ?? null,
-    poNumber: invoice.project.workOrderNo,
-    orderValueLakhs: toLakhs(amount),
-    serviceType: invoice.project.lead.serviceType?.serviceTypeName ?? null,
-    bmOwner,
-    workCompletionDate: invoice.project.completionDate?.toISOString().slice(0, 10) ?? null,
-    invoiceRaised: 'Yes',
-    invoiceNumber: invoice.invoiceNumber,
-    invoiceDate: invoice.invoiceDate,
-    invoiceAmountLakhs: toLakhs(amount),
-    dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? null,
-    paymentReceived: 'Yes',
-    dsoStatus: '🟢 Collected', // same label the imported sheet uses, so the Reports DSO chart buckets it with them
-    paymentDate: lastPaymentDate,
-    amountCollectedLakhs: toLakhs(amountCollected),
-    balanceOutstandingLakhs: toLakhs(balanceOutstanding),
-    daysToCollect,
-    remarks: paidTotal > 0
-      ? 'Auto-synced from an invoice paid in the app.'
-      : 'Auto-synced from an invoice marked Paid manually in the app (no payment logged).',
-  }
-
-  await db.invoiceRegisterItem.upsert({
-    where: { sourceInvoiceId: invoice.id },
-    create: data,
-    update: data,
-  })
-}
-
 // GET /invoices?projectId=xxx
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const admin = await isAdmin(req.userId)
@@ -247,8 +140,10 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       })
       return created
     }, TX_OPTS)
-    // Moves the lead's Pipeline row to the Invoice stage. After the
-    // transaction, not inside it.
+    // Adds it to the Tracker's Invoice Register and sector summary, and moves
+    // the lead's Pipeline row to the Invoice stage. After the transaction,
+    // not inside it.
+    await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoice.id))
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, project.leadId))
     broadcastInvoiceUpdate(invoice.id)
     res.status(201).json({ invoice })
@@ -301,11 +196,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       if ('amount' in data) await recomputeStatus(tx, existing.id)
       return tx.invoice.findUnique({ where: { id: existing.id }, include: invoiceInclude })
     }, TX_OPTS)
-    if (invoice && ('amount' in data || 'status' in data)) {
+    if (invoice) {
       // Whatever's now current — either just recomputed from real payments,
       // or (a bare status change, e.g. the dropdown) hand-set directly with
       // no payment math to re-derive. After the transaction, not inside it.
-      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id, invoice.status))
+      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
       // The lead's Pipeline row shows this invoice's status ("Invoice:Paid").
       await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
     }
@@ -374,7 +269,7 @@ router.post('/:id/payments', async (req: AuthRequest, res: Response): Promise<vo
       return tx.invoice.findUnique({ where: { id: existing.id }, include: invoiceInclude })
     }, TX_OPTS)
     if (invoice) {
-      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id, invoice.status))
+      await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
       await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
     }
     broadcastInvoiceUpdate(existing.id)
@@ -407,7 +302,7 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
     return tx.invoice.findUnique({ where: { id: invoiceId }, include: invoiceInclude })
   }, TX_OPTS)
   if (invoice) {
-    await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoiceId, invoice.status))
+    await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoiceId))
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
   }
   broadcastInvoiceUpdate(invoiceId)
@@ -422,6 +317,8 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
     return
   }
   await prisma.invoice.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  // Takes it back out of the Tracker's Invoice Register and sector summary.
+  await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
   // If that was the lead's only invoice, its Pipeline row drops back to the
   // Working Project stage.
   const project = await prisma.project.findUnique({ where: { id: existing.projectId }, select: { leadId: true } })

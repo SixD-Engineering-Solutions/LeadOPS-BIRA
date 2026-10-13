@@ -7,7 +7,7 @@ import Segmented from './Segmented'
 import {
   FY_MONTHS, FY_QUARTERS, OUTCOMES, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
   outcomeOfStatus, groupOfStatus, expectedClosePeriod, fyMonthOf, trackerFyStart, fyLabel,
-  dsoLabel, paymentLabel, monthlyCollections, sectorMonthly, round2,
+  dsoLabel, paymentLabel, monthlyInvoiced, sectorMonthly, round2,
 } from '../../lib/trackerReports'
 import type { FyMonthKey, StatusGroup } from '../../lib/trackerReports'
 
@@ -174,7 +174,7 @@ function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = fo
   )
 }
 
-// One value per period (collections) — single-series columns.
+// One value per period (amount invoiced) — single-series columns.
 function PeriodColumns({ data, format }: { data: { period: string; label: string; value: number }[]; format: (v: number) => string }) {
   const c = useChartColors()
   return (
@@ -192,7 +192,7 @@ function PeriodColumns({ data, format }: { data: { period: string; label: string
         <Tooltip
           cursor={{ fill: c.cursor }}
           labelFormatter={(_, p) => (p?.[0]?.payload as { label?: string } | undefined)?.label ?? ''}
-          formatter={v => [format(Number(v)), 'Collected']}
+          formatter={v => [format(Number(v)), 'Invoiced']}
           contentStyle={{ background: c.isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }}
         />
         <Bar dataKey="value" fill="url(#collectedFill)" radius={[5, 5, 0, 0]} maxBarSize={data.length > 4 ? 40 : 72}>
@@ -237,7 +237,7 @@ function SectorHeatmap({ periods, sectors, valueAt }: {
                   return (
                     <td
                       key={p.key}
-                      title={`${s} · ${p.label}: ${v > 0 ? formatLakhs(v) : 'nothing collected'}`}
+                      title={`${s} · ${p.label}: ${v > 0 ? formatLakhs(v) : 'nothing invoiced'}`}
                       className={`h-9 rounded-md px-1.5 text-center tabular-nums ${v > 0 ? (t > 0.45 ? 'font-semibold text-white' : 'font-medium text-gray-800 dark:text-gray-100') : 'bg-gray-50 text-gray-300 dark:bg-gray-800 dark:text-gray-600'}`}
                       style={v > 0 ? { background: `rgba(16, 185, 129, ${0.14 + 0.86 * t})` } : undefined}
                     >
@@ -268,8 +268,7 @@ function SectorHeatmap({ periods, sectors, valueAt }: {
 
 // Reports' "Comparisons" view: every Overview chart split by month or by
 // quarter of the tracker's financial year, periods side by side. Pipeline rows are placed by
-// their expected close; invoices by invoice date; collections by the month
-// they were collected in.
+// their expected close; invoices, and the amounts invoiced, by invoice date.
 export default function ComparisonView({ pipeline, summary, register, leadStatuses }: {
   pipeline: PipelineTrackerItem[]
   summary: InvoiceSectorSummary[]
@@ -305,9 +304,9 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
   })
 
-  // Collections, by the month collected.
-  const collected = monthlyCollections(summary, register, fyStart)
-  const sectors = sectorMonthly(summary, register, fyStart)
+  // Amounts invoiced, by invoice month — the sector summary.
+  const invoiced = monthlyInvoiced(summary)
+  const sectors = sectorMonthly(summary)
   const sumMonths = (months: Record<FyMonthKey, number>, p: Period) => round2(p.months.reduce((s, m) => s + months[m], 0))
   const sectorNames = sectors.filter(s => periods.some(p => sumMonths(s.months, p) > 0)).map(s => s.sector)
 
@@ -349,10 +348,10 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
       <div>
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Invoices</h3>
         <div className="flex flex-col gap-4">
-          <Card title={`Collections by ${unit}`} subtitle="Total invoice value collected across all sectors">
-            <PeriodColumns format={formatLakhs} data={periods.map(p => ({ period: p.short, label: p.label, value: sumMonths(collected, p) }))} />
+          <Card title={`Invoicing by ${unit}`} subtitle="Total invoice value raised across all sectors">
+            <PeriodColumns format={formatLakhs} data={periods.map(p => ({ period: p.short, label: p.label, value: sumMonths(invoiced, p) }))} />
           </Card>
-          <Card title={`Sector performance by ${unit}`} subtitle="Amount collected in each sector · darker green means more">
+          <Card title={`Sector performance by ${unit}`} subtitle="Amount invoiced in each sector · darker green means more">
             <SectorHeatmap
               periods={periods}
               sectors={sectorNames}

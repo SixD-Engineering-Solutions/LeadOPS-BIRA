@@ -35,6 +35,8 @@ const connectionString = (process.env.DATABASE_URL ?? '')
 // trust nothing, if it's missing or stale.
 const caPath = path.join(__dirname, '..', 'certs', 'aiven-ca.pem')
 const ca = fs.readFileSync(caPath, 'utf8')
+// DUMMY-DATA (temporary): a local Docker Postgres has no SSL.
+const isLocalDb = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString)
 
 // Build the pool ourselves so we can attach an 'error' listener. When the DB
 // drops an idle connection (Aiven flapping / idle timeout), the pool emits
@@ -43,7 +45,7 @@ const ca = fs.readFileSync(caPath, 'utf8')
 // next query.
 const pool = new Pool({
   connectionString,
-  ssl: { ca, rejectUnauthorized: true },
+  ssl: isLocalDb ? false : { ca, rejectUnauthorized: true },
   // Fail fast instead of hanging when the DB is unreachable/flapping.
   connectionTimeoutMillis: 10000, // give up acquiring a connection after 10s
   idleTimeoutMillis: 30000, // drop idle connections after 30s

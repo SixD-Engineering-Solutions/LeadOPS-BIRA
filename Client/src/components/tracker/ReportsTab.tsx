@@ -12,7 +12,7 @@ import Segmented from './Segmented'
 import {
   FY_MONTHS, STATUS_GROUPS, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
   outcomeOfStatus, groupOfStatus, outcomeColor, round2, dsoLabel, paymentLabel,
-  trackerFyStart, fyLabel, monthlyCollections, sectorMonthly,
+  trackerFyStart, fyLabel, monthlyInvoiced, sectorMonthly,
 } from '../../lib/trackerReports'
 
 function countBy<T>(items: T[], keyOf: (item: T) => string): { name: string; value: number }[] {
@@ -145,7 +145,7 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
       api<{ summary: InvoiceSectorSummary[]; register: InvoiceRegisterItem[] }>('/tracker/invoices', { auth: true }),
     ])
       .then(([pipelineRes, invoiceRes]) => {
-        // Imported sheet rows and rows synced from app leads / paid invoices
+        // Imported sheet rows and rows synced from app leads / invoices
         // together — the app's data is what keeps these charts current.
         setPipeline(pipelineRes.items)
         setSummary(invoiceRes.summary)
@@ -192,13 +192,13 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
     : countBy(pipeline, rawStatusOf)
   // Same green/red/blue as the Pipeline health pie beside it.
   const statusBarColor = (name: string) => outcomeColor(statusView === 'grouped' ? name : outcomeOfStatus(name, leadStatuses))
-  // The financial year comes from the data (see trackerFyStart). The sheet's
-  // sector summary is for that year; collections from invoices paid in the
-  // app are added on top, by payment month and sector.
+  // The financial year comes from the data (see trackerFyStart). The sector
+  // summary is for that year, and already includes every invoice generated
+  // in the app, by invoice month.
   const fyStart = trackerFyStart(register)
-  const collectedByMonth = monthlyCollections(summary, register, fyStart)
-  const monthlyTrend = FY_MONTHS.map(({ key, label }) => ({ month: label, collected: collectedByMonth[key] }))
-  const sectorPerformance = sectorMonthly(summary, register, fyStart).map(s => ({
+  const invoicedByMonth = monthlyInvoiced(summary)
+  const monthlyTrend = FY_MONTHS.map(({ key, label }) => ({ month: label, invoiced: invoicedByMonth[key] }))
+  const sectorPerformance = sectorMonthly(summary).map(s => ({
     sector: s.sector,
     fyTotal: round2(FY_MONTHS.reduce((sum, m) => sum + s.months[m.key], 0)),
     fyTarget: s.fyTarget,
@@ -247,15 +247,15 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Invoices</h3>
         <div className="flex flex-col gap-4">
           <WeeklyLineChart
-            title="Monthly collections"
-            subtitle={`Total invoice value collected each month across all sectors, ${fyLabel(fyStart)}`}
+            title="Monthly invoicing"
+            subtitle={`Total invoice value raised each month across all sectors, ${fyLabel(fyStart)}`}
             data={monthlyTrend}
             xKey="month"
             periodLabel="Month of"
-            series={[{ key: 'collected', name: 'Collected (₹L)', color: '#10b981' }]}
+            series={[{ key: 'invoiced', name: 'Invoiced (₹L)', color: '#10b981' }]}
             formatValue={v => `₹${v}L`}
           />
-          <ChartCard title="Sector performance" subtitle="Amount collected vs FY target, by sector">
+          <ChartCard title="Sector performance" subtitle="Amount invoiced vs FY target, by sector">
             <SectorBarChart data={sectorPerformance} />
           </ChartCard>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
