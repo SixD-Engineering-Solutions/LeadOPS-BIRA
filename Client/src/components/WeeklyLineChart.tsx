@@ -14,6 +14,8 @@ type Props = {
   periodLabel?: string
   /** Formats both the Y-axis ticks and the tooltip values — e.g. compact ₹ for currency series. Plain numbers if omitted. */
   formatValue?: (v: number) => string
+  /** Called with the data index of the period clicked; makes the chart clickable. */
+  onSelect?: (index: number) => void
 }
 
 // Custom tooltip: reads each series value by key (dedupes the Area+Line pair).
@@ -46,7 +48,7 @@ function ChartTooltip({ active, payload, label, series, periodLabel, formatValue
  * drop-shadow "lift" and gradient area fills for a little depth. Two hues
  * validated for colorblind separation; a legend labels the series.
  */
-export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300, periodLabel = 'Week of', formatValue = String }: Props) {
+export default function WeeklyLineChart({ title, subtitle, data, xKey, series, height = 300, periodLabel = 'Week of', formatValue = String, onSelect }: Props) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
   const tickColor = isDark ? '#6b7280' : '#9ca3af'
@@ -75,7 +77,12 @@ export default function WeeklyLineChart({ title, subtitle, data, xKey, series, h
         </div>
       </div>
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+        {/* Clicking anywhere in a period's column selects it, not just its dot. */}
+        <ComposedChart
+          data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+          onClick={onSelect ? state => { const i = Number(state?.activeTooltipIndex); if (Number.isInteger(i) && i >= 0) onSelect(i) } : undefined}
+          style={onSelect ? { cursor: 'pointer' } : undefined}
+        >
           <defs>
             {series.map(s => (
               <linearGradient key={s.key} id={`fill-${s.key}`} x1="0" y1="0" x2="0" y2="1">

@@ -1,6 +1,7 @@
 import type { InvoiceRegisterItem, InvoiceSectorSummary, LeadStatus } from './api'
 import { pipelineStageOf, outcomeOf, STAGE_GROUP } from './pipelineStatus'
 import type { Outcome, StatusGroup } from './pipelineStatus'
+import { formatLakhs } from './format'
 
 export { STATUS_GROUPS } from './pipelineStatus'
 export type { StatusGroup } from './pipelineStatus'
@@ -140,4 +141,18 @@ export function sectorMonthly(summary: InvoiceSectorSummary[]) {
 export function monthlyInvoiced(summary: InvoiceSectorSummary[]): Record<FyMonthKey, number> {
   const total = summary.find(isSummaryTotal)
   return Object.fromEntries(MONTH_KEYS.map(key => [key, round2(Number(total?.[key] ?? 0))])) as Record<FyMonthKey, number>
+}
+
+// ─── chart click-throughs ───────────────────────────────────────────────────
+
+// Sector names are typed by hand in the sheet, so compare them loosely.
+export const sameSector = (a: string | null, b: string | null) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
+
+// The invoiced amounts come from the sector summary, which the sheet keeps
+// separately from its invoice register — so the invoices listed for a value
+// don't always add up to it. Says so when they don't.
+export function summaryGapNote(summaryAmount: number, rows: InvoiceRegisterItem[]): string | undefined {
+  const listed = round2(rows.reduce((s, r) => s + (r.invoiceAmountLakhs ?? 0), 0))
+  if (Math.abs(listed - summaryAmount) < 0.01) return undefined
+  return `The chart shows ${formatLakhs(summaryAmount)} from the sector summary; the invoices in the register below total ${formatLakhs(listed)}. The sheet keeps the two separately, so they can differ.`
 }

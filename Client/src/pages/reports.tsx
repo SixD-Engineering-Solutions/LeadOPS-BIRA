@@ -5,6 +5,7 @@ import WeeklyLineChart from '../components/WeeklyLineChart'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
+import { Modal } from '../components/Modal'
 
 const WEEKS = 8
 const MONTHS = 6
@@ -39,6 +40,8 @@ function weeklyTrend(leads: Lead[]) {
       week: start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
       generated: inWeek.length,
       submitted: inWeek.filter(l => l.status?.statusName === 'Submitted').length,
+      leads: inWeek, // for the click-through list; the chart only reads the keys above
+      range: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
     }
   })
 }
@@ -61,8 +64,73 @@ function monthlyPerformance(proposals: Proposal[]) {
       month: monthStart.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
       won: won.reduce((sum, p) => sum + (p.value ?? 0), 0),
       lost: lost.reduce((sum, p) => sum + (p.value ?? 0), 0),
+      proposals: [...won, ...lost], // for the click-through list
+      label: monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
     }
   })
+}
+
+const fmtDay = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null)
+const personName = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
+
+// Opened by clicking a week in "Leads Generated vs Submitted".
+function LeadsListModal({ title, leads, onClose }: { title: string; leads: Lead[]; onClose: () => void }) {
+  const submitted = leads.filter(l => l.status?.statusName === 'Submitted').length
+  return (
+    <Modal title={title} subtitle={`${leads.length} lead${leads.length === 1 ? '' : 's'} generated · ${submitted} in Submitted`} onClose={onClose} width="lg" bodyClassName="px-5">
+      {leads.length === 0 ? (
+        <p className="py-8 text-center text-sm text-gray-400">No leads were created this week.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+          {[...leads].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(l => {
+            const where = [l.plant?.plantName, l.plant?.location?.city, l.sector?.sectorName, l.serviceType?.serviceTypeName].filter(Boolean).join(' · ')
+            const meta = [fmtDay(l.createdAt), personName(l.assignedToUser) && `Assigned to ${personName(l.assignedToUser)}`, l.source?.sourceName].filter(Boolean).join('  ·  ')
+            return (
+              <li key={l.id} className="py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{l.plant?.client?.clientName || l.plant?.companyName || l.plant?.plantName || 'Unnamed lead'}</p>
+                  {l.status && <span className="shrink-0 rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300">{l.status.statusName}</span>}
+                </div>
+                {where && <p className="truncate text-xs text-gray-500 dark:text-gray-400">{where}</p>}
+                {meta && <p className="mt-1 text-[11px] text-gray-400">{meta}</p>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Modal>
+  )
+}
+
+// Opened by clicking a month in "Monthly Performance".
+function ProposalsListModal({ title, proposals, onClose }: { title: string; proposals: Proposal[]; onClose: () => void }) {
+  const sum = (status: string) => proposals.filter(p => p.status === status).reduce((s, p) => s + (p.value ?? 0), 0)
+  return (
+    <Modal title={title} subtitle={`Won ${formatINR(sum('Won'))} · Lost ${formatINR(sum('Lost'))}`} onClose={onClose} width="lg" bodyClassName="px-5">
+      {proposals.length === 0 ? (
+        <p className="py-8 text-center text-sm text-gray-400">No proposals were won or lost this month.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+          {[...proposals].sort((a, b) => (b.value ?? 0) - (a.value ?? 0)).map(p => {
+            const meta = [p.proposalNumber, fmtDay(p.updatedAt) && `Decided ${fmtDay(p.updatedAt)}`, p.status === 'Lost' && p.lostReason && `Reason: ${p.lostReason}`].filter(Boolean).join('  ·  ')
+            return (
+              <li key={p.id} className="py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{p.lead?.plant?.client?.clientName || p.lead?.plant?.plantName || 'Unnamed client'}</p>
+                  <span className="shrink-0 text-sm font-semibold text-gray-700 dark:text-gray-200">{p.value != null ? formatINR(p.value) : '—'}</span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.status === 'Won' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'}`}>{p.status}</span>
+                  {p.projectName && <span className="truncate text-xs text-gray-500 dark:text-gray-400">{p.projectName}</span>}
+                </div>
+                {meta && <p className="mt-1 text-[11px] text-gray-400">{meta}</p>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Modal>
+  )
 }
 
 type EmployeeRow = { user: EmployeeUser; leadsAssigned: number; won: number; lost: number; conversion: number; wonValue: number }
@@ -89,6 +157,8 @@ export default function Reports() {
   const [employees, setEmployees] = useState<EmployeeUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null)
 
   async function load() {
     setLoading(true)
@@ -134,19 +204,20 @@ export default function Reports() {
         <div className="space-y-5">
           <WeeklyLineChart
             title="Leads Generated vs Submitted"
-            subtitle="New leads created each week and how many are in Submitted status"
-            data={weekly}
+            subtitle="New leads created each week and how many are in Submitted status · click a week to see its leads"
+            data={weekly.map(({ week, generated, submitted }) => ({ week, generated, submitted }))}
             xKey="week"
             series={[
               { key: 'generated', name: 'Generated', color: '#6366f1' },
               { key: 'submitted', name: 'Submitted', color: '#f97316' },
             ]}
+            onSelect={setSelectedWeek}
           />
 
           <WeeklyLineChart
             title="Monthly Performance"
-            subtitle="Won vs Lost proposal value by month"
-            data={monthly}
+            subtitle="Won vs Lost proposal value by month · click a month to see its proposals"
+            data={monthly.map(({ month, won, lost }) => ({ month, won, lost }))}
             xKey="month"
             periodLabel="Month of"
             series={[
@@ -154,6 +225,7 @@ export default function Reports() {
               { key: 'lost', name: 'Lost (₹)', color: '#f43f5e' },
             ]}
             formatValue={fmtCompactINR}
+            onSelect={setSelectedMonth}
           />
 
           <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -193,6 +265,13 @@ export default function Reports() {
             )}
           </div>
         </div>
+      )}
+
+      {selectedWeek != null && weekly[selectedWeek] && (
+        <LeadsListModal title={`Leads · ${weekly[selectedWeek].range}`} leads={weekly[selectedWeek].leads} onClose={() => setSelectedWeek(null)} />
+      )}
+      {selectedMonth != null && monthly[selectedMonth] && (
+        <ProposalsListModal title={`Proposals decided · ${monthly[selectedMonth].label}`} proposals={monthly[selectedMonth].proposals} onClose={() => setSelectedMonth(null)} />
       )}
     </div>
   )

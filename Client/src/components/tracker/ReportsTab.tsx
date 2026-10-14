@@ -5,14 +5,15 @@ import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, Le
 import { useTheme } from '../../lib/theme'
 import { ErrorBanner } from '../ErrorBanner'
 import WeeklyLineChart from '../WeeklyLineChart'
-import PipelineStatusModal from './PipelineStatusModal'
+import { ChartDetailModal } from './ChartDetail'
+import type { ChartDetail } from './ChartDetail'
 import { SkeletonCards } from '../Skeleton'
 import ComparisonView from './ComparisonView'
 import Segmented from './Segmented'
 import {
   FY_MONTHS, STATUS_GROUPS, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
   outcomeOfStatus, groupOfStatus, outcomeColor, round2, dsoLabel, paymentLabel,
-  trackerFyStart, fyLabel, monthlyInvoiced, sectorMonthly,
+  trackerFyStart, fyLabel, monthlyInvoiced, sectorMonthly, fyMonthOf, sameSector, summaryGapNote,
 } from '../../lib/trackerReports'
 
 function countBy<T>(items: T[], keyOf: (item: T) => string): { name: string; value: number }[] {
@@ -39,13 +40,22 @@ function ChartCard({ title, subtitle, action, children }: { title: string; subti
   )
 }
 
-function PieBreakdown({ data, colors, height = 240 }: { data: { name: string; value: number }[]; colors: Record<string, string>; height?: number }) {
+function PieBreakdown({ data, colors, height = 240, onSelect }: {
+  data: { name: string; value: number }[]
+  colors: Record<string, string>
+  height?: number
+  onSelect?: (name: string) => void
+}) {
   const isDark = useTheme() === 'dark'
   const tickColor = isDark ? '#9ca3af' : '#4b5563'
   return (
     <ResponsiveContainer width="100%" height={height}>
       <PieChart>
-        <Pie data={data} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+        <Pie
+          data={data} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}
+          onClick={onSelect ? d => { if (d?.name != null) onSelect(String(d.name)) } : undefined}
+          style={onSelect ? { cursor: 'pointer' } : undefined}
+        >
           {data.map(d => <Cell key={d.name} fill={colors[d.name] ?? '#94a3b8'} />)}
         </Pie>
         <Tooltip contentStyle={{ background: isDark ? '#1f2937' : '#fff', border: 'none', borderRadius: 8, fontSize: 12 }} />
@@ -106,13 +116,17 @@ function BarBreakdown({ data, color = '#f97316', colorOf, height, onSelect }: {
   )
 }
 
-function SectorBarChart({ data }: { data: { sector: string; fyTotal: number; fyTarget: number }[] }) {
+function SectorBarChart({ data, onSelect }: { data: { sector: string; fyTotal: number; fyTarget: number }[]; onSelect?: (sector: string) => void }) {
   const isDark = useTheme() === 'dark'
   const gridColor = isDark ? '#1f2937' : '#f1f5f9'
   const tickColor = isDark ? '#6b7280' : '#9ca3af'
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}>
+      <BarChart
+        data={data} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}
+        onClick={onSelect ? state => { if (state?.activeLabel != null) onSelect(String(state.activeLabel)) } : undefined}
+        style={onSelect ? { cursor: 'pointer' } : undefined}
+      >
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
         <XAxis dataKey="sector" tick={{ fontSize: 10, fill: tickColor }} axisLine={false} tickLine={false} angle={-20} textAnchor="end" interval={0} height={50} />
         <YAxis tick={{ fontSize: 11, fill: tickColor }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}L`} />
@@ -134,7 +148,7 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
+  const [detail, setDetail] = useState<ChartDetail | null>(null)
   const [statusView, setStatusView] = useState<'grouped' | 'exact'>('grouped')
   const [view, setView] = useState<'overview' | 'compare'>('overview')
 
@@ -206,14 +220,33 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
   const dsoBreakdown = countBy(register, dsoLabel)
   const paymentBreakdown = countBy(register, paymentLabel)
 
+  // What each chart opens when a value is clicked.
+  const showPipeline = (title: string, rows: PipelineTrackerItem[], showRowStatus = true) =>
+    setDetail({ kind: 'pipeline', title, rows, showRowStatus })
+  const selectStatus = (name: string) => showPipeline(name, pipeline.filter(p => statusKeyOf(p) === name), statusView === 'grouped')
+  const selectOutcome = (name: string) => showPipeline(`${name} leads`, pipeline.filter(p => outcomeOfStatus(p.status, leadStatuses) === name))
+  const selectMonth = (index: number) => {
+    const m = FY_MONTHS[index]
+    if (!m) return
+    const rows = register.filter(r => r.invoiceDate && fyMonthOf(r.invoiceDate, fyStart) === m.key)
+    setDetail({ kind: 'invoices', title: `Invoiced in ${m.label} · ${fyLabel(fyStart)}`, rows, note: summaryGapNote(invoicedByMonth[m.key], rows) })
+  }
+  const selectSector = (sector: string) => {
+    const rows = register.filter(r => sameSector(r.sector, sector) && r.invoiceDate && fyMonthOf(r.invoiceDate, fyStart))
+    const total = sectorPerformance.find(s => s.sector === sector)?.fyTotal ?? 0
+    setDetail({ kind: 'invoices', title: `${sector} · ${fyLabel(fyStart)}`, rows, note: summaryGapNote(total, rows) })
+  }
+  const selectDso = (name: string) => setDetail({ kind: 'invoices', title: `Collection status: ${name}`, rows: register.filter(r => dsoLabel(r) === name) })
+  const selectPayment = (name: string) => setDetail({ kind: 'invoices', title: `Payment received: ${name}`, rows: register.filter(r => paymentLabel(r) === name) })
+
   return (
     <div className="flex flex-col gap-6">
       {viewSwitch}
       <div>
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Pipeline</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <ChartCard title="Pipeline health" subtitle="Every open lead classified as Won, Lost, or still Active">
-            <PieBreakdown data={statusCounts} colors={STATUS_COLORS} />
+          <ChartCard title="Pipeline health" subtitle="Every open lead classified as Won, Lost, or still Active · click a slice to see its leads">
+            <PieBreakdown data={statusCounts} colors={STATUS_COLORS} onSelect={selectOutcome} />
           </ChartCard>
           <ChartCard
             title="Pipeline by status"
@@ -238,7 +271,7 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
               </div>
             }
           >
-            <BarBreakdown data={statusBars} colorOf={statusBarColor} onSelect={setSelectedStatus} />
+            <BarBreakdown data={statusBars} colorOf={statusBarColor} onSelect={selectStatus} />
           </ChartCard>
         </div>
       </div>
@@ -248,35 +281,29 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
         <div className="flex flex-col gap-4">
           <WeeklyLineChart
             title="Monthly invoicing"
-            subtitle={`Total invoice value raised each month across all sectors, ${fyLabel(fyStart)}`}
+            subtitle={`Total invoice value raised each month across all sectors, ${fyLabel(fyStart)} · click a month to see its invoices`}
             data={monthlyTrend}
             xKey="month"
             periodLabel="Month of"
             series={[{ key: 'invoiced', name: 'Invoiced (₹L)', color: '#10b981' }]}
             formatValue={v => `₹${v}L`}
+            onSelect={selectMonth}
           />
-          <ChartCard title="Sector performance" subtitle="Amount invoiced vs FY target, by sector">
-            <SectorBarChart data={sectorPerformance} />
+          <ChartCard title="Sector performance" subtitle="Amount invoiced vs FY target, by sector · click a sector to see its invoices">
+            <SectorBarChart data={sectorPerformance} onSelect={selectSector} />
           </ChartCard>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="Collection status (DSO)" subtitle="Every raised invoice, by collection status">
-              <PieBreakdown data={dsoBreakdown} colors={DSO_COLORS} />
+            <ChartCard title="Collection status (DSO)" subtitle="Every raised invoice, by collection status · click a slice to see its invoices">
+              <PieBreakdown data={dsoBreakdown} colors={DSO_COLORS} onSelect={selectDso} />
             </ChartCard>
-            <ChartCard title="Payment received" subtitle="Whether payment has been marked received">
-              <PieBreakdown data={paymentBreakdown} colors={PAYMENT_COLORS} />
+            <ChartCard title="Payment received" subtitle="Whether payment has been marked received · click a slice to see its invoices">
+              <PieBreakdown data={paymentBreakdown} colors={PAYMENT_COLORS} onSelect={selectPayment} />
             </ChartCard>
           </div>
         </div>
       </div>
 
-      {selectedStatus && (
-        <PipelineStatusModal
-          status={selectedStatus}
-          rows={pipeline.filter(p => statusKeyOf(p) === selectedStatus)}
-          showRowStatus={statusView === 'grouped'}
-          onClose={() => setSelectedStatus(null)}
-        />
-      )}
+      {detail && <ChartDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </div>
   )
 }

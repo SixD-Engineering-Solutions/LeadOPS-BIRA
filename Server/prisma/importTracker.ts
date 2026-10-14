@@ -161,6 +161,18 @@ const expectedCloseText = (row: SheetRow, col: string): string | null => {
   const d = excelDate(row, col)
   return d ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : raw
 }
+// "Follow-up Date" is free text ("Monthly") in some rows and an Excel date in
+// others — the dates become YYYY-MM-DD, like the app's own follow-up dates.
+const dateText = (row: SheetRow, col: string): string | null => {
+  const raw = str(row, col)
+  if (!raw || Number.isNaN(Number(raw))) return raw
+  return excelDate(row, col)?.toISOString().slice(0, 10) ?? raw
+}
+
+// Row numbers from `first` to the sheet's last row, in order. Rows Excel left
+// out entirely (never touched) are skipped rather than ending the section.
+const rowsFrom = (sheet: Map<number, SheetRow>, first: number) =>
+  [...sheet.keys()].filter(r => r >= first).sort((a, b) => a - b)
 
 async function main() {
   if (!fs.existsSync(SHEET_PATH)) {
@@ -171,9 +183,9 @@ async function main() {
   const sheet1 = parseSheet(entries['xl/worksheets/sheet1.xml'].toString('utf8'), sharedStrings)
   const sheet2 = parseSheet(entries['xl/worksheets/sheet2.xml'].toString('utf8'), sharedStrings)
 
-  // ── Sheet1: Pipeline Tracker — header on row 2, data rows 3.. until blank ──
+  // ── Sheet1: Pipeline Tracker — header on row 1, data rows 2.. ──
   const pipelineItems: Prisma.PipelineTrackerItemCreateManyInput[] = []
-  for (let r = 3; sheet1.has(r); r++) {
+  for (const r of rowsFrom(sheet1, 2)) {
     const row = sheet1.get(r)!
     if (!str(row, 'A') && !str(row, 'B') && !str(row, 'D')) continue // blank spacer row
     pipelineItems.push({
@@ -190,7 +202,7 @@ async function main() {
       expectedClose: expectedCloseText(row, 'K'),
       owner: str(row, 'L'),
       bmContact: str(row, 'M'),
-      followUpDate: str(row, 'N'),
+      followUpDate: dateText(row, 'N'),
       lastAction: str(row, 'O'),
       flagAction: str(row, 'P'),
       priority: str(row, 'Q'),
@@ -216,9 +228,9 @@ async function main() {
     })
   }
 
-  // ── Sheet2 Section 2: detailed invoice register — header row 19, data 20.. ──
+  // ── Sheet2 Section 2: detailed invoice register — header row 20, data 21.. ──
   const registerItems: Prisma.InvoiceRegisterItemCreateManyInput[] = []
-  for (let r = 20; sheet2.has(r); r++) {
+  for (const r of rowsFrom(sheet2, 21)) {
     const row = sheet2.get(r)!
     if (!str(row, 'A') && !str(row, 'B') && !str(row, 'D')) continue // blank spacer row
     registerItems.push({

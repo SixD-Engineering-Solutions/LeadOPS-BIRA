@@ -4,10 +4,12 @@ import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, Le
 import { useTheme } from '../../lib/theme'
 import { formatCount, formatLakhs } from '../../lib/format'
 import Segmented from './Segmented'
+import { ChartDetailModal } from './ChartDetail'
+import type { ChartDetail } from './ChartDetail'
 import {
   FY_MONTHS, FY_QUARTERS, OUTCOMES, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
   outcomeOfStatus, groupOfStatus, expectedClosePeriod, fyMonthOf, trackerFyStart, fyLabel,
-  dsoLabel, paymentLabel, monthlyInvoiced, sectorMonthly, round2,
+  dsoLabel, paymentLabel, monthlyInvoiced, sectorMonthly, round2, sameSector, summaryGapNote,
 } from '../../lib/trackerReports'
 import type { FyMonthKey, StatusGroup } from '../../lib/trackerReports'
 
@@ -101,15 +103,17 @@ type SegmentProps = { x?: number; y?: number; width?: number; height?: number; f
 // One segment of a stacked column, with a thin surface-colored line on top to
 // separate it from the next segment. The top segment gets rounded corners and
 // the column's total above it.
-function StackSegment({ x, y, width, height, fill, gap, top, label, labelColor }: {
+function StackSegment({ x, y, width, height, fill, gap, top, label, labelColor, onClick }: {
   x: number; y: number; width: number; height: number; fill?: string; gap: string
   top: boolean; label: string; labelColor: string
+  onClick?: () => void
 }) {
   if (height <= 0 || width <= 0) return null
   const r = top ? Math.min(5, height, width / 2) : 0
   const d = `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`
   return (
-    <g>
+    // The segment's own click wins over the column's (see StackedPeriodChart).
+    <g onClick={onClick ? e => { e.stopPropagation(); onClick() } : undefined} style={onClick ? { cursor: 'pointer' } : undefined}>
       <path d={d} fill={fill} />
       {!top && <line x1={x} x2={x + width} y1={y + 0.75} y2={y + 0.75} stroke={gap} strokeWidth={1.5} />}
       {top && <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={11} fontWeight={600} fill={labelColor}>{label}</text>}
@@ -120,13 +124,16 @@ function StackSegment({ x, y, width, height, fill, gap, top, label, labelColor }
 // One column per period, split into its categories, total on top. Categories
 // keep the same order and color in every column so periods compare at a glance;
 // a category that's empty in every period is left out of the chart and legend.
-function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = formatCount, height = 280 }: {
+// Clicking a segment selects that period and category; clicking elsewhere in a
+// column selects the whole period (category null).
+function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = formatCount, height = 280, onSelect }: {
   periods: Period[]
   categories: string[]
   valueAt: (period: Period, category: string) => number
   colorOf: (category: string) => string
   format?: (v: number) => string
   height?: number
+  onSelect?: (period: Period, category: string | null) => void
 }) {
   const c = useChartColors()
   const shown = categories.filter(cat => periods.some(p => valueAt(p, cat) > 0))
@@ -139,10 +146,15 @@ function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = fo
   // column total, whichever category it happens to be.
   const topCategory = (row: Row) => [...shown].reverse().find(cat => Number(row[cat]) > 0)
   if (shown.length === 0) return <p className="py-10 text-center text-xs text-gray-400">No data for any period yet.</p>
+  const periodOf = (row: Row | undefined) => periods.find(p => p.short === row?.period)
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 22, right: 8, left: -8, bottom: 0 }} barCategoryGap={periods.length > 4 ? '22%' : '38%'}>
+      <BarChart
+        data={data} margin={{ top: 22, right: 8, left: -8, bottom: 0 }} barCategoryGap={periods.length > 4 ? '22%' : '38%'}
+        onClick={onSelect ? state => { const p = periods[Number(state?.activeTooltipIndex)]; if (p) onSelect(p, null) } : undefined}
+        style={onSelect ? { cursor: 'pointer' } : undefined}
+      >
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c.grid} />
         <XAxis dataKey="period" tick={{ fontSize: 11, fill: c.tick }} axisLine={false} tickLine={false} interval={0} />
         <YAxis tick={{ fontSize: 11, fill: c.tick }} axisLine={false} tickLine={false} allowDecimals={false} width={44} tickFormatter={v => (format === formatCount ? String(v) : `₹${v}L`)} />
@@ -165,7 +177,8 @@ function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = fo
             shape={(props: unknown) => {
               const { x = 0, y = 0, width = 0, height = 0, fill, payload } = props as SegmentProps
               return <StackSegment x={x} y={y} width={width} height={height} fill={fill} gap={c.surface}
-                top={!!payload && topCategory(payload) === cat} label={payload ? format(payload.total) : ''} labelColor={c.tick} />
+                top={!!payload && topCategory(payload) === cat} label={payload ? format(payload.total) : ''} labelColor={c.tick}
+                onClick={onSelect && periodOf(payload) ? () => onSelect(periodOf(payload)!, cat) : undefined} />
             }}
           />
         ))}
@@ -175,11 +188,15 @@ function StackedPeriodChart({ periods, categories, valueAt, colorOf, format = fo
 }
 
 // One value per period (amount invoiced) — single-series columns.
-function PeriodColumns({ data, format }: { data: { period: string; label: string; value: number }[]; format: (v: number) => string }) {
+function PeriodColumns({ data, format, onSelect }: { data: { period: string; label: string; value: number }[]; format: (v: number) => string; onSelect?: (index: number) => void }) {
   const c = useChartColors()
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={data} margin={{ top: 22, right: 8, left: -8, bottom: 0 }} barCategoryGap={data.length > 4 ? '22%' : '38%'}>
+      <BarChart
+        data={data} margin={{ top: 22, right: 8, left: -8, bottom: 0 }} barCategoryGap={data.length > 4 ? '22%' : '38%'}
+        onClick={onSelect ? state => { const i = Number(state?.activeTooltipIndex); if (Number.isInteger(i) && i >= 0) onSelect(i) } : undefined}
+        style={onSelect ? { cursor: 'pointer' } : undefined}
+      >
         <defs>
           <linearGradient id="collectedFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={COLLECTED} stopOpacity={1} />
@@ -205,11 +222,21 @@ function PeriodColumns({ data, format }: { data: { period: string; label: string
 
 // Sector × period grid, each cell shaded by amount on one shared green scale —
 // reads well even with twelve months across, where columns per sector wouldn't.
-function SectorHeatmap({ periods, sectors, valueAt }: {
+// Every cell, sector name and period total opens its invoices: a sector with a
+// null period is its whole row, a null sector the whole column.
+function SectorHeatmap({ periods, sectors, valueAt, onSelect }: {
   periods: Period[]
   sectors: string[]
   valueAt: (sector: string, period: Period) => number
+  onSelect?: (sector: string | null, period: Period | null) => void
 }) {
+  const clickable = (sector: string | null, period: Period | null) => onSelect ? {
+    role: 'button',
+    tabIndex: 0,
+    onClick: () => onSelect(sector, period),
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(sector, period) } },
+  } : {}
+  const hover = onSelect ? ' cursor-pointer hover:ring-2 hover:ring-orange-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400' : ''
   const cells = sectors.map(s => periods.map(p => valueAt(s, p)))
   const max = Math.max(0, ...cells.flat())
   const colTotals = periods.map((_, pi) => round2(cells.reduce((sum, row) => sum + row[pi], 0)))
@@ -230,15 +257,16 @@ function SectorHeatmap({ periods, sectors, valueAt }: {
             const rowTotal = round2(cells[si].reduce((a, b) => a + b, 0))
             return (
               <tr key={s}>
-                <th scope="row" className="whitespace-nowrap px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300">{s}</th>
+                <th scope="row" {...clickable(s, null)} className={`whitespace-nowrap rounded-md px-2 py-1 text-left font-medium text-gray-700 dark:text-gray-300${hover}`}>{s}</th>
                 {periods.map((p, pi) => {
                   const v = cells[si][pi]
                   const t = max > 0 ? v / max : 0
                   return (
                     <td
                       key={p.key}
+                      {...clickable(s, p)}
                       title={`${s} · ${p.label}: ${v > 0 ? formatLakhs(v) : 'nothing invoiced'}`}
-                      className={`h-9 rounded-md px-1.5 text-center tabular-nums ${v > 0 ? (t > 0.45 ? 'font-semibold text-white' : 'font-medium text-gray-800 dark:text-gray-100') : 'bg-gray-50 text-gray-300 dark:bg-gray-800 dark:text-gray-600'}`}
+                      className={`h-9 rounded-md px-1.5 text-center tabular-nums${hover} ${v > 0 ? (t > 0.45 ? 'font-semibold text-white' : 'font-medium text-gray-800 dark:text-gray-100') : 'bg-gray-50 text-gray-300 dark:bg-gray-800 dark:text-gray-600'}`}
                       style={v > 0 ? { background: `rgba(16, 185, 129, ${0.14 + 0.86 * t})` } : undefined}
                     >
                       {v > 0 ? formatLakhs(v) : '—'}
@@ -252,7 +280,7 @@ function SectorHeatmap({ periods, sectors, valueAt }: {
           <tr>
             <th scope="row" className="border-t border-gray-100 px-2 pt-2 text-left font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">All sectors</th>
             {colTotals.map((v, i) => (
-              <td key={periods[i].key} className="border-t border-gray-100 px-1.5 pt-2 text-center font-semibold tabular-nums text-gray-700 dark:border-gray-800 dark:text-gray-300">
+              <td key={periods[i].key} {...clickable(null, periods[i])} className={`rounded-md border-t border-gray-100 px-1.5 pt-2 text-center font-semibold tabular-nums text-gray-700 dark:border-gray-800 dark:text-gray-300${hover}`}>
                 {v > 0 ? formatLakhs(v) : '—'}
               </td>
             ))}
@@ -276,6 +304,7 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
   leadStatuses: LeadStatus[]
 }) {
   const [mode, setMode] = useState<PeriodMode>('quarter')
+  const [detail, setDetail] = useState<ChartDetail | null>(null)
   const stageColor = stageColors(useTheme() === 'dark')
   const periods = mode === 'month' ? MONTH_PERIODS : QUARTER_PERIODS
   const unit = mode === 'month' ? 'month' : 'quarter'
@@ -310,6 +339,30 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
   const sumMonths = (months: Record<FyMonthKey, number>, p: Period) => round2(p.months.reduce((s, m) => s + months[m], 0))
   const sectorNames = sectors.filter(s => periods.some(p => sumMonths(s.months, p) > 0)).map(s => s.sector)
 
+  // What a click opens: the pipeline rows or invoices behind the value.
+  const titleOf = (p: Period, category: string | null) => [category && plainLabel(category), p.label, fy].filter(Boolean).join(' · ')
+  const selectPipeline = (test: (row: PipelineTrackerItem, category: string) => boolean) => (p: Period, category: string | null) =>
+    setDetail({
+      kind: 'pipeline', title: titleOf(p, category), showRowStatus: true,
+      rows: placed.filter(x => inPeriod(x.at, p) && (category == null || test(x.row, category))).map(x => x.row),
+    })
+  const invoicesIn = (ps: Period[]) => invoiceMonth.filter(x => x.month && ps.some(p => p.months.includes(x.month!))).map(x => x.row)
+  const selectInvoices = (test: (row: InvoiceRegisterItem, category: string) => boolean) => (p: Period, category: string | null) =>
+    setDetail({ kind: 'invoices', title: titleOf(p, category), rows: invoicesIn([p]).filter(r => category == null || test(r, category)) })
+  const selectInvoicedPeriod = (index: number) => {
+    const p = periods[index]
+    if (!p) return
+    const rows = invoicesIn([p])
+    setDetail({ kind: 'invoices', title: `Invoiced in ${p.label} · ${fy}`, rows, note: summaryGapNote(sumMonths(invoiced, p), rows) })
+  }
+  const selectSectorCell = (sector: string | null, p: Period | null) => {
+    const ps = p ? [p] : periods
+    const rows = invoicesIn(ps).filter(r => sector == null || sameSector(r.sector, sector))
+    const months = sector == null ? invoiced : sectors.find(s => s.sector === sector)!.months
+    const amount = round2(ps.reduce((sum, q) => sum + sumMonths(months, q), 0))
+    setDetail({ kind: 'invoices', title: [sector ?? 'All sectors', p?.label, fy].filter(Boolean).join(' · '), rows, note: summaryGapNote(amount, rows) })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -320,7 +373,7 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
           onChange={setMode}
           options={[{ value: 'quarter', label: 'Quarters' }, { value: 'month', label: 'Months' }]}
         />
-        <span className="text-[11px] text-gray-400 dark:text-gray-500">{fy} · hover a column for its breakdown</span>
+        <span className="text-[11px] text-gray-400 dark:text-gray-500">{fy} · hover a column for its breakdown · click a column, a color in it or a heatmap cell to see the records behind it</span>
       </div>
 
       <div>
@@ -332,6 +385,7 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
               categories={[...OUTCOMES]}
               valueAt={(p, cat) => pipelineCount(p, r => outcomeOfStatus(r.status, leadStatuses) === cat)}
               colorOf={cat => STATUS_COLORS[cat]}
+              onSelect={selectPipeline((r, cat) => outcomeOfStatus(r.status, leadStatuses) === cat)}
             />
           </Card>
           <Card title={`Pipeline by stage, by ${unit}`} subtitle="Leads by expected close, split into sales stages" note={pipelineNote}>
@@ -340,6 +394,7 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
               categories={STAGE_STACK}
               valueAt={(p, cat) => pipelineCount(p, r => groupOfStatus(r.status, leadStatuses) === cat)}
               colorOf={cat => stageColor[cat as StatusGroup]}
+              onSelect={selectPipeline((r, cat) => groupOfStatus(r.status, leadStatuses) === cat)}
             />
           </Card>
         </div>
@@ -349,13 +404,14 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-400">Invoices</h3>
         <div className="flex flex-col gap-4">
           <Card title={`Invoicing by ${unit}`} subtitle="Total invoice value raised across all sectors">
-            <PeriodColumns format={formatLakhs} data={periods.map(p => ({ period: p.short, label: p.label, value: sumMonths(invoiced, p) }))} />
+            <PeriodColumns format={formatLakhs} data={periods.map(p => ({ period: p.short, label: p.label, value: sumMonths(invoiced, p) }))} onSelect={selectInvoicedPeriod} />
           </Card>
           <Card title={`Sector performance by ${unit}`} subtitle="Amount invoiced in each sector · darker green means more">
             <SectorHeatmap
               periods={periods}
               sectors={sectorNames}
               valueAt={(name, p) => sumMonths(sectors.find(s => s.sector === name)!.months, p)}
+              onSelect={selectSectorCell}
             />
           </Card>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -365,6 +421,7 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
                 categories={dsoCategories}
                 valueAt={(p, cat) => invoiceCount(p, r => dsoLabel(r) === cat)}
                 colorOf={cat => DSO_COLORS[cat] ?? NEUTRAL}
+                onSelect={selectInvoices((r, cat) => dsoLabel(r) === cat)}
               />
             </Card>
             <Card title={`Payment received by ${unit}`} subtitle="Raised invoices by invoice date, split by whether payment is marked received" note={invoiceNote}>
@@ -373,11 +430,14 @@ export default function ComparisonView({ pipeline, summary, register, leadStatus
                 categories={PAYMENT_STACK}
                 valueAt={(p, cat) => invoiceCount(p, r => paymentLabel(r) === cat)}
                 colorOf={cat => PAYMENT_COLORS[cat]}
+                onSelect={selectInvoices((r, cat) => paymentLabel(r) === cat)}
               />
             </Card>
           </div>
         </div>
       </div>
+
+      {detail && <ChartDetailModal detail={detail} onClose={() => setDetail(null)} />}
     </div>
   )
 }
