@@ -134,7 +134,8 @@ docker run --name leadops-pg `
   -p 5432:5432 `
   -d postgres:16
 ```
-Then set `DATABASE_URL="postgresql://postgres:password@localhost:5432/leadops"`.
+Then set `DATABASE_URL="postgresql://postgres:password@localhost:5432/leadops?sslmode=disable"`.
+`sslmode=disable` matters: without it the API expects Aiven's TLS certificate (see `src/prisma.ts`).
 
 ### Option B — Managed Postgres
 

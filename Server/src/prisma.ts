@@ -17,11 +17,18 @@ import { Pool } from 'pg'
   return this.toNumber()
 }
 
-// Aiven Postgres presents a certificate issued by this project's own private
-// CA, which isn't in the public trust store. Modern `pg` treats
+// `sslmode=disable` in DATABASE_URL turns TLS off — for a Postgres container
+// on the same Docker network as the API (the self-hosted setup in
+// docker-compose.portainer.yml), or a local dev database. Traffic between two
+// containers on one host's private network never leaves the machine.
+const rawUrl = process.env.DATABASE_URL ?? ''
+const sslDisabled = /[?&]sslmode=disable(&|$)/i.test(rawUrl)
+
+// Anything else is Aiven, whose certificate is issued by this project's own
+// private CA, which isn't in the public trust store. Modern `pg` treats
 // `sslmode=require` in the URL as full verification, which rejects it — so
 // strip sslmode and configure SSL explicitly here.
-const connectionString = (process.env.DATABASE_URL ?? '')
+const connectionString = rawUrl
   .replace(/([?&])sslmode=[^&]*/i, '$1')
   .replace(/[?&]$/, '')
 
@@ -34,9 +41,7 @@ const connectionString = (process.env.DATABASE_URL ?? '')
 // this file needs regenerating — the pool will fail closed, not silently
 // trust nothing, if it's missing or stale.
 const caPath = path.join(__dirname, '..', 'certs', 'aiven-ca.pem')
-const ca = fs.readFileSync(caPath, 'utf8')
-// DUMMY-DATA (temporary): a local Docker Postgres has no SSL.
-const isLocalDb = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString)
+const ca = sslDisabled ? null : fs.readFileSync(caPath, 'utf8')
 
 // Build the pool ourselves so we can attach an 'error' listener. When the DB
 // drops an idle connection (Aiven flapping / idle timeout), the pool emits
@@ -45,12 +50,13 @@ const isLocalDb = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString)
 // next query.
 const pool = new Pool({
   connectionString,
-  ssl: isLocalDb ? false : { ca, rejectUnauthorized: true },
+  ssl: ca ? { ca, rejectUnauthorized: true } : false,
   // Fail fast instead of hanging when the DB is unreachable/flapping.
   connectionTimeoutMillis: 10000, // give up acquiring a connection after 10s
   idleTimeoutMillis: 30000, // drop idle connections after 30s
   // Aiven's plan allows 20 connections in total, shared by every server that
-  // points at this database — lower DB_POOL_MAX when more than one runs.
+  // points at this database — lower DB_POOL_MAX when more than one runs. A
+  // self-hosted Postgres allows 100 by default.
   max: Number(process.env.DB_POOL_MAX) || 10,
 })
 pool.on('error', (err) => {

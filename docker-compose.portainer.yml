@@ -1,16 +1,40 @@
 # Portainer Web editor stack for Docker Standalone.
 # Build and upload both images before deploying; this file does not build source.
-# Keep DATABASE_URL pointed at the existing Aiven PostgreSQL database.
+# The database runs in this stack (leadops-db) on the server's own disk — see
+# PORTAINER_DEPLOYMENT.md for moving the existing Aiven data into it.
 # See PORTAINER_DEPLOYMENT.md for image preparation and environment values.
 services:
+  leadops-db:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    # Fixed name so the migration and backup scripts in deploy/ can find it.
+    container_name: leadops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leadops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (letters and digits only, it goes into a URL)}
+      POSTGRES_DB: ${POSTGRES_DB:-leadops}
+    volumes:
+      - leadops-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    # No published port: only the API reaches it, over the stack's private network.
+
   leadops-api:
     image: ${LEADOPS_API_IMAGE:?set LEADOPS_API_IMAGE to an available image}
     pull_policy: ${IMAGE_PULL_POLICY:-missing}
     restart: unless-stopped
+    depends_on:
+      leadops-db:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: "3000"
-      DATABASE_URL: ${DATABASE_URL:?set the existing Aiven DATABASE_URL}
+      # The database container above; sslmode=disable because the traffic never
+      # leaves this host's private Docker network.
+      DATABASE_URL: postgres://${POSTGRES_USER:-leadops}:${POSTGRES_PASSWORD}@leadops-db:5432/${POSTGRES_DB:-leadops}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET to a random secret of at least 32 characters}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
       FRONTEND_URL: ${FRONTEND_URL:?set the public LeadOps URL}
@@ -29,7 +53,7 @@ services:
       MS_ALLOWED_TENANT_IDS: ${MS_ALLOWED_TENANT_IDS:-}
       # Emergency: "true" re-enables password sign-in for admins only.
       ADMIN_PASSWORD_LOGIN: ${ADMIN_PASSWORD_LOGIN:-false}
-      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
     volumes:
       - leadops-uploads:/app/uploads
     # Exactly one API instance; reminders and live notifications run in process.
@@ -49,3 +73,7 @@ volumes:
     # Explicit name keeps uploads attached when the Portainer stack is renamed.
     # For an existing destination volume, supply its exact name instead.
     name: ${UPLOADS_VOLUME_NAME:-leadops-uploads}
+  leadops-pgdata:
+    # The database itself. Same reason for the explicit name — and never delete
+    # this volume when removing or redeploying the stack.
+    name: ${DB_VOLUME_NAME:-leadops-pgdata}
