@@ -1,17 +1,15 @@
-import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useEscapeStack } from '../lib/useEscapeStack'
 
 const WIDTHS = { md: 'max-w-lg', lg: 'max-w-2xl' } as const
 
-// Open modals, oldest first — Esc closes only the top one (e.g. a lead opened
-// from the Lead Assignments list closes back to the list, not both).
-const openStack: symbol[] = []
-
 // The one popup shell every modal in the app uses: same backdrop, header,
-// close button and dark-mode styling. Closes on Esc, on a click outside, or on
-// ✕. Rendered into <body> through a portal so scrolling inside it never
-// scrolls the page behind (which lives in the dashboard's scrollable <main>).
+// close button and dark-mode styling. Closes on Esc (only the top overlay —
+// e.g. a lead opened from the Lead Assignments list closes back to the list),
+// on a click outside, or on ✕. Rendered into <body> through a portal so
+// scrolling inside it never scrolls the page behind (which lives in the
+// dashboard's scrollable <main>).
 export function Modal({ title, subtitle, onClose, width = 'md', children, bodyClassName = 'px-5 py-4' }: {
   title: ReactNode
   subtitle?: ReactNode
@@ -20,22 +18,7 @@ export function Modal({ title, subtitle, onClose, width = 'md', children, bodyCl
   children: ReactNode
   bodyClassName?: string
 }) {
-  // Latest onClose without re-binding the key listener on every parent render.
-  const onCloseRef = useRef(onClose)
-  useEffect(() => { onCloseRef.current = onClose })
-
-  useEffect(() => {
-    const id = Symbol('modal')
-    openStack.push(id)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && openStack[openStack.length - 1] === id) onCloseRef.current()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      openStack.splice(openStack.indexOf(id), 1)
-    }
-  }, [])
+  useEscapeStack(onClose)
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onClick={onClose}>

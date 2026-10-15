@@ -8,18 +8,27 @@ import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { EmptyState } from '../components/EmptyState'
 import { focusCreateForm } from '../lib/focusCreateForm'
 import { SkeletonRows } from '../components/Skeleton'
+import { useTableView } from '../lib/useTableView'
+import { useConfirm } from '../lib/useConfirm'
+import { DataGrid } from '../components/table/DataGrid'
+import type { Column } from '../components/table/DataGrid'
+import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../components/table/TableToolbar'
+import { MenuSelect, PersonChip } from '../components/table/MenuSelect'
+import { RowMenu } from '../components/table/RowMenu'
+import { RelTime } from '../components/table/RelTime'
 
 // Fixed status options.
 const STATUSES = ['Submitted', 'In Process', 'Dead'] as const
 
 const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name ?? ''] ?? DEFAULT_STATUS_STYLE
-const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+const person = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
+const statusOf = (l: Lead) => l.status?.statusName ?? 'Submitted'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
+export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: boolean; currentUserId?: string }) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -157,8 +166,16 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
-  async function removeLead(id: string) {
-    if (!confirm('Delete this lead? Its proposals, projects, invoices, payments and documents will be deleted too. This cannot be undone.')) return
+  const [confirmDialog, confirm] = useConfirm()
+  async function removeLead(lead: Lead) {
+    const ok = await confirm({
+      title: `Delete ${lead.plant?.plantName ?? 'this lead'}?`,
+      message: 'Its proposal, project, invoices, payments and documents are deleted with it. This can’t be undone.',
+      confirmLabel: 'Delete lead',
+      danger: true,
+    })
+    if (!ok) return
+    const id = lead.id
     setSavingId(id)
     try {
       await api(`/leads/${id}`, { method: 'DELETE', auth: true })
@@ -171,6 +188,114 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
+  const view = useTableView<Lead>({
+    id: 'leads',
+    rows: leads,
+    search: l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.vertical?.verticalName,
+      l.sector?.sectorName, l.source?.sourceName, l.serviceType?.serviceTypeName, person(l.assignedToUser), person(l.bmUser), statusOf(l), l.remark].join(' '),
+    views: [
+      { id: 'all', label: 'All' },
+      ...(!isAdmin && currentUserId ? [{ id: 'mine', label: 'Assigned to me', match: (l: Lead) => l.assignedToUserId === currentUserId }] : []),
+      { id: 'open', label: 'Open', match: l => statusOf(l) !== 'Dead' },
+      { id: 'unassigned', label: 'Unassigned', match: l => !l.assignedToUserId },
+      { id: 'dead', label: 'Dead', match: l => statusOf(l) === 'Dead' },
+    ],
+    filters: [
+      { id: 'status', label: 'Status', value: statusOf, order: STATUSES },
+      { id: 'assigned', label: 'Assigned to', value: l => person(l.assignedToUser) },
+      { id: 'sector', label: 'Sector', value: l => l.sector?.sectorName },
+      { id: 'vertical', label: 'Vertical', value: l => l.vertical?.verticalName },
+      { id: 'bm', label: 'BM', value: l => person(l.bmUser) },
+      { id: 'source', label: 'Source', value: l => l.source?.sourceName },
+    ],
+    sorts: {
+      plant: { value: l => l.plant?.plantName },
+      classification: { value: l => l.vertical?.verticalName },
+      status: { value: l => STATUSES.indexOf(statusOf(l) as (typeof STATUSES)[number]) },
+      assigned: { value: l => person(l.assignedToUser) },
+      assignedBy: { value: l => person(l.assignedByUser) },
+      bm: { value: l => person(l.bmUser) },
+      updated: { value: l => new Date(l.updatedAt).getTime(), firstDir: 'desc' },
+    },
+    defaultSort: { id: 'updated', dir: 'desc' },
+  })
+
+  const employeeOptions = employees.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))
+  // Keep a BM who has since left the team visible rather than silently showing "None".
+  const bmOptionsFor = (l: Lead) => [
+    ...(l.bmUser && !team.some(u => u.id === l.bmUser!.id) ? [{ value: l.bmUser.id, label: person(l.bmUser)!, hint: l.bmUser.email }] : []),
+    ...team.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email })),
+  ]
+
+  const columns: Column<Lead>[] = [
+    {
+      id: 'plant', header: 'Plant / Contact', sticky: true, className: 'min-w-[240px] max-w-[300px]',
+      cell: l => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{l.plant?.plantName ?? '—'}</p>
+          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[l.plant?.client?.clientName, l.contact?.contactPersonName ?? 'No contact', l.plant?.location?.city].filter(Boolean).join(' · ')}</p>
+        </div>
+      ),
+    },
+    {
+      id: 'classification', header: 'Vertical / Sector',
+      cell: l => (
+        <>
+          <p className="text-gray-700 dark:text-gray-200">{l.vertical?.verticalName ?? '—'}</p>
+          <p className="text-gray-400 dark:text-gray-500">{l.sector?.sectorName ?? '—'}</p>
+        </>
+      ),
+    },
+    {
+      id: 'status', header: 'Status',
+      cell: l => (
+        <>
+          <MenuSelect
+            variant="pill"
+            label={`Status of ${l.plant?.plantName ?? 'lead'}`}
+            value={statusOf(l)}
+            options={STATUSES.map(s => ({ value: s, label: s }))}
+            toneOf={statusStyle}
+            busy={savingId === l.id}
+            onChange={v => onStatusSelect(l, v)}
+          />
+          {l.lostReason && <p className="mt-1 max-w-[180px] truncate text-[11px] text-rose-500 dark:text-rose-400" title={l.lostReason}>Lost: {l.lostReason}</p>}
+        </>
+      ),
+    },
+    {
+      id: 'assigned', header: 'Assigned to',
+      cell: l => (
+        <MenuSelect
+          variant="person"
+          allowEmpty
+          label={`Assignee of ${l.plant?.plantName ?? 'lead'}`}
+          value={l.assignedToUserId ?? ''}
+          options={employeeOptions}
+          busy={savingId === l.id}
+          onChange={v => reassign(l.id, v)}
+        />
+      ),
+    },
+    { id: 'assignedBy', header: 'Assigned by', cell: l => <PersonChip name={person(l.assignedByUser)} empty="—" /> },
+    {
+      id: 'bm', header: 'BM/Contact',
+      cell: l => (
+        <MenuSelect
+          variant="person"
+          allowEmpty
+          emptyLabel="None"
+          label={`Branch manager of ${l.plant?.plantName ?? 'lead'}`}
+          value={l.bmUserId ?? ''}
+          options={bmOptionsFor(l)}
+          busy={savingId === l.id}
+          onChange={v => setBm(l.id, v)}
+        />
+      ),
+    },
+    { id: 'updated', header: 'Updated', align: 'right', cell: l => <span className="text-gray-500 dark:text-gray-400"><RelTime ts={l.updatedAt} /></span> },
+  ]
+
   const field = (label: string, key: keyof typeof form, placeholder: string, span = '', type = 'text') => (
     <label className={`flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 ${span}`}>
       {label}
@@ -179,7 +304,7 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
   )
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-[1400px] px-6 py-6">
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Leads</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">Type in the lead details — matching plants, contacts, verticals and sectors are reused or created automatically. Available to all team members.</p>
@@ -239,104 +364,47 @@ export default function Leads({ isAdmin = false }: { isAdmin?: boolean }) {
       </form>
 
       {/* list */}
-      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Leads {leads.length > 0 && <span className="text-gray-400 dark:text-gray-400">({leads.length})</span>}</h3>
-          <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
-        </div>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <TableToolbar view={view} noun="leads" placeholder="Search plant, client, contact, city…">
+          <RefreshButton onClick={load} busy={loading} />
+        </TableToolbar>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
-        {loading ? (
+        {loading && leads.length === 0 ? (
           <SkeletonRows />
         ) : leads.length === 0 && !error ? (
           <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: focusCreateForm }} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
-                  <th className="px-5 py-3 font-semibold">Plant / Contact</th>
-                  <th className="px-3 py-3 font-semibold">Vertical / Sector</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                  <th className="px-3 py-3 font-semibold">Assigned to</th>
-                  <th className="px-3 py-3 font-semibold">Assigned by</th>
-                  <th className="px-3 py-3 font-semibold">BM/Contact</th>
-                  <th className="px-3 py-3 font-semibold">Updated</th>
-                  {isAdmin && <th className="px-3 py-3 font-semibold"></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map(lead => (
-                  <tr
-                    key={lead.id}
-                    onClick={() => setSelectedLead(lead)}
-                    className="cursor-pointer border-b border-gray-50 hover:bg-gray-50/60 dark:border-gray-800 dark:hover:bg-gray-800/60"
-                  >
-                    <td className="px-5 py-3">
-                      <p className="font-semibold text-gray-900 dark:text-gray-100">{lead.plant?.plantName ?? '—'}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{lead.plant?.client?.clientName ? `${lead.plant.client.clientName} · ` : ''}{lead.contact?.contactPersonName ?? 'No contact'}{lead.plant?.location ? ` · ${lead.plant.location.city}` : ''}</p>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
-                      <p>{lead.vertical?.verticalName ?? '—'}</p>
-                      <p className="text-gray-400 dark:text-gray-400">{lead.sector?.sectorName ?? '—'}</p>
-                    </td>
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={lead.status?.statusName ?? 'Submitted'}
-                        disabled={savingId === lead.id}
-                        onChange={e => onStatusSelect(lead, e.target.value)}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 ${statusStyle(lead.status?.statusName)}`}
-                      >
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      {lead.lostReason && (
-                        <p className="mt-1 max-w-[180px] truncate text-[11px] text-rose-500 dark:text-rose-400" title={lead.lostReason}>Lost: {lead.lostReason}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={lead.assignedToUserId ?? ''}
-                        disabled={savingId === lead.id}
-                        onChange={e => reassign(lead.id, e.target.value)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                      >
-                        <option value="">Unassigned</option>
-                        {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">{lead.assignedByUser ? (lead.assignedByUser.userName || lead.assignedByUser.email) : '—'}</td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={lead.bmUserId ?? ''}
-                        disabled={savingId === lead.id}
-                        onChange={e => setBm(lead.id, e.target.value)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-                      >
-                        <option value="">None</option>
-                        {/* Keep a BM who has since left the team visible rather than silently showing "None". */}
-                        {lead.bmUser && !team.some(u => u.id === lead.bmUser!.id) && (
-                          <option value={lead.bmUser.id}>{lead.bmUser.userName || lead.bmUser.email}</option>
-                        )}
-                        {team.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmt(lead.updatedAt)}</td>
-                    {isAdmin && (
-                      <td className="px-3 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => removeLead(lead.id)} disabled={savingId === lead.id} className="text-xs font-medium text-red-400 hover:text-red-600 disabled:opacity-50 dark:text-red-500 dark:hover:text-red-400">Delete</button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <DataGrid
+              columns={columns}
+              rows={view.rows}
+              getKey={l => l.id}
+              view={view}
+              onRowClick={setSelectedLead}
+              rowLabel={l => `Open ${l.plant?.plantName ?? 'lead'}`}
+              actions={l => (
+                <RowMenu
+                  label={l.plant?.plantName ?? 'lead'}
+                  actions={[
+                    { label: 'Open lead', onSelect: () => setSelectedLead(l) },
+                    isAdmin && { label: 'Delete lead', danger: true, disabled: savingId === l.id, onSelect: () => removeLead(l) },
+                  ]}
+                />
+              )}
+              empty={<NoMatches noun="leads" onClear={view.clearFilters} />}
+              minWidth={1000}
+            />
+            <TableFooter view={view} />
+          </>
         )}
       </div>
 
       {/* detail modal */}
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+
+      {confirmDialog}
 
       {lostFor && (
         <LostReasonModal

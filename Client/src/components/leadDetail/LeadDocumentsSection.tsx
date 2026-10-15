@@ -12,7 +12,13 @@ const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1
 const ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
 
 // Documents uploaded against a lead — upload form, list, and download.
-export function LeadDocumentsSection({ leadId }: { leadId: string }) {
+export function LeadDocumentsSection({ leadId, onUploaded, bare = false }: {
+  leadId: string
+  /** Called after an upload, e.g. so the lead's timeline shows it. */
+  onUploaded?: () => void
+  /** Without the section heading — when a tab already says "Documents". */
+  bare?: boolean
+}) {
   const [documents, setDocuments] = useState<LeadDocument[]>([])
   const [loadingDocuments, setLoadingDocuments] = useState(true)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
@@ -47,6 +53,7 @@ export function LeadDocumentsSection({ leadId }: { leadId: string }) {
     try {
       const document = await uploadDocument(leadId, file)
       setDocuments(prev => [document, ...prev])
+      onUploaded?.()
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : 'Could not upload document.')
     } finally {
@@ -63,8 +70,8 @@ export function LeadDocumentsSection({ leadId }: { leadId: string }) {
     }
   }
 
-  return (
-    <DetailSection title="Documents">
+  const body = (
+    <>
       <div className="mb-3">
         <input ref={fileInputRef} type="file" accept={ALLOWED_DOCUMENT_EXTENSIONS.join(',')} onChange={handleFileSelected} disabled={uploading} className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-600 hover:file:bg-orange-100 dark:text-gray-400 dark:file:bg-orange-950/40 dark:file:text-orange-400" />
         <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-400">PDF, Excel, or CSV, up to 10MB.</p>
@@ -93,6 +100,7 @@ export function LeadDocumentsSection({ leadId }: { leadId: string }) {
           ))}
         </ul>
       )}
-    </DetailSection>
+    </>
   )
+  return bare ? body : <DetailSection title="Documents">{body}</DetailSection>
 }

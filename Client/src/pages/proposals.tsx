@@ -9,10 +9,18 @@ import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
 import { focusCreateForm } from '../lib/focusCreateForm'
 import { SkeletonRows } from '../components/Skeleton'
+import { LeadDetailById } from '../components/LeadDetailModal'
+import { useTableView } from '../lib/useTableView'
+import { DataGrid } from '../components/table/DataGrid'
+import type { Column } from '../components/table/DataGrid'
+import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../components/table/TableToolbar'
+import { MenuSelect } from '../components/table/MenuSelect'
+import { RowMenu } from '../components/table/RowMenu'
+import { DueDate, RelTime } from '../components/table/RelTime'
 
 const statusStyle = (name: string) => PROPOSAL_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
-const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
-const fmtValue = (v: number | null) => (v == null ? '—' : formatINR(v))
+const fmtValue = (v: number | null) => (v == null ? <span className="text-gray-300 dark:text-gray-600">—</span> : formatINR(v))
+const OPEN: readonly string[] = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Hold']
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { leadId: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' }
@@ -113,8 +121,80 @@ export default function Proposals() {
     }
   }
 
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
+  const plantOf = (p: Proposal) => p.lead?.plant?.plantName ?? null
+  const clientOf = (p: Proposal) => p.lead?.plant?.client?.clientName ?? null
+
+  const view = useTableView<Proposal>({
+    id: 'proposals',
+    rows: proposals,
+    search: p => [p.proposalNumber, p.projectName, plantOf(p), clientOf(p), p.status, p.lostReason].join(' '),
+    views: [
+      { id: 'all', label: 'All' },
+      { id: 'open', label: 'Open', match: p => OPEN.includes(p.status) },
+      { id: 'won', label: 'Won', match: p => p.status === 'Won' },
+      { id: 'lost', label: 'Lost', match: p => p.status === 'Lost' },
+    ],
+    filters: [
+      { id: 'status', label: 'Status', value: p => p.status, order: PROPOSAL_STATUSES },
+      { id: 'client', label: 'Client', value: clientOf },
+    ],
+    sorts: {
+      proposal: { value: p => p.proposalNumber, firstDir: 'desc' },
+      lead: { value: plantOf },
+      value: { value: p => p.value, firstDir: 'desc' },
+      probability: { value: p => p.probabilityPct, firstDir: 'desc' },
+      expected: { value: p => (p.expectedOrderDate ? new Date(p.expectedOrderDate).getTime() : null) },
+      status: { value: p => PROPOSAL_STATUSES.indexOf(p.status as ProposalStatus) },
+      updated: { value: p => new Date(p.updatedAt).getTime(), firstDir: 'desc' },
+    },
+    defaultSort: { id: 'proposal', dir: 'desc' },
+  })
+
+  const columns: Column<Proposal>[] = [
+    {
+      id: 'proposal', header: 'Proposal', sticky: true, className: 'min-w-[220px]',
+      cell: p => (
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{p.proposalNumber}</p>
+          {p.projectName && <p className="max-w-[260px] truncate text-xs text-gray-500 dark:text-gray-400">{p.projectName}</p>}
+        </div>
+      ),
+    },
+    {
+      id: 'lead', header: 'Lead',
+      cell: p => (
+        <>
+          <p className="text-gray-700 dark:text-gray-200">{plantOf(p) ?? '—'}</p>
+          <p className="text-gray-400 dark:text-gray-500">{clientOf(p) ?? ''}</p>
+        </>
+      ),
+    },
+    { id: 'value', header: 'Value', align: 'right', cell: p => <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{fmtValue(p.value)}</span> },
+    { id: 'probability', header: 'Probability', align: 'right', cell: p => (p.probabilityPct != null ? `${p.probabilityPct}%` : <span className="text-gray-300 dark:text-gray-600">—</span>) },
+    { id: 'expected', header: 'Expected order', cell: p => <DueDate ts={p.expectedOrderDate} done={!OPEN.includes(p.status)} /> },
+    {
+      id: 'status', header: 'Status',
+      cell: p => (
+        <>
+          <MenuSelect
+            variant="pill"
+            label={`Status of ${p.proposalNumber}`}
+            value={p.status}
+            options={PROPOSAL_STATUSES.map(s => ({ value: s, label: s }))}
+            toneOf={statusStyle}
+            busy={savingId === p.id}
+            onChange={v => onStatusSelect(p, v as ProposalStatus)}
+          />
+          {p.lostReason && <p className="mt-1 max-w-[200px] truncate text-[11px] text-rose-500 dark:text-rose-400" title={p.lostReason}>Lost: {p.lostReason}</p>}
+        </>
+      ),
+    },
+    { id: 'updated', header: 'Updated', align: 'right', cell: p => <span className="text-gray-500 dark:text-gray-400"><RelTime ts={p.updatedAt} /></span> },
+  ]
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-[1400px] px-6 py-6">
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Proposals</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">Quote value and probability against a lead, and track it through to Won or Lost.</p>
@@ -158,65 +238,36 @@ export default function Proposals() {
       </form>
 
       {/* list */}
-      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Proposals {proposals.length > 0 && <span className="text-gray-400 dark:text-gray-400">({proposals.length})</span>}</h3>
-          <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
-        </div>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <TableToolbar view={view} noun="proposals" placeholder="Search number, plant, client…">
+          <RefreshButton onClick={load} busy={loading} />
+        </TableToolbar>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
-        {loading ? (
+        {loading && proposals.length === 0 ? (
           <SkeletonRows />
         ) : proposals.length === 0 && !error ? (
           <EmptyState icon="document" title="No proposals yet" message="Quote a value against one of your leads to start tracking it to Won or Lost." action={{ label: 'Create proposal', onClick: focusCreateForm }} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
-                  <th className="px-5 py-3 font-semibold">Proposal</th>
-                  <th className="px-3 py-3 font-semibold">Lead</th>
-                  <th className="px-3 py-3 font-semibold">Value</th>
-                  <th className="px-3 py-3 font-semibold">Probability</th>
-                  <th className="px-3 py-3 font-semibold">Expected order</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {proposals.map(p => (
-                  <tr key={p.id} className="border-b border-gray-50 dark:border-gray-800">
-                    <td className="px-5 py-3">
-                      <p className="font-semibold text-gray-900 dark:text-gray-100">{p.proposalNumber}</p>
-                      {p.projectName && <p className="text-xs text-gray-500 dark:text-gray-400">{p.projectName}</p>}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
-                      <p>{p.lead?.plant?.plantName ?? '—'}</p>
-                      <p className="text-gray-400 dark:text-gray-400">{p.lead?.plant?.client?.clientName ?? ''}</p>
-                    </td>
-                    <td className="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">{fmtValue(p.value)}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">{p.probabilityPct != null ? `${p.probabilityPct}%` : '—'}</td>
-                    <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmtDate(p.expectedOrderDate)}</td>
-                    <td className="px-3 py-3">
-                      <select
-                        value={p.status}
-                        disabled={savingId === p.id}
-                        onChange={e => onStatusSelect(p, e.target.value as ProposalStatus)}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 ${statusStyle(p.status)}`}
-                      >
-                        {PROPOSAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      {p.lostReason && (
-                        <p className="mt-1 max-w-[200px] truncate text-[11px] text-rose-500 dark:text-rose-400" title={p.lostReason}>Lost: {p.lostReason}</p>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <DataGrid
+              columns={columns}
+              rows={view.rows}
+              getKey={p => p.id}
+              view={view}
+              onRowClick={p => setOpenLeadId(p.leadId)}
+              rowLabel={p => `Open the lead for ${p.proposalNumber}`}
+              actions={p => <RowMenu label={p.proposalNumber} actions={[{ label: 'Open lead', onSelect: () => setOpenLeadId(p.leadId) }]} />}
+              empty={<NoMatches noun="proposals" onClear={view.clearFilters} />}
+              minWidth={920}
+            />
+            <TableFooter view={view} />
+          </>
         )}
       </div>
+
+      {openLeadId && <LeadDetailById leadId={openLeadId} onClose={() => setOpenLeadId(null)} />}
 
       {lostFor && (
         <LostReasonModal

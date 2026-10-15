@@ -144,7 +144,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       {/* ── Main ────────────────────────────────────────────────────────────── */}
       <main className="flex-1 scroll-pt-20 overflow-y-auto">
         {/* top bar */}
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
+        <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}
             <button onClick={() => setMobileNavOpen(true)} className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden" aria-label="Open menu">
@@ -162,7 +162,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         </header>
 
         {active === 'lead-gen' || active === 'leads' ? (
-          <Leads isAdmin={isAdmin} />
+          <Leads isAdmin={isAdmin} currentUserId={user.id} />
         ) : active === 'reports' && isAdmin ? (
           <Reports />
         ) : active === 'team' ? (

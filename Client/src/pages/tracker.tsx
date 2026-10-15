@@ -1,136 +1,74 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { api, NOTIFICATION_EVENT } from '../lib/api'
 import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, TrackerTable, TrackerChangeRequest, LeadStatus } from '../lib/api'
 import { useTrackerFields, rowLabelFor } from '../lib/trackerEditFields'
 import type { TrackerFieldDefs } from '../lib/trackerEditFields'
-import { isSummaryTotal, trackerFyStart, fyLabel } from '../lib/trackerReports'
+import { isSummaryTotal, trackerFyStart, fyLabel, groupOfStatus, STATUS_GROUPS, FY_MONTHS } from '../lib/trackerReports'
 import EditRowModal from '../components/tracker/EditRowModal'
 import { ErrorBanner } from '../components/ErrorBanner'
-import { stageStatusStyle } from '../lib/statusStyles'
+import { stageStatusStyle, BADGE_TONES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { formatLakhs, formatSheetValue } from '../lib/format'
 import ReportsTab from '../components/tracker/ReportsTab'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
-import { PIPELINE_SORT_OPTIONS, DEFAULT_DIRECTION, sortPipeline } from '../lib/pipelineSort'
-import type { PipelineSortKey, SortDirection } from '../lib/pipelineSort'
-import { INVOICE_SORT_OPTIONS, DEFAULT_INVOICE_DIRECTION, sortInvoices } from '../lib/invoiceSort'
-import type { InvoiceSortKey } from '../lib/invoiceSort'
+import { LeadDetailById } from '../components/LeadDetailModal'
+import { useTableView } from '../lib/useTableView'
+import { DataGrid } from '../components/table/DataGrid'
+import type { Column } from '../components/table/DataGrid'
+import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../components/table/TableToolbar'
+import { StatusBadge, PersonChip } from '../components/table/MenuSelect'
+import { RowMenu } from '../components/table/RowMenu'
+import type { RowAction } from '../components/table/RowMenu'
+import { formatDate, formatDateTime } from '../lib/relativeTime'
+import { comparePipelineValue, comparePipelineStage, expectedCloseOrder, priorityOrder, dsoOrder } from '../lib/trackerSorts'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
 const dash = <span className="text-gray-300 dark:text-gray-600">—</span>
 const fmtLakhs = (v: number | null) => (v == null ? dash : formatLakhs(v))
-const fmtPct = (v: number | null, fraction = false) => (v == null ? dash : `${Math.round(fraction ? v * 100 : v)}%`)
 const fmtText = (v: string | null) => (v && v.trim() ? v.trim() : dash)
-const fmtDate = (ts: string | null) => (ts ? new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : dash)
+const fmtDate = (ts: string | null) => (ts ? <span className="whitespace-nowrap" title={formatDateTime(ts)}>{formatDate(ts)}</span> : dash)
+const clip = (v: string | null, width = 'max-w-[220px]') => <span className={`block truncate ${width}`} title={v ?? undefined}>{fmtText(v)}</span>
+const text = (v: string | null) => v?.trim() || null
 
 // A status string carries its own state — "✅ Order Received" / "🔵 Quoted" /
 // "LOST due to price" — entered freehand in the original sheet. Classify it
 // well enough to color it; this is display-only, so there's no fixed enum to
-// validate against.
-// Live-synced rows instead carry "<stage>: <status>" (e.g. "Proposal: Negotiation",
-// see syncLeadToPipeline on the server) — colored exactly as that status is on
-// its own page.
+// validate against. Live-synced rows instead carry "<stage>: <status>" (e.g.
+// "Proposal: Negotiation", see syncLeadToPipeline on the server) — colored
+// exactly as that status is on its own page.
 function pipelineRowStyle(row: PipelineTrackerItem): string {
   if (row.sourceLeadId) return stageStatusStyle(row.status)
-  return pipelineStatusStyle(row.status)
+  const s = (row.status ?? '').toLowerCase()
+  if (s.includes('✅') || /order received|po received/.test(s)) return BADGE_TONES.emerald
+  if (/\blost\b/.test(s) || s.startsWith('x ')) return BADGE_TONES.rose
+  return BADGE_TONES.sky
 }
 
-function pipelineStatusStyle(status: string | null): string {
-  const s = (status ?? '').toLowerCase()
-  if (s.includes('✅') || /order received|po received/.test(s)) {
-    return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800'
-  }
-  if (/\blost\b/.test(s) || s.startsWith('x ')) {
-    return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800'
-  }
-  return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:border-sky-800'
+// The sheet's DSO statuses lead with a coloured emoji ("🟢 Collected"); the
+// badge colour already says it, so the badge drops the emoji.
+const plainLabel = (s: string) => s.replace(/^[^\p{L}\p{N}]+/u, '')
+function dsoTone(r: InvoiceRegisterItem): string {
+  const o = dsoOrder(r)
+  return o === 0 ? BADGE_TONES.rose : o === 1 ? BADGE_TONES.amber : o === 3 ? BADGE_TONES.emerald : DEFAULT_STATUS_STYLE
 }
 
-// ─── generic table shell ─────────────────────────────────────────────────────
+const AppBadge = () => (
+  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300" title="Synced from the app — kept up to date automatically">App</span>
+)
+const PendingBadge = () => (
+  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" title="You've asked an admin to change this row — waiting for their decision.">Pending</span>
+)
 
-type Col<T> = { label: string; render: (row: T) => React.ReactNode; emphasize?: boolean }
-
-function DataTable<T>({ columns, rows, getKey, minWidth = 900 }: { columns: Col<T>[]; rows: T[]; getKey: (row: T) => string; minWidth?: number }) {
+function Card({ title, subtitle, children }: { title: string; subtitle: ReactNode; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm" style={{ minWidth }}>
-        <thead>
-          <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
-            {columns.map(c => <th key={c.label} className="whitespace-nowrap px-3 py-3 font-semibold first:pl-5">{c.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => (
-            <tr key={getKey(row)} className="border-b border-gray-50 dark:border-gray-800">
-              {columns.map(c => (
-                <td key={c.label} className={`whitespace-nowrap px-3 py-3 text-xs first:pl-5 ${c.emphasize ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
-                  {c.render(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function Card({ title, subtitle, headerAction, highlight = false, children }: {
-  title: string
-  subtitle: string
-  headerAction?: React.ReactNode
-  highlight?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className={`rounded-2xl border shadow-sm ${highlight ? 'border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/20' : 'border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
-      <div className={`flex items-start justify-between gap-3 border-b px-5 py-3 ${highlight ? 'border-amber-200 dark:border-amber-800' : 'border-gray-100 dark:border-gray-800'}`}>
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
-          <p className="text-xs text-gray-400 dark:text-gray-400">{subtitle}</p>
-        </div>
-        {headerAction}
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+        <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{title}</h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
       </div>
       {children}
-    </div>
-  )
-}
-
-// "Sort by" picker plus a reverse-order button, shared by the Pipeline and
-// Invoices tabs. The first option ("Sheet order") has no direction.
-function SortBar<K extends string>({ id, options, sortKey, sortDir, defaultDirection, onChange, hint }: {
-  id: string
-  options: { key: K; label: string; asc: string; desc: string }[]
-  sortKey: K
-  sortDir: SortDirection
-  defaultDirection: Record<K, SortDirection>
-  onChange: (key: K, dir: SortDirection) => void
-  hint?: string
-}) {
-  const option = options.find(o => o.key === sortKey)!
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <label htmlFor={id} className="font-medium text-gray-500 dark:text-gray-400">Sort by</label>
-      <select
-        id={id}
-        value={sortKey}
-        onChange={e => { const k = e.target.value as K; onChange(k, defaultDirection[k]) }}
-        className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-      >
-        {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-      </select>
-      {sortKey !== options[0].key && (
-        <button
-          type="button"
-          onClick={() => onChange(sortKey, sortDir === 'asc' ? 'desc' : 'asc')}
-          title="Reverse the order"
-          className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-        >
-          {sortDir === 'asc' ? '↑' : '↓'} {sortDir === 'asc' ? option.asc : option.desc}
-        </button>
-      )}
-      {hint && <span className="text-xs text-gray-400">{hint}</span>}
     </div>
   )
 }
@@ -142,30 +80,19 @@ function SortBar<K extends string>({ id, options, sortKey, sortDir, defaultDirec
 // app's leads / invoices, and the summary's total row, aren't editable.
 type RowEditor = {
   isAdmin: boolean
-  defs: TrackerFieldDefs | null // editable fields, from the server; no edit buttons until loaded
+  defs: TrackerFieldDefs | null // editable fields, from the server; no edit actions until loaded
   pendingRowIds: Set<string> // rows this employee already has a request waiting on
   open: (table: TrackerTable, row: { id: string } & object) => void
   reloadToken: number // bumps after an edit, a request, or a notification, so the tab refetches
 }
 
-function editColumn<T extends { id: string }>(editor: RowEditor, table: TrackerTable): Col<T> {
-  return {
-    label: '',
-    render: r => !editor.defs ? null : editor.pendingRowIds.has(r.id) ? (
-      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" title="You've asked an admin to change this row — waiting for their decision.">
-        Pending
-      </span>
-    ) : (
-      <button
-        type="button"
-        onClick={() => editor.open(table, r)}
-        className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:border-orange-300 hover:text-orange-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-700 dark:hover:text-orange-400"
-      >
-        {editor.isAdmin ? 'Edit' : 'Request change'}
-      </button>
-    ),
-  }
+// The "Edit row" / "Request a change" item for a row's "⋯" menu.
+function editAction(editor: RowEditor, table: TrackerTable, row: { id: string } & object): RowAction | null {
+  if (!editor.defs) return null
+  if (editor.pendingRowIds.has(row.id)) return { label: 'Change requested — awaiting approval', disabled: true, onSelect: () => {} }
+  return { label: editor.isAdmin ? 'Edit row' : 'Request a change', onSelect: () => editor.open(table, row) }
 }
+const canEdit = (editor: RowEditor, row: { id: string }) => !!editor.defs && !editor.pendingRowIds.has(row.id)
 
 // ─── Pipeline tab ────────────────────────────────────────────────────────────
 
@@ -173,6 +100,7 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
 
   function load() {
     setLoading(true)
@@ -183,75 +111,127 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
   }
   useEffect(load, [editor.reloadToken])
 
-  const [sortKey, setSortKey] = useState<PipelineSortKey>('sheet')
-  const [sortDir, setSortDir] = useState<SortDirection>('asc')
+  const view = useTableView<PipelineTrackerItem>({
+    id: 'tracker-pipeline',
+    rows: items,
+    search: r => [r.client, r.location, r.vertical, r.service, r.description, r.status, r.owner, r.bmContact, r.lastAction, r.notes].join(' '),
+    views: [
+      { id: 'all', label: 'All' },
+      { id: 'app', label: 'From the app', match: r => !!r.sourceLeadId },
+      { id: 'sheet', label: 'From the sheet', match: r => !r.sourceLeadId },
+    ],
+    filters: [
+      { id: 'stage', label: 'Stage', value: r => groupOfStatus(r.status, leadStatuses), order: STATUS_GROUPS },
+      { id: 'vertical', label: 'Vertical', value: r => text(r.vertical) },
+      { id: 'owner', label: 'Owner', value: r => text(r.owner) },
+      { id: 'priority', label: 'Priority', value: r => text(r.priority), order: ['High', 'Medium', 'Low'] },
+    ],
+    sorts: {
+      client: { value: r => text(r.client) },
+      vertical: { value: r => text(r.vertical) },
+      service: { value: r => text(r.service) },
+      value: { compare: comparePipelineValue, firstDir: 'desc' },
+      status: { compare: (a, b, dir) => comparePipelineStage(a, b, dir, leadStatuses), firstDir: 'desc' },
+      probability: { value: r => r.probabilityPct, firstDir: 'desc' },
+      close: { value: expectedCloseOrder },
+      owner: { value: r => text(r.owner) },
+      priority: { value: priorityOrder },
+    },
+  })
 
-  const appItems = sortPipeline(items.filter(i => i.sourceLeadId), sortKey, sortDir, leadStatuses)
-  const importedItems = sortPipeline(items.filter(i => !i.sourceLeadId), sortKey, sortDir, leadStatuses)
-
-  const columns: Col<PipelineTrackerItem>[] = [
-    { label: 'Vertical', render: r => fmtText(r.vertical) },
-    { label: 'Client', render: r => fmtText(r.client), emphasize: true },
-    { label: 'Location', render: r => fmtText(r.location) },
-    { label: 'Service', render: r => fmtText(r.service) },
-    { label: 'Description', render: r => <span className="block max-w-[220px] truncate" title={r.description ?? undefined}>{fmtText(r.description)}</span> },
-    { label: 'Value', render: r => (r.valueLakhs == null ? dash : formatSheetValue(r.valueLakhs, r.currency)) },
-    { label: 'Currency', render: r => fmtText(r.currency) },
-    { label: 'Status', render: r => <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${pipelineRowStyle(r)}`}>{fmtText(r.status)}</span> },
-    { label: 'Probability', render: r => fmtPct(r.probabilityPct) },
-    { label: 'Expected close', render: r => fmtText(r.expectedClose) },
-    { label: 'Owner', render: r => fmtText(r.owner) },
-    { label: 'BM/Contact', render: r => fmtText(r.bmContact) },
-    { label: 'Follow-up date', render: r => fmtText(r.followUpDate) },
-    { label: 'Last action', render: r => <span className="block max-w-[180px] truncate" title={r.lastAction ?? undefined}>{fmtText(r.lastAction)}</span> },
-    { label: 'Priority', render: r => fmtText(r.priority) },
-    { label: 'Notes', render: r => <span className="block max-w-[220px] truncate" title={r.notes ?? undefined}>{fmtText(r.notes)}</span> },
+  const columns: Column<PipelineTrackerItem>[] = [
+    {
+      id: 'client', header: 'Client', sticky: true, className: 'min-w-[200px] max-w-[260px]',
+      cell: r => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100" title={r.client ?? undefined}>{r.client?.trim() || 'Unnamed client'}</p>
+            {r.sourceLeadId && <AppBadge />}
+            {editor.pendingRowIds.has(r.id) && <PendingBadge />}
+          </div>
+          {r.location && <p className="truncate text-xs text-gray-500 dark:text-gray-400">{r.location}</p>}
+        </div>
+      ),
+    },
+    { id: 'vertical', header: 'Vertical', cell: r => clip(r.vertical, 'max-w-[160px]') },
+    { id: 'service', header: 'Service', cell: r => clip(r.service, 'max-w-[150px]') },
+    { id: 'description', header: 'Description', cell: r => clip(r.description) },
+    { id: 'value', header: 'Value', align: 'right', cell: r => (r.valueLakhs == null ? dash : <span className="font-medium text-gray-800 dark:text-gray-100">{formatSheetValue(r.valueLakhs, r.currency)}</span>) },
+    { id: 'status', header: 'Status', cell: r => (r.status ? <span className="block max-w-[220px]" title={r.status}><StatusBadge label={r.status} tone={pipelineRowStyle(r)} /></span> : dash) },
+    { id: 'probability', header: 'Probability', align: 'right', cell: r => (r.probabilityPct == null ? dash : `${Math.round(r.probabilityPct)}%`) },
+    { id: 'close', header: 'Expected close', cell: r => fmtText(r.expectedClose) },
+    { id: 'owner', header: 'Owner', cell: r => (text(r.owner) ? <PersonChip name={text(r.owner)} /> : dash) },
+    { id: 'bm', header: 'BM/Contact', cell: r => fmtText(r.bmContact) },
+    { id: 'followUp', header: 'Follow-up', cell: r => fmtText(r.followUpDate) },
+    { id: 'lastAction', header: 'Last action', cell: r => clip(r.lastAction, 'max-w-[180px]') },
+    { id: 'priority', header: 'Priority', cell: r => fmtText(r.priority) },
+    { id: 'notes', header: 'Notes', cell: r => clip(r.notes) },
   ]
 
+  const openRow = (r: PipelineTrackerItem) => (r.sourceLeadId ? setOpenLeadId(r.sourceLeadId) : editor.open('pipeline', r))
+
   return (
-    <div className="flex flex-col gap-6">
+    <Card
+      title="Pipeline"
+      subtitle={<>Imported from the Pipeline Tracker sheet, plus every lead raised in the app (marked <AppBadge />, kept up to date) · {editor.isAdmin ? 'click a sheet row to edit it' : 'click a sheet row to request a change'}</>}
+    >
+      <TableToolbar view={view} noun="rows" placeholder="Search client, service, owner…">
+        <RefreshButton onClick={load} busy={loading} />
+      </TableToolbar>
       {error && <ErrorBanner message={error} onRetry={load} />}
-
-      {!error && items.length > 0 && (
-        <SortBar
-          id="pipeline-sort"
-          options={PIPELINE_SORT_OPTIONS}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          defaultDirection={DEFAULT_DIRECTION}
-          onChange={(k, d) => { setSortKey(k); setSortDir(d) }}
-          hint={sortKey === 'stage' ? 'On hold, lost and blank statuses are always listed last.'
-            : sortKey === 'value' ? 'Non-INR values are listed after INR, blank values last.' : undefined}
-        />
+      {loading && items.length === 0 ? (
+        <SkeletonRows />
+      ) : items.length === 0 && !error ? (
+        <EmptyState icon="chart" title="No pipeline data yet" message="Imported sheet rows and leads raised in the app will appear here." />
+      ) : (
+        <>
+          <DataGrid
+            columns={columns}
+            rows={view.rows}
+            getKey={r => r.id}
+            view={view}
+            onRowClick={openRow}
+            isRowClickable={r => !!r.sourceLeadId || canEdit(editor, r)}
+            rowLabel={r => (r.sourceLeadId ? `Open the lead for ${r.client ?? 'this row'}` : `${editor.isAdmin ? 'Edit' : 'Request a change to'} ${r.client ?? 'this row'}`)}
+            actions={r => (
+              <RowMenu
+                label={r.client ?? 'row'}
+                actions={r.sourceLeadId ? [{ label: 'Open lead', onSelect: () => setOpenLeadId(r.sourceLeadId!) }] : [editAction(editor, 'pipeline', r)]}
+              />
+            )}
+            empty={<NoMatches noun="rows" onClear={view.clearFilters} />}
+            minWidth={2050}
+          />
+          <TableFooter view={view} />
+        </>
       )}
-
-      {!error && appItems.length > 0 && (
-        <Card
-          highlight
-          title={`Leads from the app (${appItems.length})`}
-          subtitle="Added automatically for every lead raised in this app and kept up to date, showing the stage it has reached and that stage's status (e.g. Proposal: Negotiation)."
-        >
-          <DataTable columns={columns} rows={appItems} getKey={r => r.id} minWidth={1700} />
-        </Card>
-      )}
-
-      <Card
-        title={`Pipeline ${importedItems.length > 0 ? `(${importedItems.length})` : ''}`}
-        subtitle={`Imported from the Pipeline Tracker sheet · ${editor.isAdmin ? 'admins can edit any row' : 'request a change and an admin approves it'}`}
-      >
-        {loading ? (
-          <SkeletonRows />
-        ) : importedItems.length === 0 && !error ? (
-          <EmptyState icon="chart" title="No pipeline data yet" message="Imported sheet rows and leads raised in the app will appear here." />
-        ) : (
-          <DataTable columns={[editColumn<PipelineTrackerItem>(editor, 'pipeline'), ...columns]} rows={importedItems} getKey={r => r.id} minWidth={1800} />
-        )}
-      </Card>
-    </div>
+      {openLeadId && <LeadDetailById leadId={openLeadId} onClose={() => setOpenLeadId(null)} />}
+    </Card>
   )
 }
 
 // ─── Invoices tab ────────────────────────────────────────────────────────────
+
+const SUMMARY_MONTHS: { key: keyof InvoiceSectorSummary; label: string; total?: boolean }[] = [
+  { key: 'apr', label: 'Apr' }, { key: 'may', label: 'May' }, { key: 'jun', label: 'Jun' }, { key: 'q1Total', label: 'Q1', total: true },
+  { key: 'jul', label: 'Jul' }, { key: 'aug', label: 'Aug' }, { key: 'sep', label: 'Sep' }, { key: 'q2Total', label: 'Q2', total: true },
+  { key: 'oct', label: 'Oct' }, { key: 'nov', label: 'Nov' }, { key: 'dec', label: 'Dec' }, { key: 'q3Total', label: 'Q3', total: true },
+  { key: 'jan', label: 'Jan' }, { key: 'feb', label: 'Feb' }, { key: 'mar', label: 'Mar' }, { key: 'q4Total', label: 'Q4', total: true },
+]
+
+// Achievement as a small bar plus the percentage (stored as a fraction).
+function Achievement({ value }: { value: number | null }) {
+  if (value == null) return dash
+  const pct = Math.round(value * 100)
+  return (
+    <span className="inline-flex items-center justify-end gap-2">
+      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800" aria-hidden="true">
+        <span className={`block h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-orange-400' : 'bg-rose-400'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+      </span>
+      <span className="w-9 text-right">{pct}%</span>
+    </span>
+  )
+}
 
 function InvoicesTab({ editor }: { editor: RowEditor }) {
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
@@ -268,110 +248,150 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
   }
   useEffect(load, [editor.reloadToken])
 
-  const [sortKey, setSortKey] = useState<InvoiceSortKey>('sheet')
-  const [sortDir, setSortDir] = useState<SortDirection>('asc')
-
-  const appEntries = sortInvoices(register.filter(r => r.sourceInvoiceId), sortKey, sortDir)
-  const importedRegister = sortInvoices(register.filter(r => !r.sourceInvoiceId), sortKey, sortDir)
-
-  const summaryEdit = editColumn<InvoiceSectorSummary>(editor, 'sectorSummary')
-  const summaryColumns: Col<InvoiceSectorSummary>[] = [
-    // The total row is worked out from the sector rows, so it has no edit button.
-    { ...summaryEdit, render: r => (isSummaryTotal(r) ? null : summaryEdit.render(r)) },
-    { label: 'Sector', render: r => fmtText(r.sector), emphasize: true },
-    { label: 'BM / Owner', render: r => fmtText(r.bmOwner) },
-    { label: 'Apr', render: r => fmtLakhs(r.apr) },
-    { label: 'May', render: r => fmtLakhs(r.may) },
-    { label: 'Jun', render: r => fmtLakhs(r.jun) },
-    { label: 'Q1 total', render: r => fmtLakhs(r.q1Total), emphasize: true },
-    { label: 'Jul', render: r => fmtLakhs(r.jul) },
-    { label: 'Aug', render: r => fmtLakhs(r.aug) },
-    { label: 'Sep', render: r => fmtLakhs(r.sep) },
-    { label: 'Q2 total', render: r => fmtLakhs(r.q2Total), emphasize: true },
-    { label: 'Oct', render: r => fmtLakhs(r.oct) },
-    { label: 'Nov', render: r => fmtLakhs(r.nov) },
-    { label: 'Dec', render: r => fmtLakhs(r.dec) },
-    { label: 'Q3 total', render: r => fmtLakhs(r.q3Total), emphasize: true },
-    { label: 'Jan', render: r => fmtLakhs(r.jan) },
-    { label: 'Feb', render: r => fmtLakhs(r.feb) },
-    { label: 'Mar', render: r => fmtLakhs(r.mar) },
-    { label: 'Q4 total', render: r => fmtLakhs(r.q4Total), emphasize: true },
-    { label: 'FY total', render: r => fmtLakhs(r.fyTotal), emphasize: true },
-    { label: 'FY target', render: r => fmtLakhs(r.fyTarget) },
-    { label: 'Achievement', render: r => fmtPct(r.achievementPct, true) },
-    { label: 'Remarks', render: r => fmtText(r.remarks) },
+  const summaryColumns: Column<InvoiceSectorSummary>[] = [
+    {
+      id: 'sector', header: 'Sector', sticky: true, className: 'min-w-[170px]',
+      cell: r => (
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{fmtText(r.sector)}</span>
+          {editor.pendingRowIds.has(r.id) && <PendingBadge />}
+        </div>
+      ),
+    },
+    { id: 'bm', header: 'BM / Owner', cell: r => (isSummaryTotal(r) ? null : text(r.bmOwner) ? <PersonChip name={text(r.bmOwner)} /> : dash) },
+    ...SUMMARY_MONTHS.map(m => ({
+      id: m.key, header: m.total ? `${m.label} total` : m.label, align: 'right' as const,
+      className: m.total ? 'bg-gray-50/70 font-semibold text-gray-800 dark:bg-gray-800/30 dark:text-gray-100' : '',
+      cell: (r: InvoiceSectorSummary) => fmtLakhs(r[m.key] as number | null),
+    })),
+    { id: 'fyTotal', header: 'FY total', align: 'right', cell: r => <span className="font-semibold text-gray-900 dark:text-gray-100">{fmtLakhs(r.fyTotal)}</span> },
+    { id: 'fyTarget', header: 'FY target', align: 'right', cell: r => fmtLakhs(r.fyTarget) },
+    { id: 'achievement', header: 'Achievement', align: 'right', cell: r => <Achievement value={r.achievementPct} /> },
+    { id: 'remarks', header: 'Remarks', cell: r => clip(r.remarks) },
   ]
 
-  const registerColumns: Col<InvoiceRegisterItem>[] = [
-    { label: 'Sector', render: r => fmtText(r.sector) },
-    { label: 'Client', render: r => fmtText(r.client), emphasize: true },
-    { label: 'Location', render: r => fmtText(r.location) },
-    { label: 'PO / WO number', render: r => fmtText(r.poNumber) },
-    { label: 'Order value', render: r => fmtLakhs(r.orderValueLakhs) },
-    { label: 'Service type', render: r => fmtText(r.serviceType) },
-    { label: 'BM owner', render: r => fmtText(r.bmOwner) },
-    { label: 'Work completion', render: r => fmtText(r.workCompletionDate) },
-    { label: 'Invoice raised?', render: r => fmtText(r.invoiceRaised) },
-    { label: 'Invoice number', render: r => fmtText(r.invoiceNumber) },
-    { label: 'Invoice date', render: r => fmtDate(r.invoiceDate) },
-    { label: 'Invoice amount', render: r => fmtLakhs(r.invoiceAmountLakhs) },
-    { label: 'TDS/deduction', render: r => fmtLakhs(r.tdsDeduction) },
-    { label: 'Invoice month', render: r => fmtText(r.invoiceMonth) },
-    { label: 'Due date', render: r => fmtText(r.dueDate) },
-    { label: 'Payment received?', render: r => fmtText(r.paymentReceived) },
-    { label: 'Current manager', render: r => fmtText(r.currentManager) },
-    { label: 'Payment date', render: r => fmtDate(r.paymentDate) },
-    { label: 'Amount collected', render: r => fmtLakhs(r.amountCollectedLakhs) },
-    { label: 'Balance outstanding', render: r => fmtLakhs(r.balanceOutstandingLakhs) },
-    { label: 'Days to collect', render: r => (r.daysToCollect == null ? dash : r.daysToCollect) },
-    { label: 'DSO status', render: r => fmtText(r.dsoStatus) },
-    { label: 'Remarks / action', render: r => <span className="block max-w-[180px] truncate" title={r.remarks ?? undefined}>{fmtText(r.remarks)}</span> },
-    { label: 'Next action date', render: r => fmtText(r.nextActionDate) },
+  const isApp = (r: InvoiceRegisterItem) => !!r.sourceInvoiceId
+  const view = useTableView<InvoiceRegisterItem>({
+    id: 'tracker-register',
+    rows: register,
+    search: r => [r.client, r.sector, r.location, r.poNumber, r.invoiceNumber, r.serviceType, r.bmOwner, r.currentManager, r.dsoStatus, r.remarks].join(' '),
+    views: [
+      { id: 'all', label: 'All' },
+      { id: 'app', label: 'From the app', match: isApp },
+      { id: 'sheet', label: 'From the sheet', match: r => !isApp(r) },
+      { id: 'outstanding', label: 'Outstanding', match: r => (r.balanceOutstandingLakhs ?? 0) > 0.009 },
+      { id: 'overdue', label: 'Overdue', match: r => dsoOrder(r) === 0 },
+    ],
+    filters: [
+      { id: 'sector', label: 'Sector', value: r => text(r.sector) },
+      { id: 'dso', label: 'Collection', value: r => (r.dsoStatus ? plainLabel(r.dsoStatus.trim()) : null), order: ['Overdue', 'Pending', 'Not Invoiced', 'Collected'] },
+      { id: 'paid', label: 'Payment received', value: r => text(r.paymentReceived), order: ['Yes', 'No'] },
+      { id: 'bm', label: 'BM owner', value: r => text(r.bmOwner) },
+      { id: 'month', label: 'Invoice month', value: r => text(r.invoiceMonth), order: FY_MONTHS.map(m => m.label) },
+    ],
+    sorts: {
+      client: { value: r => text(r.client) },
+      invoice: { value: r => text(r.invoiceNumber) },
+      date: { value: r => (r.invoiceDate ? new Date(r.invoiceDate).getTime() : null), firstDir: 'desc' },
+      amount: { value: r => r.invoiceAmountLakhs, firstDir: 'desc' },
+      collected: { value: r => r.amountCollectedLakhs, firstDir: 'desc' },
+      outstanding: { value: r => r.balanceOutstandingLakhs, firstDir: 'desc' },
+      dso: { value: dsoOrder },
+      days: { value: r => r.daysToCollect, firstDir: 'desc' },
+      orderValue: { value: r => r.orderValueLakhs, firstDir: 'desc' },
+      bm: { value: r => text(r.bmOwner) },
+    },
+  })
+
+  const registerColumns: Column<InvoiceRegisterItem>[] = [
+    {
+      id: 'client', header: 'Client', sticky: true, className: 'min-w-[210px] max-w-[260px]',
+      cell: r => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100" title={r.client ?? undefined}>{r.client?.trim() || 'Unnamed client'}</p>
+            {isApp(r) && <AppBadge />}
+            {editor.pendingRowIds.has(r.id) && <PendingBadge />}
+          </div>
+          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[r.sector, r.location].map(v => v?.trim()).filter(Boolean).join(' · ') || '—'}</p>
+        </div>
+      ),
+    },
+    { id: 'invoice', header: 'Invoice no.', cell: r => <span className="whitespace-nowrap">{fmtText(r.invoiceNumber)}</span> },
+    { id: 'date', header: 'Invoice date', cell: r => fmtDate(r.invoiceDate) },
+    { id: 'amount', header: 'Amount', align: 'right', cell: r => <span className="font-medium text-gray-800 dark:text-gray-100">{fmtLakhs(r.invoiceAmountLakhs)}</span> },
+    { id: 'collected', header: 'Collected', align: 'right', cell: r => fmtLakhs(r.amountCollectedLakhs) },
+    {
+      id: 'outstanding', header: 'Outstanding', align: 'right',
+      cell: r => ((r.balanceOutstandingLakhs ?? 0) > 0.009 ? <span className="font-semibold text-rose-600 dark:text-rose-400">{formatLakhs(r.balanceOutstandingLakhs!)}</span> : fmtLakhs(r.balanceOutstandingLakhs)),
+    },
+    { id: 'dso', header: 'Collection', cell: r => (r.dsoStatus ? <StatusBadge label={plainLabel(r.dsoStatus.trim())} tone={dsoTone(r)} /> : dash) },
+    { id: 'days', header: 'Days to collect', align: 'right', cell: r => (r.daysToCollect == null ? dash : r.daysToCollect) },
+    { id: 'due', header: 'Due', cell: r => fmtText(r.dueDate) },
+    { id: 'paid', header: 'Paid?', cell: r => fmtText(r.paymentReceived) },
+    { id: 'paymentDate', header: 'Payment date', cell: r => fmtDate(r.paymentDate) },
+    { id: 'po', header: 'PO / WO number', cell: r => clip(r.poNumber, 'max-w-[170px]') },
+    { id: 'orderValue', header: 'Order value', align: 'right', cell: r => fmtLakhs(r.orderValueLakhs) },
+    { id: 'service', header: 'Service type', cell: r => clip(r.serviceType, 'max-w-[150px]') },
+    { id: 'bm', header: 'BM owner', cell: r => (text(r.bmOwner) ? <PersonChip name={text(r.bmOwner)} /> : dash) },
+    { id: 'manager', header: 'Current manager', cell: r => fmtText(r.currentManager) },
+    { id: 'completion', header: 'Work completion', cell: r => fmtText(r.workCompletionDate) },
+    { id: 'raised', header: 'Raised?', cell: r => fmtText(r.invoiceRaised) },
+    { id: 'month', header: 'Month', cell: r => fmtText(r.invoiceMonth) },
+    { id: 'tds', header: 'TDS', align: 'right', cell: r => fmtLakhs(r.tdsDeduction) },
+    { id: 'remarks', header: 'Remarks / action', cell: r => clip(r.remarks, 'max-w-[200px]') },
+    { id: 'nextAction', header: 'Next action', cell: r => fmtText(r.nextActionDate) },
   ]
 
-  if (loading) return <SkeletonRows />
+  if (loading && summary.length === 0 && register.length === 0) return <SkeletonRows />
   if (error) return <ErrorBanner message={error} onRetry={load} className="" />
 
   return (
     <div className="flex flex-col gap-6">
-      <Card title="Monthly summary by sector" subtitle={`₹ Lakhs, against ${fyLabel(trackerFyStart(register))} targets · quarter, FY totals and the total row recalculate when an amount changes`}>
+      <Card title="Monthly summary by sector" subtitle={`₹ Lakhs, against ${fyLabel(trackerFyStart(register))} targets · quarter and FY totals and the total row recalculate when an amount changes`}>
         {summary.length === 0 ? (
           <EmptyState icon="chart" title="No sector summary yet" message="The FY sector summary from the tracking sheet will appear here once imported." />
         ) : (
-          <DataTable columns={summaryColumns} rows={summary} getKey={r => r.id} minWidth={2100} />
+          <DataGrid
+            columns={summaryColumns}
+            rows={summary}
+            getKey={r => r.id}
+            onRowClick={r => editor.open('sectorSummary', r)}
+            isRowClickable={r => !isSummaryTotal(r) && canEdit(editor, r)}
+            rowLabel={r => `${editor.isAdmin ? 'Edit' : 'Request a change to'} ${r.sector ?? 'this sector'}`}
+            rowClassName={r => (isSummaryTotal(r) ? 'bg-gray-50 font-semibold dark:bg-gray-800/40 [&>td]:border-t [&>td]:border-gray-200 dark:[&>td]:border-gray-700' : '')}
+            actions={r => (isSummaryTotal(r) ? null : <RowMenu label={r.sector ?? 'sector'} actions={[editAction(editor, 'sectorSummary', r)]} />)}
+            minWidth={1900}
+            maxHeight="none"
+          />
         )}
       </Card>
 
-      {register.length > 0 && (
-        <SortBar
-          id="invoice-sort"
-          options={INVOICE_SORT_OPTIONS}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          defaultDirection={DEFAULT_INVOICE_DIRECTION}
-          onChange={(k, d) => { setSortKey(k); setSortDir(d) }}
-          hint={sortKey === 'sheet' ? 'Sorts the invoice lists below.' : 'Blank values are always listed last.'}
-        />
-      )}
-
-      {appEntries.length > 0 && (
-        <Card
-          highlight
-          title={`Invoices from the app (${appEntries.length})`}
-          subtitle="Added automatically when an invoice is generated in this app, and kept up to date as it is paid. Each one is also counted in the sector summary above, by invoice month."
-        >
-          <DataTable columns={registerColumns} rows={appEntries} getKey={r => r.id} minWidth={2400} />
-        </Card>
-      )}
-
       <Card
-        title={`Invoice register ${importedRegister.length > 0 ? `(${importedRegister.length})` : ''}`}
-        subtitle={`Order-wise invoice and collection detail · ${editor.isAdmin ? 'admins can edit any row' : 'request a change and an admin approves it'}`}
+        title="Invoice register"
+        subtitle={<>Order-wise invoice and collection detail from the sheet, plus every invoice generated in the app (<AppBadge />, kept up to date as it's paid) · {editor.isAdmin ? 'click a sheet row to edit it' : 'click a sheet row to request a change'}</>}
       >
-        {importedRegister.length === 0 ? (
-          <EmptyState icon="receipt" title="No invoices in the register yet" message="Imported sheet rows and invoices generated in the app will appear here." />
+        <TableToolbar view={view} noun="invoices" placeholder="Search client, invoice, PO, sector…">
+          <RefreshButton onClick={load} busy={loading} />
+        </TableToolbar>
+        {register.length === 0 ? (
+          <EmptyState icon="receipt" title="No invoices in the register yet" message="Rows imported from the tracking sheet, and invoices generated in the app, appear here." />
         ) : (
-          <DataTable columns={[editColumn<InvoiceRegisterItem>(editor, 'invoiceRegister'), ...registerColumns]} rows={importedRegister} getKey={r => r.id} minWidth={2500} />
+          <>
+            <DataGrid
+              columns={registerColumns}
+              rows={view.rows}
+              getKey={r => r.id}
+              view={view}
+              onRowClick={r => editor.open('invoiceRegister', r)}
+              isRowClickable={r => !isApp(r) && canEdit(editor, r)}
+              rowLabel={r => `${editor.isAdmin ? 'Edit' : 'Request a change to'} ${r.client ?? 'this row'}`}
+              actions={r => (isApp(r) ? null : <RowMenu label={r.client ?? 'row'} actions={[editAction(editor, 'invoiceRegister', r)]} />)}
+              empty={<NoMatches noun="invoices" onClear={view.clearFilters} />}
+              minWidth={2600}
+            />
+            <TableFooter view={view} />
+          </>
         )}
       </Card>
     </div>
@@ -430,10 +450,12 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
         <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline and invoice data imported from the tracking sheet, kept up to date with the app.</p>
       </div>
 
-      <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
+      <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Tracker sections">
         {(Object.keys(TAB_LABELS) as (keyof typeof TAB_LABELS)[]).map(t => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
             onClick={() => setTab(t)}
             className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
               tab === t
@@ -446,7 +468,7 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
         ))}
       </div>
 
-      {/* The edit / request buttons need the field list from the server — say
+      {/* The edit / request actions need the field list from the server — say
           so instead of silently showing none. */}
       {fieldsError && (
         <div role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">

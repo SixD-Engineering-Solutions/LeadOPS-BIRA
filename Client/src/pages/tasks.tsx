@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
 import { api, TASK_SYNC_EVENT } from '../lib/api'
 import type { Task, EmployeeUser } from '../lib/api'
-import { taskStatusStyle as statusStyle, fmtTaskDeadline as fmtDeadline, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
+import { taskStatusStyle as statusStyle, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { EmptyState } from '../components/EmptyState'
 import { focusCreateForm } from '../lib/focusCreateForm'
 import { SkeletonRows } from '../components/Skeleton'
+import { useTableView } from '../lib/useTableView'
+import { useConfirm } from '../lib/useConfirm'
+import { DataGrid } from '../components/table/DataGrid'
+import type { Column } from '../components/table/DataGrid'
+import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../components/table/TableToolbar'
+import { MenuSelect, PersonChip } from '../components/table/MenuSelect'
+import { RowMenu } from '../components/table/RowMenu'
+import { DueDate, RelTime } from '../components/table/RelTime'
 
 const STATUSES = ['Pending', 'In Progress', 'Done'] as const
-
-const fmt = (ts: string) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+const person = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { title: '', description: '', deadline: '', assignedToUserId: '' }
@@ -99,8 +106,11 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
-  async function removeTask(id: string) {
-    if (!confirm('Delete this task? This cannot be undone.')) return
+  const [confirmDialog, confirm] = useConfirm()
+  async function removeTask(task: Task) {
+    const ok = await confirm({ title: 'Delete this task?', message: <>“{task.title}” is removed for everyone. This can’t be undone.</>, confirmLabel: 'Delete task', danger: true })
+    if (!ok) return
+    const id = task.id
     setSavingId(id)
     try {
       await api(`/tasks/${id}`, { method: 'DELETE', auth: true })
@@ -112,8 +122,51 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
+  const view = useTableView<Task>({
+    id: 'tasks',
+    rows: tasks,
+    search: t => [t.title, t.description, person(t.assignedToUser), t.status].join(' '),
+    views: [
+      { id: 'open', label: 'Open', match: t => t.status !== 'Done' },
+      { id: 'overdue', label: 'Overdue', match: isOverdue },
+      { id: 'done', label: 'Done', match: t => t.status === 'Done' },
+      { id: 'all', label: 'All' },
+    ],
+    filters: [
+      { id: 'status', label: 'Status', value: t => t.status, order: STATUSES },
+      ...(isAdmin ? [{ id: 'assignee', label: 'Assigned to', value: (t: Task) => person(t.assignedToUser) }] : []),
+    ],
+    sorts: {
+      task: { value: t => t.title },
+      assignee: { value: t => person(t.assignedToUser) },
+      deadline: { value: t => new Date(t.deadline).getTime() },
+      status: { value: t => STATUSES.indexOf(t.status as (typeof STATUSES)[number]) },
+      updated: { value: t => new Date(t.updatedAt).getTime(), firstDir: 'desc' },
+    },
+    defaultSort: { id: 'deadline', dir: 'asc' },
+  })
+
+  const columns: Column<Task>[] = [
+    {
+      id: 'task', header: 'Task', sticky: true, className: 'min-w-[260px] max-w-[420px]',
+      cell: t => (
+        <div className="min-w-0">
+          <p className={`truncate text-sm font-semibold ${t.status === 'Done' ? 'text-gray-400 line-through decoration-gray-300 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>{t.title}</p>
+          {t.description && <p className="truncate text-xs text-gray-500 dark:text-gray-400" title={t.description}>{t.description}</p>}
+        </div>
+      ),
+    },
+    ...(isAdmin ? [{ id: 'assignee', header: 'Assigned to', cell: (t: Task) => <PersonChip name={person(t.assignedToUser)} empty="—" /> }] : []),
+    { id: 'deadline', header: 'Deadline', cell: t => <DueDate ts={t.deadline} done={t.status === 'Done'} /> },
+    {
+      id: 'status', header: 'Status',
+      cell: t => <MenuSelect variant="pill" label={`Status of ${t.title}`} value={t.status} options={STATUSES.map(s => ({ value: s, label: s }))} toneOf={statusStyle} busy={savingId === t.id} onChange={v => changeStatus(t.id, v)} />,
+    },
+    { id: 'updated', header: 'Updated', align: 'right', cell: t => <span className="text-gray-500 dark:text-gray-400"><RelTime ts={t.updatedAt} /></span> },
+  ]
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-[1400px] px-6 py-6">
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Tasks</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -156,71 +209,35 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
       )}
 
       {/* list */}
-      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{isAdmin ? 'All Tasks' : 'My Tasks'} {tasks.length > 0 && <span className="text-gray-400 dark:text-gray-400">({tasks.length})</span>}</h3>
-          <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
-        </div>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <TableToolbar view={view} noun="tasks" placeholder="Search tasks…">
+          <RefreshButton onClick={load} busy={loading} />
+        </TableToolbar>
 
         {error && <ErrorBanner message={error} onRetry={load} />}
 
-        {loading ? (
+        {loading && tasks.length === 0 ? (
           <SkeletonRows />
         ) : tasks.length === 0 && !error ? (
           isAdmin
             ? <EmptyState icon="check" title="No tasks yet" message="Assign a to-do with a deadline to anyone on the team." action={{ label: 'Assign task', onClick: focusCreateForm }} />
             : <EmptyState icon="check" title="Nothing assigned to you 🎉" message="Tasks your admin assigns you will show up here." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
-                  <th className="px-5 py-3 font-semibold">Task</th>
-                  {isAdmin && <th className="px-3 py-3 font-semibold">Assigned to</th>}
-                  <th className="px-3 py-3 font-semibold">Deadline</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                  <th className="px-3 py-3 font-semibold">Updated</th>
-                  {isAdmin && <th className="px-3 py-3 font-semibold"></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map(task => (
-                  <tr key={task.id} className="border-b border-gray-50 dark:border-gray-800">
-                    <td className="px-5 py-3">
-                      <p className="font-semibold text-gray-900 dark:text-gray-100">{task.title}</p>
-                      {task.description && <p className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400">{task.description}</p>}
-                    </td>
-                    {isAdmin && (
-                      <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">
-                        {task.assignedToUser ? (task.assignedToUser.userName || task.assignedToUser.email) : '—'}
-                      </td>
-                    )}
-                    <td className={`px-3 py-3 text-xs font-medium ${isOverdue(task) ? 'text-red-500 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                      {fmtDeadline(task.deadline)}{isOverdue(task) ? ' · overdue' : ''}
-                    </td>
-                    <td className="px-3 py-3">
-                      <select
-                        value={task.status}
-                        disabled={savingId === task.id}
-                        onChange={e => changeStatus(task.id, e.target.value)}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold outline-none focus:ring-2 focus:ring-orange-300 disabled:opacity-60 ${statusStyle(task.status)}`}
-                      >
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-500 dark:text-gray-400">{fmt(task.updatedAt)}</td>
-                    {isAdmin && (
-                      <td className="px-3 py-3 text-right">
-                        <button onClick={() => removeTask(task.id)} disabled={savingId === task.id} className="text-xs font-medium text-red-400 hover:text-red-600 disabled:opacity-50 dark:text-red-500 dark:hover:text-red-400">Delete</button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <DataGrid
+              columns={columns}
+              rows={view.rows}
+              getKey={t => t.id}
+              view={view}
+              actions={isAdmin ? t => <RowMenu label={t.title} actions={[{ label: 'Delete task', danger: true, disabled: savingId === t.id, onSelect: () => removeTask(t) }]} /> : undefined}
+              empty={<NoMatches noun="tasks" onClear={view.clearFilters} />}
+              minWidth={760}
+            />
+            <TableFooter view={view} />
+          </>
         )}
       </div>
+      {confirmDialog}
     </div>
   )
 }
