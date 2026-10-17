@@ -13,6 +13,8 @@ import ReportsTab from '../components/tracker/ReportsTab'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
+import { PageHeader } from '../components/PageHeader'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { useTableView } from '../lib/useTableView'
 import { DataGrid } from '../components/table/DataGrid'
 import type { Column } from '../components/table/DataGrid'
@@ -444,11 +446,8 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Tracker</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline and invoice data imported from the tracking sheet, kept up to date with the app.</p>
-      </div>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Tracker" crumb={TAB_LABELS[tab]} subtitle="Pipeline and invoice data imported from the tracking sheet, kept up to date with the app." />
 
       <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Tracker sections">
         {(Object.keys(TAB_LABELS) as (keyof typeof TAB_LABELS)[]).map(t => (

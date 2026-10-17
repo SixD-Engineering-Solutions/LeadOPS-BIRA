@@ -5,7 +5,9 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { INVOICE_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
-import { focusCreateForm } from '../lib/focusCreateForm'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
 import { useTableView } from '../lib/useTableView'
@@ -38,6 +40,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -87,6 +90,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
       })
       setInvoices(prev => [invoice, ...prev])
       setForm({ ...emptyForm })
+      setShowCreate(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create invoice.')
     } finally {
@@ -257,43 +261,10 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
   )
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Invoices</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Bill a project and track payments received against it.</p>
-      </div>
-
-      {/* create form */}
-      <form onSubmit={createInvoice} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">New invoice</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
-            Project *
-            <select value={form.projectId} onChange={e => setForm({ ...form, projectId: e.target.value })} className={inputCls}>
-              <option value="">Select a project…</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{projectLabel(p)}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Amount (₹) *
-            <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Invoice date
-            <input type="date" value={form.invoiceDate} onChange={e => setForm({ ...form, invoiceDate: e.target.value })} className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Due date
-            <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className={inputCls} />
-          </label>
-        </div>
-        {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
-        <div className="mt-3">
-          <button type="submit" disabled={creating} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-            {creating ? 'Saving…' : 'Add Invoice'}
-          </button>
-        </div>
-      </form>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Invoices" subtitle="Bill a project and track payments received against it.">
+        <NewButton label="New invoice" onClick={() => setShowCreate(true)} />
+      </PageHeader>
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -306,7 +277,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
         {loading && invoices.length === 0 ? (
           <SkeletonRows />
         ) : invoices.length === 0 && !error ? (
-          <EmptyState icon="receipt" title="No invoices yet" message="Bill a project, then log payments against it as they come in." action={{ label: 'Create invoice', onClick: focusCreateForm }} />
+          <EmptyState icon="receipt" title="No invoices yet" message="Bill a project, then log payments against it as they come in." action={{ label: 'Create invoice', onClick: () => setShowCreate(true) }} />
         ) : (
           <>
             <DataGrid
@@ -337,6 +308,40 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
 
       {openLeadId && <LeadDetailById leadId={openLeadId} onClose={() => setOpenLeadId(null)} />}
       {confirmDialog}
+      {showCreate && (
+        <CreatePanel
+          title="New invoice"
+          subtitle="Bill one of your projects. Log payments against it from its row as they come in."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createInvoice}
+          saving={creating}
+          submitLabel="Add invoice"
+          savingLabel="Saving…"
+          error={formError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+              Project *
+              <select value={form.projectId} onChange={e => setForm({ ...form, projectId: e.target.value })} className={inputCls}>
+                <option value="">Select a project…</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{projectLabel(p)}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Amount (₹) *
+              <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Invoice date
+              <input type="date" value={form.invoiceDate} onChange={e => setForm({ ...form, invoiceDate: e.target.value })} className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Due date
+              <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className={inputCls} />
+            </label>
+          </div>
+        </CreatePanel>
+      )}
     </div>
   )
 }

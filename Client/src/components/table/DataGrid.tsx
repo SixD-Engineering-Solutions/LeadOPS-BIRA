@@ -113,7 +113,7 @@ export function DataGrid<T>({ columns, rows, getKey, view, onRowClick, isRowClic
                   {columns.map(c => (
                     <td
                       key={c.id}
-                      className={`border-b border-gray-100 px-3 py-3 align-middle text-xs text-gray-600 first:pl-5 dark:border-gray-800 dark:text-gray-300 ${ALIGN[c.align ?? 'left']} ${c.sticky ? `${PIN_LEFT} z-10 ${PINNED} ${PINNED_EDGE} after:right-0` : ''} ${c.className ?? ''}`}
+                      className={`whitespace-nowrap border-b border-gray-100 px-3 py-3 align-middle text-xs text-gray-600 first:pl-5 dark:border-gray-800 dark:text-gray-300 ${ALIGN[c.align ?? 'left']} ${c.sticky ? `${PIN_LEFT} z-10 ${PINNED} ${PINNED_EDGE} after:right-0` : ''} ${c.className ?? ''}`}
                     >
                       {c.cell(row)}
                     </td>

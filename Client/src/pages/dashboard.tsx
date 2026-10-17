@@ -12,7 +12,11 @@ import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { Icon, icons } from '../components/dashboard/icons'
-import { DashboardSidebar, displayName, type NavItem } from '../components/dashboard/DashboardSidebar'
+import { DashboardSidebar, displayName, type NavItem, type NavGroup } from '../components/dashboard/DashboardSidebar'
+import { GlobalSearch } from '../components/GlobalSearch'
+import { PageHeader } from '../components/PageHeader'
+import { PageChromeContext, PAGE_CLASS } from '../lib/pageChrome'
+import { useNavBadges } from '../hooks/useNavBadges'
 import { StatTiles } from '../components/dashboard/StatTiles'
 import { FollowUpsPanel } from '../components/dashboard/FollowUpsPanel'
 import { PendingPaymentsPanel } from '../components/dashboard/PendingPaymentsPanel'
@@ -54,16 +58,17 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   const modules = isAdmin ? [...CORE_MODULES, ...ADMIN_MODULES] : CORE_MODULES
 
-  const navItems: NavItem[] = [
-    { key: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
-    { key: 'lead-gen', label: 'Leads', icon: icons.leadGen },
-    { key: 'proposals', label: 'Proposals', icon: icons.proposals },
-    { key: 'projects', label: 'Projects', icon: icons.projects },
-    { key: 'invoices', label: 'Invoices', icon: icons.invoices },
-    { key: 'tasks', label: 'Tasks', icon: icons.tasks },
-    { key: 'tracker', label: 'Tracker', icon: icons.tracker },
-    ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }, { key: 'team', label: 'Team', icon: icons.team }] : []),
+  // The menu, grouped by what the work is: winning it, delivering it, and
+  // looking back at it. Reports and Team are admin-only.
+  const navGroups: NavGroup[] = [
+    { items: [{ key: 'dashboard', label: 'Dashboard', icon: icons.dashboard }] },
+    { label: 'Sales', items: [{ key: 'lead-gen', label: 'Leads', icon: icons.leadGen }, { key: 'proposals', label: 'Proposals', icon: icons.proposals }] },
+    { label: 'Delivery', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }, { key: 'tasks', label: 'Tasks', icon: icons.tasks }] },
+    { label: 'Insights', items: [{ key: 'tracker', label: 'Tracker', icon: icons.tracker }, ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }] : [])] },
+    ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }] }] : []),
   ]
+  const navItems: NavItem[] = navGroups.flatMap(g => g.items)
+  const badges = useNavBadges(isAdmin)
 
   // Remember the current tab across page refreshes — sessionStorage, scoped to
   // this tab, so a new tab's fresh session doesn't jump to wherever another
@@ -72,15 +77,21 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   useEffect(() => { sessionStorage.setItem('leadops_tab', active) }, [active])
   const onDashboard = active === 'dashboard'
 
-  // Sidebar starts collapsed to icons; hovering over it reveals the full menu.
-  // On narrow screens there's no hover, so the sidebar is off-canvas instead —
-  // toggled open by the header's menu button — and always shows full labels
-  // while open, since there's no icon-only state worth having there.
-  const [hovered, setHovered] = useState(false)
-  const collapsed = !hovered
+  // The sidebar is open on a desktop unless the person folds it to icons
+  // (remembered in this browser). On narrow screens it's off-canvas instead —
+  // opened by the top bar's menu button — and always shows full labels.
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('leadops.sidebar') === 'collapsed' } catch { return false } })
+  const toggleCollapsed = () => setCollapsed(c => {
+    try { localStorage.setItem('leadops.sidebar', c ? 'open' : 'collapsed') } catch { /* not remembered */ }
+    return !c
+  })
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const expanded = !collapsed || mobileNavOpen
   const [demoNote, setDemoNote] = useState<string | null>(null)
+
+  // The top bar's two slots, filled by whichever page is showing (PageHeader).
+  const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null)
+  const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null)
+  const chrome = useMemo(() => ({ titleSlot, actionSlot }), [titleSlot, actionSlot])
 
   const [showAssignments, setShowAssignments] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -129,37 +140,39 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
       <DashboardSidebar
         name={name}
+        email={user.email}
         role={role}
-        isAdmin={isAdmin}
-        navItems={navItems}
-        active={active}
-        expanded={expanded}
+        groups={navGroups}
+        badges={badges}
+        active={active === 'leads' ? 'lead-gen' : active}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
         mobileNavOpen={mobileNavOpen}
-        onHoverChange={setHovered}
         onCloseMobileNav={() => setMobileNavOpen(false)}
         onSelect={openModule}
         onSignOut={onSignOut}
       />
 
       {/* ── Main ────────────────────────────────────────────────────────────── */}
-      <main className="flex-1 scroll-pt-20 overflow-y-auto">
-        {/* top bar */}
-        <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}
-            <button onClick={() => setMobileNavOpen(true)} className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden" aria-label="Open menu">
-              <Icon d={icons.menu} className="h-5 w-5" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-bold">Welcome back, {name.split(' ')[0]}</h1>
-              <p className="truncate text-xs text-gray-500 dark:text-gray-400">Here's what's happening in your workspace today.</p>
-            </div>
+      <main className="min-w-0 flex-1 scroll-pt-20 overflow-y-auto">
+        {/* top bar: where you are (filled by the page) · search · the page's action, theme, notifications */}
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
+          {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}
+          <button onClick={() => setMobileNavOpen(true)} className="shrink-0 rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 md:hidden" aria-label="Open menu">
+            <Icon d={icons.menu} className="h-5 w-5" />
+          </button>
+          <div ref={setTitleSlot} className="flex min-w-0 flex-1 items-center md:flex-none md:basis-1/3" />
+          <div className="flex flex-1 justify-center">
+            <GlobalSearch pages={navItems} onNavigate={openModule} />
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3 md:basis-1/3">
+            <div ref={setActionSlot} className="flex items-center" />
             <ThemeToggle />
             <NotificationBell />
           </div>
         </header>
+
+        <PageChromeContext.Provider value={chrome}>
 
         {active === 'lead-gen' || active === 'leads' ? (
           <Leads isAdmin={isAdmin} currentUserId={user.id} />
@@ -178,7 +191,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'tracker' ? (
           <Tracker isAdmin={isAdmin} currentUserId={user.id} />
         ) : (
-        <div className="mx-auto max-w-6xl px-6 py-6">
+        <div className={PAGE_CLASS}>
+          <PageHeader title={`Welcome back, ${name.split(' ')[0]}`} subtitle="Here’s what’s happening in your workspace today." />
           {demoNote && (
             <div className="mb-5 flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
               <span>{demoNote}</span>
@@ -254,6 +268,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           </div>
         </div>
         )}
+        </PageChromeContext.Provider>
       </main>
 
       {/* ── Lead assignment breakdown modal (admin), or "my leads" list (employee) ── */}

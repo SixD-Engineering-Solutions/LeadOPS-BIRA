@@ -7,7 +7,9 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { PROPOSAL_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
-import { focusCreateForm } from '../lib/focusCreateForm'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
 import { useTableView } from '../lib/useTableView'
@@ -33,6 +35,7 @@ export default function Proposals() {
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
 
@@ -80,6 +83,7 @@ export default function Proposals() {
       })
       setProposals(prev => [proposal, ...prev])
       setForm({ ...emptyForm })
+      setShowCreate(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create proposal.')
     } finally {
@@ -194,48 +198,10 @@ export default function Proposals() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Proposals</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Quote value and probability against a lead, and track it through to Won or Lost.</p>
-      </div>
-
-      {/* create form */}
-      <form onSubmit={createProposal} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">New proposal</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2 lg:col-span-1">
-            Lead *
-            <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
-              <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a proposal' : 'Select a lead…'}</option>
-              {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
-            </select>
-            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a proposal are listed — one proposal per lead.</span>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Value (₹)
-            <input type="number" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Submission date
-            <input type="date" value={form.submissionDate} onChange={e => setForm({ ...form, submissionDate: e.target.value })} className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Probability %
-            <input type="number" min={0} max={100} value={form.probabilityPct} onChange={e => setForm({ ...form, probabilityPct: e.target.value })} placeholder="e.g. 60" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Expected order date
-            <input type="date" value={form.expectedOrderDate} onChange={e => setForm({ ...form, expectedOrderDate: e.target.value })} className={inputCls} />
-          </label>
-        </div>
-        {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
-        <div className="mt-3">
-          <button type="submit" disabled={creating} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-            {creating ? 'Saving…' : 'Add Proposal'}
-          </button>
-        </div>
-      </form>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Proposals" subtitle="Quote value and probability against a lead, and track it through to Won or Lost.">
+        <NewButton label="New proposal" onClick={() => setShowCreate(true)} />
+      </PageHeader>
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -248,7 +214,7 @@ export default function Proposals() {
         {loading && proposals.length === 0 ? (
           <SkeletonRows />
         ) : proposals.length === 0 && !error ? (
-          <EmptyState icon="document" title="No proposals yet" message="Quote a value against one of your leads to start tracking it to Won or Lost." action={{ label: 'Create proposal', onClick: focusCreateForm }} />
+          <EmptyState icon="document" title="No proposals yet" message="Quote a value against one of your leads to start tracking it to Won or Lost." action={{ label: 'Create proposal', onClick: () => setShowCreate(true) }} />
         ) : (
           <>
             <DataGrid
@@ -288,6 +254,45 @@ export default function Proposals() {
           onClose={() => setWonFor(null)}
           onWon={updated => { setProposals(prev => prev.map(p => (p.id === updated.id ? updated : p))); setWonFor(null) }}
         />
+      )}
+      {showCreate && (
+        <CreatePanel
+          title="New proposal"
+          subtitle="One proposal per lead — revise an existing one from its row instead."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createProposal}
+          saving={creating}
+          submitLabel="Add proposal"
+          savingLabel="Saving…"
+          error={formError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+              Lead *
+              <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
+                <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a proposal' : 'Select a lead…'}</option>
+                {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
+              </select>
+              <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a proposal are listed — one proposal per lead.</span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Value (₹)
+              <input type="number" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Submission date
+              <input type="date" value={form.submissionDate} onChange={e => setForm({ ...form, submissionDate: e.target.value })} className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Probability %
+              <input type="number" min={0} max={100} value={form.probabilityPct} onChange={e => setForm({ ...form, probabilityPct: e.target.value })} placeholder="e.g. 60" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Expected order date
+              <input type="date" value={form.expectedOrderDate} onChange={e => setForm({ ...form, expectedOrderDate: e.target.value })} className={inputCls} />
+            </label>
+          </div>
+        </CreatePanel>
       )}
     </div>
   )

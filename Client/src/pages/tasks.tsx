@@ -4,7 +4,9 @@ import type { Task, EmployeeUser } from '../lib/api'
 import { taskStatusStyle as statusStyle, isTaskOverdue as isOverdue } from '../lib/taskDisplay'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { EmptyState } from '../components/EmptyState'
-import { focusCreateForm } from '../lib/focusCreateForm'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { SkeletonRows } from '../components/Skeleton'
 import { useTableView } from '../lib/useTableView'
 import { useConfirm } from '../lib/useConfirm'
@@ -29,6 +31,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
 
@@ -86,6 +89,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
       const { task } = await api<{ task: Task }>('/tasks', { method: 'POST', auth: true, body: form })
       setTasks(prev => [task, ...prev])
       setForm({ ...emptyForm })
+      setShowCreate(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create task.')
     } finally {
@@ -166,47 +170,10 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   ]
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Tasks</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {isAdmin ? 'Assign a task to any employee with a deadline — they’ll be notified instantly.' : 'Your assigned tasks and their deadlines.'}
-        </p>
-      </div>
-
-      {/* create form — admin only */}
-      {isAdmin && (
-        <form onSubmit={createTask} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">Assign a task</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2 lg:col-span-1">
-              Title *
-              <input value={form.title} onChange={set('title')} placeholder="e.g. Follow up with Bhilai Steel Plant" className={inputCls} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Deadline *
-              <input type="date" value={form.deadline} onChange={set('deadline')} className={inputCls} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Assign to *
-              <select value={form.assignedToUserId} onChange={set('assignedToUserId')} className={inputCls}>
-                <option value="">Select employee…</option>
-                {employees.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2 lg:col-span-3">
-              Description
-              <textarea value={form.description} onChange={set('description')} placeholder="Optional details" rows={2} className={inputCls} />
-            </label>
-          </div>
-          {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
-          <div className="mt-3">
-            <button type="submit" disabled={creating} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-              {creating ? 'Assigning…' : 'Assign Task'}
-            </button>
-          </div>
-        </form>
-      )}
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Tasks" subtitle={isAdmin ? 'Assign a task to any employee with a deadline — they’ll be notified instantly.' : 'Your assigned tasks and their deadlines.'}>
+        {isAdmin && <NewButton label="Assign task" onClick={() => setShowCreate(true)} />}
+      </PageHeader>
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -220,7 +187,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
           <SkeletonRows />
         ) : tasks.length === 0 && !error ? (
           isAdmin
-            ? <EmptyState icon="check" title="No tasks yet" message="Assign a to-do with a deadline to anyone on the team." action={{ label: 'Assign task', onClick: focusCreateForm }} />
+            ? <EmptyState icon="check" title="No tasks yet" message="Assign a to-do with a deadline to anyone on the team." action={{ label: 'Assign task', onClick: () => setShowCreate(true) }} />
             : <EmptyState icon="check" title="Nothing assigned to you 🎉" message="Tasks your admin assigns you will show up here." />
         ) : (
           <>
@@ -238,6 +205,40 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
         )}
       </div>
       {confirmDialog}
+      {isAdmin && showCreate && (
+        <CreatePanel
+          title="Assign a task"
+          subtitle="They’re notified straight away, and see it on their dashboard until it’s done."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createTask}
+          saving={creating}
+          submitLabel="Assign task"
+          savingLabel="Assigning…"
+          error={formError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+                Title *
+                <input value={form.title} onChange={set('title')} placeholder="e.g. Follow up with Bhilai Steel Plant" className={inputCls} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+                Deadline *
+                <input type="date" value={form.deadline} onChange={set('deadline')} className={inputCls} />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+                Assign to *
+                <select value={form.assignedToUserId} onChange={set('assignedToUserId')} className={inputCls}>
+                  <option value="">Select employee…</option>
+                  {employees.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+                Description
+                <textarea value={form.description} onChange={set('description')} placeholder="Optional details" rows={2} className={inputCls} />
+              </label>
+            </div>
+        </CreatePanel>
+      )}
     </div>
   )
 }

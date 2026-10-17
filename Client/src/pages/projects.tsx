@@ -5,7 +5,9 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { PROJECT_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
-import { focusCreateForm } from '../lib/focusCreateForm'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { SkeletonRows } from '../components/Skeleton'
 import { Modal } from '../components/Modal'
 import { LeadDetailById } from '../components/LeadDetailModal'
@@ -41,6 +43,7 @@ export default function Projects() {
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
 
@@ -114,6 +117,7 @@ export default function Projects() {
       })
       setProjects(prev => [project, ...prev])
       setForm({ ...emptyForm })
+      setShowCreate(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create project.')
     } finally {
@@ -251,58 +255,10 @@ export default function Projects() {
   ]
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Projects</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Work orders raised directly, or auto-created when a proposal is marked Won.</p>
-      </div>
-
-      {/* create form */}
-      <form onSubmit={createProject} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">New project</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Lead *
-            <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
-              <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}</option>
-              {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
-            </select>
-            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a project are listed — one project per lead.</span>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Project name *
-            <input value={form.projectName} onChange={e => setForm({ ...form, projectName: e.target.value })} placeholder="e.g. Plant-wide laser scan" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Location
-            <select value={form.locationId} onChange={e => setForm({ ...form, locationId: e.target.value })} className={inputCls}>
-              <option value="">Select…</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.city}{l.state ? `, ${l.state}` : ''}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Responsible engineer *
-            <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls}>
-              <option value="">Select an engineer…</option>
-              {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Start date *
-            <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Completion date *
-            <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
-          </label>
-        </div>
-        {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
-        <div className="mt-3">
-          <button type="submit" disabled={creating} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-            {creating ? 'Saving…' : 'Add Project'}
-          </button>
-        </div>
-      </form>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Projects" subtitle="Work orders raised directly, or auto-created when a proposal is marked Won.">
+        <NewButton label="New project" onClick={() => setShowCreate(true)} />
+      </PageHeader>
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -315,7 +271,7 @@ export default function Projects() {
         {loading && projects.length === 0 ? (
           <SkeletonRows />
         ) : projects.length === 0 && !error ? (
-          <EmptyState icon="briefcase" title="No projects yet" message="Marking a proposal Won creates its project automatically — or add one by hand." action={{ label: 'Create project', onClick: focusCreateForm }} />
+          <EmptyState icon="briefcase" title="No projects yet" message="Marking a proposal Won creates its project automatically — or add one by hand." action={{ label: 'Create project', onClick: () => setShowCreate(true) }} />
         ) : (
           <>
             <DataGrid
@@ -350,6 +306,55 @@ export default function Projects() {
           onClose={() => setEditing(null)}
           onSave={async body => { await patchProject(editing.id, body, true); setEditing(null) }}
         />
+      )}
+      {showCreate && (
+        <CreatePanel
+          title="New project"
+          subtitle="Marking a proposal Won creates its project automatically — use this for work orders raised directly."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createProject}
+          saving={creating}
+          submitLabel="Add project"
+          savingLabel="Saving…"
+          error={formError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Lead *
+              <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
+                <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}</option>
+                {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
+              </select>
+              <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a project are listed — one project per lead.</span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Project name *
+              <input value={form.projectName} onChange={e => setForm({ ...form, projectName: e.target.value })} placeholder="e.g. Plant-wide laser scan" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Location
+              <select value={form.locationId} onChange={e => setForm({ ...form, locationId: e.target.value })} className={inputCls}>
+                <option value="">Select…</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.city}{l.state ? `, ${l.state}` : ''}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Responsible engineer *
+              <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls}>
+                <option value="">Select an engineer…</option>
+                {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Start date *
+              <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Completion date *
+              <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
+            </label>
+          </div>
+        </CreatePanel>
       )}
     </div>
   )

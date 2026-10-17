@@ -6,7 +6,9 @@ import { LostReasonModal } from '../components/LostReasonModal'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { EmptyState } from '../components/EmptyState'
-import { focusCreateForm } from '../lib/focusCreateForm'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { PAGE_CLASS } from '../lib/pageChrome'
 import { SkeletonRows } from '../components/Skeleton'
 import { useTableView } from '../lib/useTableView'
 import { useConfirm } from '../lib/useConfirm'
@@ -36,6 +38,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
   const [form, setForm] = useState({ ...emptyForm })
   const [creating, setCreating] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -109,6 +112,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: form })
       setLeads(prev => [lead, ...prev])
       setForm({ ...emptyForm })
+      setShowCreate(false)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create lead.')
     } finally {
@@ -304,64 +308,10 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   )
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-6">
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Leads</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Type in the lead details — matching plants, contacts, verticals and sectors are reused or created automatically. Available to all team members.</p>
-      </div>
-
-      {/* create form */}
-      <form onSubmit={createLead} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">New lead</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {field('Client', 'clientName', 'e.g. SAIL')}
-          {field('Plant *', 'plantName', 'e.g. Bhilai Steel Plant')}
-          {field('City', 'city', 'e.g. Bhilai')}
-          {field('Contact', 'contactName', 'Contact person name')}
-          {field('Contact email', 'contactEmail', 'e.g. name@gmail.com', '', 'email')}
-          {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
-          {field('Vertical', 'verticalName', 'e.g. AI Automation')}
-          {field('Sector', 'sectorName', 'e.g. Steel')}
-          {field('Source', 'sourceName', 'e.g. Expo / Reference / Website')}
-          {field('Service type', 'serviceTypeName', 'e.g. Laser scanning / BIM')}
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            BM/Contact (branch manager)
-            <select value={form.bmUserId} onChange={set('bmUserId')} className={inputCls}>
-              <option value="">None</option>
-              {team.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Assign to
-            <select value={form.assignedToName} onChange={set('assignedToName')} className={inputCls}>
-              <option value="">Unassigned</option>
-              {employees.map(u => <option key={u.id} value={u.email}>{employeeLabel(u)}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Status
-            <select value={form.statusName} onChange={set('statusName')} className={inputCls}>
-              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2 lg:col-span-2">
-            Remark
-            <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
-          </label>
-          {form.statusName === 'Dead' && (
-            <label className="flex flex-col gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 sm:col-span-2 lg:col-span-3">
-              Reason lost *
-              <textarea value={form.lostReason} onChange={set('lostReason')} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} className={`${inputCls} resize-none`} />
-            </label>
-          )}
-        </div>
-        {formError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{formError}</p>}
-        <div className="mt-3">
-          <button type="submit" disabled={creating} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-            {creating ? 'Saving…' : 'Add Lead'}
-          </button>
-        </div>
-      </form>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Leads" subtitle="Matching plants, contacts, verticals and sectors are reused or created automatically.">
+        <NewButton label="New lead" onClick={() => setShowCreate(true)} />
+      </PageHeader>
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -374,7 +324,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
         {loading && leads.length === 0 ? (
           <SkeletonRows />
         ) : leads.length === 0 && !error ? (
-          <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: focusCreateForm }} />
+          <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: () => setShowCreate(true) }} />
         ) : (
           <>
             <DataGrid
@@ -418,6 +368,61 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
             setLostFor(null)
           }}
         />
+      )}
+      {showCreate && (
+        <CreatePanel
+          title="New lead"
+          subtitle="Matching plants, contacts, verticals and sectors are reused or created automatically."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createLead}
+          saving={creating}
+          submitLabel="Add lead"
+          savingLabel="Saving…"
+          error={formError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {field('Client', 'clientName', 'e.g. SAIL')}
+            {field('Plant *', 'plantName', 'e.g. Bhilai Steel Plant')}
+            {field('City', 'city', 'e.g. Bhilai')}
+            {field('Contact', 'contactName', 'Contact person name')}
+            {field('Contact email', 'contactEmail', 'e.g. name@gmail.com', '', 'email')}
+            {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
+            {field('Vertical', 'verticalName', 'e.g. AI Automation')}
+            {field('Sector', 'sectorName', 'e.g. Steel')}
+            {field('Source', 'sourceName', 'e.g. Expo / Reference / Website')}
+            {field('Service type', 'serviceTypeName', 'e.g. Laser scanning / BIM')}
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              BM/Contact (branch manager)
+              <select value={form.bmUserId} onChange={set('bmUserId')} className={inputCls}>
+                <option value="">None</option>
+                {team.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Assign to
+              <select value={form.assignedToName} onChange={set('assignedToName')} className={inputCls}>
+                <option value="">Unassigned</option>
+                {employees.map(u => <option key={u.id} value={u.email}>{employeeLabel(u)}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Status
+              <select value={form.statusName} onChange={set('statusName')} className={inputCls}>
+                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+              Remark
+              <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
+            </label>
+            {form.statusName === 'Dead' && (
+              <label className="flex flex-col gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 sm:col-span-2">
+                Reason lost *
+                <textarea value={form.lostReason} onChange={set('lostReason')} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} className={`${inputCls} resize-none`} />
+              </label>
+            )}
+          </div>
+        </CreatePanel>
       )}
     </div>
   )

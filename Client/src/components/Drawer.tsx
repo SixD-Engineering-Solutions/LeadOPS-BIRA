@@ -2,14 +2,19 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useEscapeStack } from '../lib/useEscapeStack'
 
+const WIDTHS = { md: 'max-w-[560px]', lg: 'max-w-[680px]' } as const
+
 // A panel that slides in from the right over the page — for looking at one
-// record in full while the list stays where it was behind it. Closes on Esc,
-// a click on the dimmed page, or ✕.
-export function Drawer({ label, onClose, header, children }: {
+// record in full, or filling in a new one, while the list stays where it was
+// behind it. Closes on Esc, a click on the dimmed page, or ✕. `footer` stays
+// pinned at the bottom (e.g. a form's Cancel / Save) while the body scrolls.
+export function Drawer({ label, onClose, header, footer, size = 'lg', children }: {
   /** For screen readers: what the panel shows. */
   label: string
   onClose: () => void
   header: ReactNode
+  footer?: ReactNode
+  size?: keyof typeof WIDTHS
   children: ReactNode
 }) {
   useEscapeStack(onClose)
@@ -20,7 +25,7 @@ export function Drawer({ label, onClose, header, children }: {
         aria-modal="true"
         aria-label={label}
         onClick={e => e.stopPropagation()}
-        className="drawer-in flex h-full w-full max-w-[680px] flex-col border-l border-gray-100 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+        className={`drawer-in flex h-full w-full ${WIDTHS[size]} flex-col border-l border-gray-100 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900`}
       >
         <div className="relative shrink-0 border-b border-gray-100 px-6 pb-4 pt-5 dark:border-gray-800">
           <button
@@ -34,6 +39,7 @@ export function Drawer({ label, onClose, header, children }: {
           {header}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        {footer && <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-3 dark:border-gray-800 dark:bg-gray-900">{footer}</div>}
       </aside>
     </div>,
     document.body,

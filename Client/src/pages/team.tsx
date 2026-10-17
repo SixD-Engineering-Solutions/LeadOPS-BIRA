@@ -6,6 +6,10 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
 import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
+import { PageHeader, NewButton } from '../components/PageHeader'
+import { CreatePanel } from '../components/CreatePanel'
+import { RefreshButton } from '../components/table/TableToolbar'
+import { PAGE_CLASS } from '../lib/pageChrome'
 
 /** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
 function displayName(email: string): string {
@@ -38,6 +42,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
 
   const [empForm, setEmpForm] = useState({ ...emptyEmpForm })
   const [creatingEmp, setCreatingEmp] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [empError, setEmpError] = useState<string | null>(null)
 
   async function load() {
@@ -80,6 +85,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
       })
       setUsers(prev => [user, ...prev])
       setEmpForm({ ...emptyEmpForm })
+      setShowCreate(false)
     } catch (e) {
       setEmpError(e instanceof Error ? e.message : 'Could not add employee.')
     } finally {
@@ -197,58 +203,21 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
   const unassignedCount = leads.filter(l => !l.assignedToUserId).length
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Employees</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {loading ? 'Loading…' : `${activeUsers.length} registered employee${activeUsers.length === 1 ? '' : 's'}${unassignedCount > 0 ? ` · ${unassignedCount} lead${unassignedCount === 1 ? '' : 's'} unassigned` : ''}`}
-          </p>
-        </div>
-        <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
-      </div>
+    <div className={PAGE_CLASS}>
+      <PageHeader
+        title="Team"
+        subtitle={loading ? 'Loading…' : `${activeUsers.length} registered employee${activeUsers.length === 1 ? '' : 's'}${unassignedCount > 0 ? ` · ${unassignedCount} lead${unassignedCount === 1 ? '' : 's'} unassigned` : ''}`}
+      >
+        <RefreshButton onClick={load} busy={loading} />
+        <NewButton label="Add employee" onClick={() => setShowCreate(true)} />
+      </PageHeader>
 
       {error && <ErrorBanner message={error} onRetry={load} className="mb-5" />}
-
-      <form onSubmit={createEmployee} className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-3 text-sm font-bold text-gray-900 dark:text-gray-100">Add employee</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Email *
-            <input type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} placeholder="name@company.com" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Name
-            <input value={empForm.userName} onChange={e => setEmpForm({ ...empForm, userName: e.target.value })} placeholder="Full name" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Role
-            <select value={empForm.role} onChange={e => setEmpForm({ ...empForm, role: e.target.value as 'employee' | 'admin' })} className={inputCls}>
-              <option value="employee">Employee</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Department
-            <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="e.g. Sales" className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Phone
-            <input value={empForm.phoneNumber} onChange={e => setEmpForm({ ...empForm, phoneNumber: e.target.value })} placeholder="+91-…" className={inputCls} />
-          </label>
-        </div>
-        {empError && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{empError}</p>}
-        <div className="mt-3">
-          <button type="submit" disabled={creatingEmp} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
-            {creatingEmp ? 'Adding…' : 'Add Employee'}
-          </button>
-        </div>
-      </form>
 
       {loading ? (
         <div className="rounded-2xl border border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"><SkeletonRows rows={4} /></div>
       ) : activeUsers.length === 0 ? (
-        <EmptyState icon="users" title="No employees registered yet" message="Add your sales team with “Add employee” above, then assign them leads." />
+        <EmptyState icon="users" title="No employees registered yet" message="Add your sales team, then assign them leads." action={{ label: 'Add employee', onClick: () => setShowCreate(true) }} />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -422,6 +391,45 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
       )}
 
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+
+      {showCreate && (
+        <CreatePanel
+          title="Add employee"
+          subtitle="They can sign in straight away — with Microsoft, using this email address."
+          onClose={() => setShowCreate(false)}
+          onSubmit={createEmployee}
+          saving={creatingEmp}
+          submitLabel="Add employee"
+          savingLabel="Adding…"
+          error={empError}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Email *
+              <input type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} placeholder="name@company.com" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Name
+              <input value={empForm.userName} onChange={e => setEmpForm({ ...empForm, userName: e.target.value })} placeholder="Full name" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Role
+              <select value={empForm.role} onChange={e => setEmpForm({ ...empForm, role: e.target.value as 'employee' | 'admin' })} className={inputCls}>
+                <option value="employee">Employee</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Department
+              <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="e.g. Sales" className={inputCls} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              Phone
+              <input value={empForm.phoneNumber} onChange={e => setEmpForm({ ...empForm, phoneNumber: e.target.value })} placeholder="+91-…" className={inputCls} />
+            </label>
+          </div>
+        </CreatePanel>
+      )}
     </div>
   )
 }

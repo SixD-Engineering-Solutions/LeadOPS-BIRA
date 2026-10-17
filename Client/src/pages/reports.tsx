@@ -6,6 +6,9 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { formatINR } from '../lib/format'
 import { EmptyState } from '../components/EmptyState'
 import { Modal } from '../components/Modal'
+import { PageHeader } from '../components/PageHeader'
+import { RefreshButton } from '../components/table/TableToolbar'
+import { PAGE_CLASS } from '../lib/pageChrome'
 
 const WEEKS = 8
 const MONTHS = 6
@@ -187,14 +190,10 @@ export default function Reports() {
   const employeeRows = employeePerformance(leads, proposals, employees)
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Reports</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Lead activity, monthly performance, and team conversion.</p>
-        </div>
-        <button onClick={load} className="text-xs font-medium text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Refresh</button>
-      </div>
+    <div className={PAGE_CLASS}>
+      <PageHeader title="Reports" subtitle="Lead activity, monthly performance, and team conversion.">
+        <RefreshButton onClick={load} busy={loading} />
+      </PageHeader>
 
       {error && <ErrorBanner message={error} onRetry={load} className="mb-5" />}
 
