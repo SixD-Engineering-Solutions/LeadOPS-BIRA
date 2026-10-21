@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Modal } from './Modal'
+import { btn } from '../lib/ui'
 
 // Asked whenever a lead is marked Dead or a proposal Lost — the reason is
 // mandatory (the server refuses the change without one), so the status only
@@ -43,7 +44,7 @@ export function LostReasonModal({ title, subject, onCancel, onConfirm }: {
         </label>
         {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
+          <button type="button" onClick={onCancel} className={btn('secondary', 'md')}>Cancel</button>
           <button type="submit" disabled={saving} className="rounded-xl bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:opacity-60">
             {saving ? 'Saving…' : 'Save reason'}
           </button>

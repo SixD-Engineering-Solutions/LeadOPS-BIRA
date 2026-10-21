@@ -7,6 +7,8 @@ import { formatINR } from '../../lib/format'
 import { PROPOSAL_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../../lib/statusStyles'
 import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
+import { btn } from '../../lib/ui'
+import { DatePicker } from '../form/DatePicker'
 
 // Proposals raised against a lead — quick-add form and list.
 export function LeadProposalsSection({ leadId }: { leadId: string }) {
@@ -70,15 +72,15 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
         <input type="number" min={0} max={100} value={propForm.probabilityPct} onChange={e => setPropForm({ ...propForm, probabilityPct: e.target.value })} placeholder="Probability %" className={inputCls} />
         <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
           Submission date
-          <input type="date" value={propForm.submissionDate} onChange={e => setPropForm({ ...propForm, submissionDate: e.target.value })} className={inputCls} />
+          <DatePicker value={propForm.submissionDate} onChange={v => setPropForm({ ...propForm, submissionDate: v })} />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
           Expected order date
-          <input type="date" value={propForm.expectedOrderDate} onChange={e => setPropForm({ ...propForm, expectedOrderDate: e.target.value })} className={inputCls} />
+          <DatePicker value={propForm.expectedOrderDate} onChange={v => setPropForm({ ...propForm, expectedOrderDate: v })} />
         </label>
         {propError && <p className="col-span-2 text-xs text-red-500 dark:text-red-400">{propError}</p>}
         <div className="col-span-2">
-          <button disabled={creatingProp} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-4 py-1.5 text-xs font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
+          <button disabled={creatingProp} className={btn('primary', 'sm')}>
             {creatingProp ? 'Saving…' : 'Add proposal'}
           </button>
         </div>

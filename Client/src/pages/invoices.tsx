@@ -8,6 +8,11 @@ import { EmptyState } from '../components/EmptyState'
 import { PageHeader, NewButton } from '../components/PageHeader'
 import { CreatePanel } from '../components/CreatePanel'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import { Field } from '../components/form/Field'
+import { SearchSelect } from '../components/form/SearchSelect'
+import { inputCls as fieldCls, focusFirstInvalid } from '../lib/formStyles'
+import type { FieldErrors } from '../lib/formStyles'
+import { toast } from '../lib/toast'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
 import { useTableView } from '../lib/useTableView'
@@ -19,6 +24,8 @@ import { MenuSelect } from '../components/table/MenuSelect'
 import { RowMenu } from '../components/table/RowMenu'
 import { DueDate } from '../components/table/RelTime'
 import { formatDate, formatRelative } from '../lib/relativeTime'
+import { btn } from '../lib/ui'
+import { DatePicker } from '../components/form/DatePicker'
 
 const statusStyle = (name: string) => INVOICE_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtMoney = formatINR
@@ -42,6 +49,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'projectId' | 'amount'>>({})
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [paymentForm, setPaymentForm] = useState({ ...emptyPaymentForm })
@@ -69,13 +77,15 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
     return () => window.removeEventListener(INVOICE_SYNC_EVENT, onInvoiceSync)
   }, [])
 
-  const projectLabel = (p: Project) => `${p.workOrderNo} — ${p.projectName}${p.lead?.plant?.client?.clientName ? ` (${p.lead.plant.client.clientName})` : ''}`
 
   async function createInvoice(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.projectId) { setFormError('Project is required.'); return }
-    if (!form.amount || Number(form.amount) <= 0) { setFormError('Amount must be greater than 0.'); return }
+    const errs: typeof fieldErrors = {}
+    if (!form.projectId) errs.projectId = 'Choose the project to bill.'
+    if (!form.amount || Number(form.amount) <= 0) errs.amount = 'Enter an amount greater than 0.'
+    setFieldErrors(errs)
+    if (Object.keys(errs).length) { focusFirstInvalid(); return }
     setCreating(true)
     try {
       const { invoice } = await api<{ invoice: Invoice }>('/invoices', {
@@ -91,6 +101,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
       setInvoices(prev => [invoice, ...prev])
       setForm({ ...emptyForm })
       setShowCreate(false)
+      toast(`Invoice ${invoice.invoiceNumber} raised · ${fmtMoney(invoice.amount)}`)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create invoice.')
     } finally {
@@ -102,6 +113,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
     try {
       const { invoice } = await api<{ invoice: Invoice }>(`/invoices/${id}`, { method: 'PATCH', auth: true, body: { status } })
       setInvoices(prev => prev.map(i => (i.id === id ? invoice : i)))
+      toast(`${invoice.invoiceNumber} marked ${invoice.status}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update status.')
     }
@@ -130,6 +142,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
       })
       setInvoices(prev => prev.map(i => (i.id === invoiceId ? invoice : i)))
       setPaymentForm({ ...emptyPaymentForm })
+      toast(`Payment of ${fmtMoney(Number(paymentForm.amountReceived))} logged on ${invoice.invoiceNumber}`)
     } catch (e) {
       setPayError(e instanceof Error ? e.message : 'Could not record payment.')
     } finally {
@@ -227,9 +240,9 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
 
       <form onSubmit={e => logPayment(e, inv.id)} onClick={e => e.stopPropagation()} className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <input type="number" value={paymentForm.amountReceived} onChange={e => setPaymentForm({ ...paymentForm, amountReceived: e.target.value })} placeholder="Amount received (₹)" aria-label="Amount received" className={inputCls} />
-        <input type="date" value={paymentForm.paymentDate} onChange={e => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })} aria-label="Payment date" className={inputCls} />
+        <DatePicker value={paymentForm.paymentDate} onChange={v => setPaymentForm({ ...paymentForm, paymentDate: v })} label="Payment date" />
         <input value={paymentForm.notes} onChange={e => setPaymentForm({ ...paymentForm, notes: e.target.value })} placeholder="Notes" aria-label="Notes" className={inputCls} />
-        <button disabled={payingId === inv.id} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-4 py-2 text-xs font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
+        <button disabled={payingId === inv.id} className={btn('primary', 'sm')}>
           {payingId === inv.id ? 'Saving…' : 'Log payment'}
         </button>
       </form>
@@ -320,24 +333,26 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
-              Project *
-              <select value={form.projectId} onChange={e => setForm({ ...form, projectId: e.target.value })} className={inputCls}>
-                <option value="">Select a project…</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{projectLabel(p)}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Amount (₹) *
-              <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
-            </label>
+            <Field label="Project" required error={fieldErrors.projectId} className="sm:col-span-2">
+              <SearchSelect
+                value={form.projectId}
+                onChange={v => { setForm({ ...form, projectId: v }); setFieldErrors(p => ({ ...p, projectId: undefined })) }}
+                options={projects.map(p => ({ value: p.id, label: `${p.workOrderNo} — ${p.projectName}`, hint: p.lead?.plant?.client?.clientName ?? undefined }))}
+                emptyLabel="Select a project…"
+                invalid={!!fieldErrors.projectId}
+                label="Project"
+              />
+            </Field>
+            <Field label="Amount (₹)" required error={fieldErrors.amount}>
+              <input type="number" value={form.amount} onChange={e => { setForm({ ...form, amount: e.target.value }); setFieldErrors(p => ({ ...p, amount: undefined })) }} placeholder="e.g. 500000" aria-invalid={!!fieldErrors.amount || undefined} className={fieldCls(!!fieldErrors.amount)} />
+            </Field>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Invoice date
-              <input type="date" value={form.invoiceDate} onChange={e => setForm({ ...form, invoiceDate: e.target.value })} className={inputCls} />
+              <DatePicker value={form.invoiceDate} onChange={v => setForm({ ...form, invoiceDate: v })} />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Due date
-              <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className={inputCls} />
+              <DatePicker value={form.dueDate} onChange={v => setForm({ ...form, dueDate: v })} />
             </label>
           </div>
         </CreatePanel>

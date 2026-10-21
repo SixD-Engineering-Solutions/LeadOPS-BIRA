@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePageChrome } from '../lib/pageChrome'
+import { btn } from '../lib/ui'
 
 // What the page on screen puts in the app's top bar: its title (with an
 // optional breadcrumb, e.g. Tracker › Invoices), a one-line description, and
@@ -48,7 +49,7 @@ export function NewButton({ label, onClick }: { label: string; onClick: () => vo
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-3 py-2 text-sm font-semibold text-white shadow-sm outline-none transition hover:from-rose-500 hover:to-orange-500 focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+      className={`${btn('primary', 'md')} shrink-0 px-3 shadow-sm`}
     >
       <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" /></svg>
       <span className="hidden sm:inline">{label}</span>

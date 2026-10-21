@@ -135,7 +135,7 @@ export default function EditRowModal({ table, def, row, rowLabel, isAdmin, curre
           </span>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose} className="!w-auto">Cancel</Button>
-            <Button type="submit" variant="gradient" loading={saving} disabled={changed.length === 0} className="!w-auto">
+            <Button type="submit" variant="gradient" loading={saving} loadingLabel={isAdmin ? 'Saving…' : 'Sending…'} disabled={changed.length === 0} className="!w-auto">
               {isAdmin ? 'Save changes' : 'Send request'}
             </Button>
           </div>

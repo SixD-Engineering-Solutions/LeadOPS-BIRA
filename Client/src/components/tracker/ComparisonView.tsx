@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import type { PipelineTrackerItem, InvoiceRegisterItem, InvoiceSectorSummary, LeadStatus } from '../../lib/api'
 import { useTheme } from '../../lib/theme'
 import { formatCount, formatLakhs } from '../../lib/format'
-import Segmented from './Segmented'
+import Segmented from '../Segmented'
 import { ChartDetailModal } from './ChartDetail'
 import type { ChartDetail } from './ChartDetail'
 import {

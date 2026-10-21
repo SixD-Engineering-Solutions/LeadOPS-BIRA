@@ -15,6 +15,7 @@ import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
 import { PageHeader } from '../components/PageHeader'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import Segmented from '../components/Segmented'
 import { useTableView } from '../lib/useTableView'
 import { DataGrid } from '../components/table/DataGrid'
 import type { Column } from '../components/table/DataGrid'
@@ -449,22 +450,14 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
     <div className={PAGE_CLASS}>
       <PageHeader title="Tracker" crumb={TAB_LABELS[tab]} subtitle="Pipeline and invoice data imported from the tracking sheet, kept up to date with the app." />
 
-      <div className="mb-5 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Tracker sections">
-        {(Object.keys(TAB_LABELS) as (keyof typeof TAB_LABELS)[]).map(t => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
-              tab === t
-                ? 'bg-gradient-to-r from-rose-400 to-orange-400 text-white'
-                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            {TAB_LABELS[t]}
-          </button>
-        ))}
+      <div className="mb-5">
+        <Segmented
+          size="lg"
+          label="Tracker sections"
+          value={tab}
+          onChange={setTab}
+          options={(Object.keys(TAB_LABELS) as (keyof typeof TAB_LABELS)[]).map(t => ({ value: t, label: TAB_LABELS[t] }))}
+        />
       </div>
 
       {/* The edit / request actions need the field list from the server — say

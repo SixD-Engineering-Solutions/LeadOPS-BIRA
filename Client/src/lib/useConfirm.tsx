@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Modal } from '../components/Modal'
+import { btn } from './ui'
 
 type ConfirmOptions = {
   title: string
@@ -36,16 +37,14 @@ export function useConfirm(): [ReactNode, (opts: ConfirmOptions) => Promise<bool
     <Modal title={opts.title} onClose={() => finish(false)}>
       <div className="text-sm text-gray-600 dark:text-gray-300">{opts.message}</div>
       <div className="mt-5 flex justify-end gap-2">
-        <button type="button" onClick={() => finish(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+        <button type="button" onClick={() => finish(false)} className={btn('secondary', 'md')}>
           Cancel
         </button>
         <button
           type="button"
           autoFocus
           onClick={() => finish(true)}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold text-white outline-none transition focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${
-            opts.danger ? 'bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-400' : 'bg-orange-500 hover:bg-orange-600 focus-visible:ring-orange-300'
-          }`}
+          className={opts.danger ? btn('danger', 'md') : `${btn('primary', 'md')} !bg-none bg-orange-500 hover:bg-orange-600`}
         >
           {opts.confirmLabel}
         </button>

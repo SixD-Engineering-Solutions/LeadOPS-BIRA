@@ -602,6 +602,32 @@ model TrackerChangeRequest {
   @@map("tracker_change_requests")
 }
 
+// One rename or merge made on the admin Data clean-up screen
+// (routes/catalog.ts), with a snapshot of everything it changed — the list
+// values, the leads it moved, the Tracker rows it renamed and the sector
+// summary rows as they were — so it can be reverted exactly. A reverted
+// change keeps its row (revertedAt set), so the history stays complete.
+model CatalogChange {
+  id             String    @id @default(cuid())
+  // "sector" | "vertical" | "source" | "service-type"
+  kind           String
+  // "rename" | "merge"
+  action         String
+  // Readable: Renamed “Oil and Gas” to “Oil & Gas”
+  summary        String
+  leadsMoved     Int       @default(0) @map("leads_moved")
+  trackerRows    Int       @default(0) @map("tracker_rows")
+  byUserId       String    @map("by_user_id")
+  byName         String    @map("by_name")
+  snapshot       Json
+  revertedAt     DateTime? @map("reverted_at")
+  revertedByName String?   @map("reverted_by_name")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([kind, createdAt])
+  @@map("catalog_changes")
+}
+
 // ─── Expo / visit tagging ────────────────────────────────────────────────
 // A specific trade-show or site-visit instance that leads can be tagged to —
 // more granular than LeadSource ("Expo" as a category), so "leads generated"

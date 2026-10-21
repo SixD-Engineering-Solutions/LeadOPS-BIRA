@@ -8,6 +8,7 @@ import Proposals from './proposals'
 import Projects from './projects'
 import Invoices from './invoices'
 import Tracker from './tracker'
+import Cleanup from './cleanup'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
 import LeadDetailModal from '../components/LeadDetailModal'
@@ -17,6 +18,7 @@ import { GlobalSearch } from '../components/GlobalSearch'
 import { PageHeader } from '../components/PageHeader'
 import { PageChromeContext, PAGE_CLASS } from '../lib/pageChrome'
 import { useNavBadges } from '../hooks/useNavBadges'
+import { Toaster } from '../components/Toaster'
 import { StatTiles } from '../components/dashboard/StatTiles'
 import { FollowUpsPanel } from '../components/dashboard/FollowUpsPanel'
 import { PendingPaymentsPanel } from '../components/dashboard/PendingPaymentsPanel'
@@ -65,7 +67,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { label: 'Sales', items: [{ key: 'lead-gen', label: 'Leads', icon: icons.leadGen }, { key: 'proposals', label: 'Proposals', icon: icons.proposals }] },
     { label: 'Delivery', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }, { key: 'tasks', label: 'Tasks', icon: icons.tasks }] },
     { label: 'Insights', items: [{ key: 'tracker', label: 'Tracker', icon: icons.tracker }, ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }] : [])] },
-    ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }] }] : []),
+    ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }, { key: 'cleanup', label: 'Data clean-up', icon: icons.setup }] }] : []),
   ]
   const navItems: NavItem[] = navGroups.flatMap(g => g.items)
   const badges = useNavBadges(isAdmin)
@@ -127,7 +129,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tracker'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tracker', 'cleanup'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
@@ -178,6 +180,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <Leads isAdmin={isAdmin} currentUserId={user.id} />
         ) : active === 'reports' && isAdmin ? (
           <Reports />
+        ) : active === 'cleanup' && isAdmin ? (
+          <Cleanup />
         ) : active === 'team' ? (
           <Team currentUserId={user.id} />
         ) : active === 'tasks' ? (
@@ -284,6 +288,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       )}
 
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+
+      <Toaster />
     </div>
   )
 }

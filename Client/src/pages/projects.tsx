@@ -8,6 +8,11 @@ import { EmptyState } from '../components/EmptyState'
 import { PageHeader, NewButton } from '../components/PageHeader'
 import { CreatePanel } from '../components/CreatePanel'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import { Field } from '../components/form/Field'
+import { SearchSelect } from '../components/form/SearchSelect'
+import { inputCls as fieldCls, focusFirstInvalid } from '../lib/formStyles'
+import type { FieldErrors } from '../lib/formStyles'
+import { toast } from '../lib/toast'
 import { SkeletonRows } from '../components/Skeleton'
 import { Modal } from '../components/Modal'
 import { LeadDetailById } from '../components/LeadDetailModal'
@@ -19,6 +24,8 @@ import { MenuSelect } from '../components/table/MenuSelect'
 import { RowMenu } from '../components/table/RowMenu'
 import { formatDate, daysFromToday } from '../lib/relativeTime'
 import { BADGE_TONES } from '../lib/statusStyles'
+import { btn } from '../lib/ui'
+import { DatePicker } from '../components/form/DatePicker'
 
 const statusStyle = (name: string) => PROJECT_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 // Billing stages run left to right, so their colours do too: grey → done green.
@@ -30,7 +37,6 @@ const billingStyle = (name: string) => BILLING_TONES[name] ?? DEFAULT_STATUS_STY
 const toDateInput = (ts: string | null) => (ts ? ts.slice(0, 10) : '')
 const person = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
 
-const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { leadId: '', projectName: '', locationId: '', startDate: '', completionDate: '', responsibleUserId: '' }
 
 export default function Projects() {
@@ -45,6 +51,7 @@ export default function Projects() {
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'leadId' | 'projectName' | 'responsibleUserId' | 'startDate' | 'completionDate'>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
 
   function load() {
@@ -87,7 +94,6 @@ export default function Projects() {
     return projectInvoices.reduce((sum, i) => sum + (i.amount - i.payments.reduce((s, p) => s + p.amountReceived, 0)), 0)
   }
 
-  const leadLabel = (l: Lead) => `${l.plant?.plantName ?? 'Unnamed plant'}${l.plant?.client?.clientName ? ` — ${l.plant.client.clientName}` : ''}`
   // One project per lead (enforced server-side too) — a lead that already has
   // one, including one auto-created from a Won proposal, isn't offered again.
   const leadsWithProject = new Set(projects.map(p => p.leadId))
@@ -96,11 +102,15 @@ export default function Projects() {
   async function createProject(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.leadId) { setFormError('Lead is required.'); return }
-    if (!form.projectName.trim()) { setFormError('Project name is required.'); return }
-    if (!form.responsibleUserId) { setFormError('Responsible engineer is required.'); return }
-    if (!form.startDate || !form.completionDate) { setFormError('Start and completion dates are required.'); return }
-    if (form.completionDate < form.startDate) { setFormError('Completion date can’t be before the start date.'); return }
+    const errs: typeof fieldErrors = {}
+    if (!form.leadId) errs.leadId = 'Choose the lead this project is for.'
+    if (!form.projectName.trim()) errs.projectName = 'Project name is required.'
+    if (!form.responsibleUserId) errs.responsibleUserId = 'Choose the engineer running it.'
+    if (!form.startDate) errs.startDate = 'Start date is required.'
+    if (!form.completionDate) errs.completionDate = 'Completion date is required.'
+    else if (form.startDate && form.completionDate < form.startDate) errs.completionDate = 'Can’t be before the start date.'
+    setFieldErrors(errs)
+    if (Object.keys(errs).length) { focusFirstInvalid(); return }
     setCreating(true)
     try {
       const { project } = await api<{ project: Project }>('/projects', {
@@ -118,6 +128,7 @@ export default function Projects() {
       setProjects(prev => [project, ...prev])
       setForm({ ...emptyForm })
       setShowCreate(false)
+      toast(`Project ${project.workOrderNo} created`, { action: { label: 'View', onClick: () => setOpenLeadId(project.leadId) } })
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create project.')
     } finally {
@@ -126,12 +137,18 @@ export default function Projects() {
   }
 
   // `rethrow`: for the edit dialog, which shows the error itself and stays open.
-  async function patchProject(id: string, body: object, rethrow = false) {
+  async function patchProject(id: string, body: Record<string, unknown>, rethrow = false, undoable = true) {
+    const old = projects.find(p => p.id === id) as Record<string, unknown> | undefined
+    // What to send to put it back: the old value of each changed field.
+    const before = Object.fromEntries(Object.keys(body).map(k => [k, typeof old?.[k] === 'string' && /Date$/.test(k) ? (old[k] as string).slice(0, 10) : old?.[k] ?? null]))
     setSavingId(id)
     try {
       const { project } = await api<{ project: Project }>(`/projects/${id}`, { method: 'PATCH', auth: true, body })
       setProjects(prev => prev.map(p => (p.id === id ? project : p)))
       setError(null)
+      const what = 'status' in body ? `marked ${String(body.status)}` : 'billingStage' in body ? `billing stage: ${String(body.billingStage)}` : 'updated'
+      const canUndo = undoable && Object.values(before).every(v => v != null)
+      toast(`${project.workOrderNo} ${what}`, canUndo ? { action: { label: 'Undo', onClick: () => patchProject(id, before, false, false) } } : {})
     } catch (e) {
       if (rethrow) throw e
       setError(e instanceof Error ? e.message : 'Could not update project.')
@@ -319,40 +336,31 @@ export default function Projects() {
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Lead *
-              <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
-                <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}</option>
-                {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
-              </select>
-              <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a project are listed — one project per lead.</span>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Project name *
-              <input value={form.projectName} onChange={e => setForm({ ...form, projectName: e.target.value })} placeholder="e.g. Plant-wide laser scan" className={inputCls} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Location
-              <select value={form.locationId} onChange={e => setForm({ ...form, locationId: e.target.value })} className={inputCls}>
-                <option value="">Select…</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.city}{l.state ? `, ${l.state}` : ''}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Responsible engineer *
-              <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls}>
-                <option value="">Select an engineer…</option>
-                {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Start date *
-              <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Completion date *
-              <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
-            </label>
+            <Field label="Lead" required error={fieldErrors.leadId} hint="Only leads without a project are listed — one project per lead.">
+              <SearchSelect
+                value={form.leadId}
+                onChange={v => { setForm({ ...form, leadId: v }); setFieldErrors(p => ({ ...p, leadId: undefined })) }}
+                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.plantName ?? 'Unnamed plant', hint: l.plant?.client?.clientName ?? undefined }))}
+                emptyLabel={leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}
+                invalid={!!fieldErrors.leadId}
+                label="Lead"
+              />
+            </Field>
+            <Field label="Project name" required error={fieldErrors.projectName}>
+              <input value={form.projectName} onChange={e => { setForm({ ...form, projectName: e.target.value }); setFieldErrors(p => ({ ...p, projectName: undefined })) }} placeholder="e.g. Plant-wide laser scan" aria-invalid={!!fieldErrors.projectName || undefined} className={fieldCls(!!fieldErrors.projectName)} />
+            </Field>
+            <Field label="Location">
+              <SearchSelect value={form.locationId} onChange={v => setForm({ ...form, locationId: v })} options={locations.map(l => ({ value: l.id, label: `${l.city}${l.state ? `, ${l.state}` : ''}` }))} emptyLabel="Select…" allowEmpty label="Location" />
+            </Field>
+            <Field label="Responsible engineer" required error={fieldErrors.responsibleUserId}>
+              <SearchSelect value={form.responsibleUserId} onChange={v => { setForm({ ...form, responsibleUserId: v }); setFieldErrors(p => ({ ...p, responsibleUserId: undefined })) }} options={employees.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="Select an engineer…" invalid={!!fieldErrors.responsibleUserId} label="Responsible engineer" />
+            </Field>
+            <Field label="Start date" required error={fieldErrors.startDate}>
+              <DatePicker value={form.startDate} max={form.completionDate || undefined} onChange={v => { setForm({ ...form, startDate: v }); setFieldErrors(p => ({ ...p, startDate: undefined })) }} invalid={!!fieldErrors.startDate} />
+            </Field>
+            <Field label="Completion date" required error={fieldErrors.completionDate}>
+              <DatePicker value={form.completionDate} min={form.startDate || undefined} onChange={v => { setForm({ ...form, completionDate: v }); setFieldErrors(p => ({ ...p, completionDate: undefined })) }} invalid={!!fieldErrors.completionDate} />
+            </Field>
           </div>
         </CreatePanel>
       )}
@@ -394,28 +402,33 @@ function EditProjectModal({ project, employees, onClose, onSave }: {
       <form onSubmit={submit} className="flex flex-col gap-3">
         <label className={label}>
           Responsible engineer *
-          <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls} autoFocus>
-            <option value="">Select an engineer…</option>
-            {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-            {project.responsibleUser && project.responsibleUserId && !employees.some(u => u.id === project.responsibleUserId) && (
-              <option value={project.responsibleUserId}>{project.responsibleUser.userName || project.responsibleUser.email}</option>
-            )}
-          </select>
+          <SearchSelect
+            value={form.responsibleUserId}
+            onChange={v => setForm({ ...form, responsibleUserId: v })}
+            options={[
+              ...employees.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email })),
+              ...(project.responsibleUser && project.responsibleUserId && !employees.some(u => u.id === project.responsibleUserId)
+                ? [{ value: project.responsibleUserId, label: project.responsibleUser.userName || project.responsibleUser.email }] : []),
+            ]}
+            emptyLabel="Select an engineer…"
+            label="Responsible engineer"
+            autoFocus
+          />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className={label}>
             Start date *
-            <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
+            <DatePicker value={form.startDate} max={form.completionDate || undefined} onChange={v => setForm({ ...form, startDate: v })} />
           </label>
           <label className={label}>
             Completion date *
-            <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
+            <DatePicker value={form.completionDate} min={form.startDate || undefined} onChange={v => setForm({ ...form, completionDate: v })} />
           </label>
         </div>
         {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
-          <button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
+          <button type="button" onClick={onClose} className={btn('secondary', 'md')}>Cancel</button>
+          <button type="submit" disabled={saving} className={btn('primary', 'md')}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

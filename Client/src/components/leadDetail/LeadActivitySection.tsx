@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { api, ACTIVITY_TYPES } from '../../lib/api'
 import type { ActivityType } from '../../lib/api'
 import { inputCls } from './shared'
+import { btn } from '../../lib/ui'
+import { DatePicker } from '../form/DatePicker'
 
 const todayInput = () => new Date().toISOString().slice(0, 10)
 const empty = () => ({ activityType: 'Call' as ActivityType, activityDate: todayInput(), notes: '', nextActionDate: '' })
@@ -66,7 +68,7 @@ export function LogActivityForm({ leadId, onLogged }: { leadId: string; onLogged
         </label>
         <label className={label}>
           Date
-          <input type="date" value={form.activityDate} onChange={e => setForm({ ...form, activityDate: e.target.value })} className={inputCls} />
+          <DatePicker value={form.activityDate} onChange={v => setForm({ ...form, activityDate: v })} />
         </label>
         <label className={`${label} col-span-2`}>
           Notes
@@ -74,15 +76,15 @@ export function LogActivityForm({ leadId, onLogged }: { leadId: string; onLogged
         </label>
         <label className={`${label} col-span-2 sm:col-span-1`}>
           Next action date <span className="font-normal text-gray-400">(optional — sets a reminder)</span>
-          <input type="date" value={form.nextActionDate} min={todayInput()} onChange={e => setForm({ ...form, nextActionDate: e.target.value })} className={inputCls} />
+          <DatePicker value={form.nextActionDate} min={todayInput()} onChange={v => setForm({ ...form, nextActionDate: v })} />
         </label>
       </div>
       {error && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>}
       <div className="mt-3 flex justify-end gap-2">
-        <button type="button" onClick={() => { setOpen(false); setError(null) }} className="rounded-xl border border-gray-200 px-3.5 py-1.5 text-xs font-medium text-gray-600 outline-none hover:bg-white focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+        <button type="button" onClick={() => { setOpen(false); setError(null) }} className={btn('secondary', 'sm')}>
           Cancel
         </button>
-        <button disabled={saving} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-4 py-1.5 text-xs font-semibold text-white outline-none transition hover:from-rose-500 hover:to-orange-500 focus-visible:ring-2 focus-visible:ring-orange-300 disabled:opacity-60">
+        <button disabled={saving} className={btn('primary', 'sm')}>
           {saving ? 'Logging…' : 'Log activity'}
         </button>
       </div>

@@ -9,6 +9,13 @@ import { EmptyState } from '../components/EmptyState'
 import { PageHeader, NewButton } from '../components/PageHeader'
 import { CreatePanel } from '../components/CreatePanel'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import { Field } from '../components/form/Field'
+import { Combobox } from '../components/form/Combobox'
+import { SearchSelect } from '../components/form/SearchSelect'
+import { inputCls as fieldCls, focusFirstInvalid } from '../lib/formStyles'
+import type { FieldErrors } from '../lib/formStyles'
+import { useLookups } from '../hooks/useLookups'
+import { toast } from '../lib/toast'
 import { SkeletonRows } from '../components/Skeleton'
 import { useTableView } from '../lib/useTableView'
 import { useConfirm } from '../lib/useConfirm'
@@ -40,6 +47,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'plantName' | 'contactEmail' | 'lostReason'>>({})
+  const lookups = useLookups(showCreate)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
@@ -90,29 +99,32 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       .catch(() => {})
   }, [])
   const employees = team.filter(u => u.role !== 'admin')
-  const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
 
+  // Each problem shows under its own field; the first one gets focus.
+  function validate() {
+    const errs: typeof fieldErrors = {}
+    if (!form.plantName.trim()) errs.plantName = 'Plant is required.'
+    if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) errs.contactEmail = 'Enter an email like name@company.com.'
+    if (form.statusName === 'Dead' && form.lostReason.trim().length < 3) errs.lostReason = 'Say why it was lost (at least 3 characters).'
+    setFieldErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
   async function createLead(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.plantName.trim()) { setFormError('Plant is required.'); return }
-    if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) {
-      setFormError('Contact email must look like username@gmail.com.')
-      return
-    }
-    if (form.statusName === 'Dead' && form.lostReason.trim().length < 3) {
-      setFormError('Give a reason why the lead was lost (at least 3 characters).')
-      return
-    }
+    if (!validate()) { focusFirstInvalid(); return }
     setCreating(true)
     try {
       const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: form })
       setLeads(prev => [lead, ...prev])
       setForm({ ...emptyForm })
+      setFieldErrors({})
       setShowCreate(false)
+      toast(`Lead added · ${lead.plant?.plantName ?? 'new lead'}`, { action: { label: 'View', onClick: () => setSelectedLead(lead) } })
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create lead.')
     } finally {
@@ -120,13 +132,16 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     }
   }
 
-  async function changeStatus(id: string, statusName: string, lostReason?: string) {
+  async function changeStatus(id: string, statusName: string, lostReason?: string, undoable = true) {
+    const before = leads.find(l => l.id === id)?.status?.statusName ?? null
     setSavingId(id)
     try {
       const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { statusName, lostReason } })
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
+      const canUndo = undoable && before && before !== statusName && before !== 'Dead' && statusName !== 'Dead'
+      toast(`Status changed to ${statusName}`, canUndo ? { action: { label: 'Undo', onClick: () => changeStatus(id, before!, undefined, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update status.')
     } finally {
@@ -142,13 +157,15 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     else changeStatus(lead.id, statusName)
   }
 
-  async function reassign(id: string, assignedToUserId: string) {
+  async function reassign(id: string, assignedToUserId: string, undoable = true) {
+    const before = leads.find(l => l.id === id)?.assignedToUserId ?? ''
     setSavingId(id)
     try {
       const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { assignedToUserId: assignedToUserId || null } })
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
+      toast(lead.assignedToUser ? `Assigned to ${person(lead.assignedToUser)}` : 'Lead unassigned', undoable ? { action: { label: 'Undo', onClick: () => reassign(id, before, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not reassign lead.')
     } finally {
@@ -156,13 +173,15 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     }
   }
 
-  async function setBm(id: string, bmUserId: string) {
+  async function setBm(id: string, bmUserId: string, undoable = true) {
+    const before = leads.find(l => l.id === id)?.bmUserId ?? ''
     setSavingId(id)
     try {
       const { lead } = await api<{ lead: Lead }>(`/leads/${id}`, { method: 'PATCH', auth: true, body: { bmUserId: bmUserId || null } })
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
+      toast(lead.bmUser ? `BM set to ${person(lead.bmUser)}` : 'BM cleared', undoable ? { action: { label: 'Undo', onClick: () => setBm(id, before, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not set the branch manager.')
     } finally {
@@ -381,45 +400,54 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {field('Client', 'clientName', 'e.g. SAIL')}
-            {field('Plant *', 'plantName', 'e.g. Bhilai Steel Plant')}
+            <Field label="Client" hint="Suggests existing clients as you type">
+              <Combobox value={form.clientName} onChange={v => setForm(p => ({ ...p, clientName: v }))} options={lookups.clients} placeholder="e.g. SAIL" noun="client" />
+            </Field>
+            <Field label="Plant" required error={fieldErrors.plantName}>
+              <input value={form.plantName} onChange={e => { set('plantName')(e); setFieldErrors(p => ({ ...p, plantName: undefined })) }} placeholder="e.g. Bhilai Steel Plant" aria-invalid={!!fieldErrors.plantName || undefined} className={fieldCls(!!fieldErrors.plantName)} />
+            </Field>
             {field('City', 'city', 'e.g. Bhilai')}
             {field('Contact', 'contactName', 'Contact person name')}
-            {field('Contact email', 'contactEmail', 'e.g. name@gmail.com', '', 'email')}
+            <Field label="Contact email" error={fieldErrors.contactEmail}>
+              <input
+                type="email"
+                value={form.contactEmail}
+                onChange={e => { set('contactEmail')(e); setFieldErrors(p => ({ ...p, contactEmail: undefined })) }}
+                onBlur={() => form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim()) && setFieldErrors(p => ({ ...p, contactEmail: 'Enter an email like name@company.com.' }))}
+                placeholder="e.g. name@company.com"
+                aria-invalid={!!fieldErrors.contactEmail || undefined}
+                className={fieldCls(!!fieldErrors.contactEmail)}
+              />
+            </Field>
             {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
-            {field('Vertical', 'verticalName', 'e.g. AI Automation')}
-            {field('Sector', 'sectorName', 'e.g. Steel')}
-            {field('Source', 'sourceName', 'e.g. Expo / Reference / Website')}
-            {field('Service type', 'serviceTypeName', 'e.g. Laser scanning / BIM')}
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              BM/Contact (branch manager)
-              <select value={form.bmUserId} onChange={set('bmUserId')} className={inputCls}>
-                <option value="">None</option>
-                {team.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Assign to
-              <select value={form.assignedToName} onChange={set('assignedToName')} className={inputCls}>
-                <option value="">Unassigned</option>
-                {employees.map(u => <option key={u.id} value={u.email}>{employeeLabel(u)}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-              Status
-              <select value={form.statusName} onChange={set('statusName')} className={inputCls}>
-                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
-              Remark
+            <Field label="Vertical">
+              <Combobox value={form.verticalName} onChange={v => setForm(p => ({ ...p, verticalName: v }))} options={lookups.verticals} placeholder="e.g. AI Automation" noun="vertical" />
+            </Field>
+            <Field label="Sector">
+              <Combobox value={form.sectorName} onChange={v => setForm(p => ({ ...p, sectorName: v }))} options={lookups.sectors} placeholder="e.g. Steel" noun="sector" />
+            </Field>
+            <Field label="Source">
+              <Combobox value={form.sourceName} onChange={v => setForm(p => ({ ...p, sourceName: v }))} options={lookups.sources} placeholder="e.g. Expo / Reference / Website" noun="source" />
+            </Field>
+            <Field label="Service type">
+              <Combobox value={form.serviceTypeName} onChange={v => setForm(p => ({ ...p, serviceTypeName: v }))} options={lookups.serviceTypes} placeholder="e.g. Laser scanning / BIM" noun="service type" />
+            </Field>
+            <Field label="BM/Contact (branch manager)">
+              <SearchSelect value={form.bmUserId} onChange={v => setForm(p => ({ ...p, bmUserId: v }))} options={team.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="None" allowEmpty label="Branch manager" />
+            </Field>
+            <Field label="Assign to">
+              <SearchSelect value={form.assignedToName} onChange={v => setForm(p => ({ ...p, assignedToName: v }))} options={employees.map(u => ({ value: u.email, label: u.userName || u.email, hint: u.email }))} emptyLabel="Unassigned" allowEmpty label="Assign to" />
+            </Field>
+            <Field label="Status">
+              <SearchSelect value={form.statusName} onChange={v => setForm(p => ({ ...p, statusName: v }))} options={STATUSES.map(st => ({ value: st, label: st }))} label="Status" />
+            </Field>
+            <Field label="Remark" className="sm:col-span-2">
               <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
-            </label>
+            </Field>
             {form.statusName === 'Dead' && (
-              <label className="flex flex-col gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 sm:col-span-2">
-                Reason lost *
-                <textarea value={form.lostReason} onChange={set('lostReason')} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} className={`${inputCls} resize-none`} />
-              </label>
+              <Field label="Reason lost" required error={fieldErrors.lostReason} className="sm:col-span-2">
+                <textarea value={form.lostReason} onChange={e => { set('lostReason')(e); setFieldErrors(p => ({ ...p, lostReason: undefined })) }} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} aria-invalid={!!fieldErrors.lostReason || undefined} className={`${fieldCls(!!fieldErrors.lostReason)} resize-none`} />
+              </Field>
             )}
           </div>
         </CreatePanel>

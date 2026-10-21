@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { Drawer } from './Drawer'
+import { btn } from '../lib/ui'
 
 // The side panel every "+ New …" button opens: the page's create form, with
 // Cancel / save pinned at the bottom. The form's state lives in the page, so
@@ -32,10 +33,10 @@ export function CreatePanel({ title, subtitle, onClose, onSubmit, saving, submit
         <div>
           {error && <p role="alert" className="mb-2 text-xs text-red-500 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+            <button type="button" onClick={onClose} className={btn('secondary', 'md')}>
               Cancel
             </button>
-            <button type="submit" form={formId} disabled={saving} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white outline-none transition hover:from-rose-500 hover:to-orange-500 focus-visible:ring-2 focus-visible:ring-orange-300 disabled:opacity-60">
+            <button type="submit" form={formId} disabled={saving} className={btn('primary', 'md')}>
               {saving ? savingLabel : submitLabel}
             </button>
           </div>

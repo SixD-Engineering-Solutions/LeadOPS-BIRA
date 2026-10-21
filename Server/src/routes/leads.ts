@@ -7,6 +7,7 @@ import { TX_OPTS } from '../utils/sequence'
 import { isAdmin } from '../utils/access'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { sendError } from '../utils/errors'
+import { findSameName } from '../utils/names'
 
 const router = Router()
 router.use(authenticate)
@@ -93,17 +94,25 @@ async function foreContact(name: string, plantId: string, email: string | null, 
   }
   return prisma.contact.create({ data: { plantId, contactPersonName: name, mailId: email, contactPersonNumber: phone } })
 }
+// Vertical / sector / source / service type: reuse an active one whose name is
+// this one written any way ("Oil and Gas" = "Oil & Gas" = "oil & gas"), so a
+// typed variant can't create a duplicate — and never a merged-away (inactive)
+// one, so an old spelling can't pull a lead back onto a retired value.
 async function foreVertical(name: string) {
-  return (await prisma.vertical.findFirst({ where: { verticalName: ci(name) } })) ?? prisma.vertical.create({ data: { verticalName: name } })
+  const rows = await prisma.vertical.findMany({ where: { isActive: true } })
+  return findSameName(rows, r => r.verticalName, name) ?? prisma.vertical.create({ data: { verticalName: name } })
 }
 async function foreSector(name: string) {
-  return (await prisma.sector.findFirst({ where: { sectorName: ci(name) } })) ?? prisma.sector.create({ data: { sectorName: name } })
+  const rows = await prisma.sector.findMany({ where: { isActive: true } })
+  return findSameName(rows, r => r.sectorName, name) ?? prisma.sector.create({ data: { sectorName: name } })
 }
 async function foreSource(name: string) {
-  return (await prisma.leadSource.findFirst({ where: { sourceName: ci(name) } })) ?? prisma.leadSource.create({ data: { sourceName: name } })
+  const rows = await prisma.leadSource.findMany({ where: { isActive: true } })
+  return findSameName(rows, r => r.sourceName, name) ?? prisma.leadSource.create({ data: { sourceName: name } })
 }
 async function foreServiceType(name: string) {
-  return (await prisma.serviceType.findFirst({ where: { serviceTypeName: ci(name) } })) ?? prisma.serviceType.create({ data: { serviceTypeName: name } })
+  const rows = await prisma.serviceType.findMany({ where: { isActive: true } })
+  return findSameName(rows, r => r.serviceTypeName, name) ?? prisma.serviceType.create({ data: { serviceTypeName: name } })
 }
 const STATUS_CATEGORY: Record<string, string> = { submitted: 'Open', 'in process': 'In Progress', dead: 'Closed Lost' }
 async function foreStatus(name: string) {

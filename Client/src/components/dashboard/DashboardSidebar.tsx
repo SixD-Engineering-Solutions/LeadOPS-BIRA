@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Icon, icons } from './icons'
 import { Popover, MenuItem, MenuDivider } from '../table/Popover'
 import type { NavBadge } from '../../hooks/useNavBadges'
+import { LogoMark } from '../Logo'
 
 export type NavItem = { key: string; label: string; icon: string }
 export type NavGroup = { label?: string; items: NavItem[] }
@@ -65,7 +66,7 @@ export function DashboardSidebar({
       >
         {/* logo + fold */}
         <div className={`flex h-16 shrink-0 items-center gap-2 border-b border-gray-100 dark:border-gray-800 ${narrow ? 'justify-center px-2' : 'px-5'}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-rose-400 to-orange-400 font-bold text-white">L</div>
+          <LogoMark size={32} />
           {!narrow && <span className="text-lg font-bold tracking-tight">LeadOps</span>}
           <button onClick={onCloseMobileNav} className="ml-auto rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 md:hidden dark:hover:bg-gray-800 dark:hover:text-gray-300" aria-label="Close menu">
             <Icon d={icons.close} className="h-5 w-5" />

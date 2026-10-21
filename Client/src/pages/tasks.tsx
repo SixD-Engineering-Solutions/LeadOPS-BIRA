@@ -7,6 +7,11 @@ import { EmptyState } from '../components/EmptyState'
 import { PageHeader, NewButton } from '../components/PageHeader'
 import { CreatePanel } from '../components/CreatePanel'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import { Field } from '../components/form/Field'
+import { SearchSelect } from '../components/form/SearchSelect'
+import { inputCls as fieldCls, focusFirstInvalid } from '../lib/formStyles'
+import type { FieldErrors } from '../lib/formStyles'
+import { toast } from '../lib/toast'
 import { SkeletonRows } from '../components/Skeleton'
 import { useTableView } from '../lib/useTableView'
 import { useConfirm } from '../lib/useConfirm'
@@ -16,6 +21,7 @@ import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../componen
 import { MenuSelect, PersonChip } from '../components/table/MenuSelect'
 import { RowMenu } from '../components/table/RowMenu'
 import { DueDate, RelTime } from '../components/table/RelTime'
+import { DatePicker } from '../components/form/DatePicker'
 
 const STATUSES = ['Pending', 'In Progress', 'Done'] as const
 const person = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
@@ -33,6 +39,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'title' | 'deadline' | 'assignedToUserId'>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
 
   async function load() {
@@ -73,7 +80,6 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
       .then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin')))
       .catch(() => {})
   }, [isAdmin])
-  const employeeLabel = (u: EmployeeUser) => `${u.userName || u.email} — ${u.email}`
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
@@ -81,15 +87,19 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   async function createTask(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.title.trim()) { setFormError('Title is required.'); return }
-    if (!form.deadline) { setFormError('Deadline is required.'); return }
-    if (!form.assignedToUserId) { setFormError('Pick who this task is assigned to.'); return }
+    const errs: typeof fieldErrors = {}
+    if (!form.title.trim()) errs.title = 'Title is required.'
+    if (!form.deadline) errs.deadline = 'Deadline is required.'
+    if (!form.assignedToUserId) errs.assignedToUserId = 'Pick who this task is for.'
+    setFieldErrors(errs)
+    if (Object.keys(errs).length) { focusFirstInvalid(); return }
     setCreating(true)
     try {
       const { task } = await api<{ task: Task }>('/tasks', { method: 'POST', auth: true, body: form })
       setTasks(prev => [task, ...prev])
       setForm({ ...emptyForm })
       setShowCreate(false)
+      toast(`Task assigned to ${person(task.assignedToUser) ?? 'them'}`)
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create task.')
     } finally {
@@ -97,12 +107,14 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }
 
-  async function changeStatus(id: string, status: string) {
+  async function changeStatus(id: string, status: string, undoable = true) {
+    const before = tasks.find(t => t.id === id)?.status
     setSavingId(id)
     try {
       const { task } = await api<{ task: Task }>(`/tasks/${id}`, { method: 'PATCH', auth: true, body: { status } })
       setTasks(prev => prev.map(t => (t.id === id ? task : t)))
       setError(null)
+      toast(status === 'Done' ? `Done · ${task.title}` : `Task marked ${status}`, undoable && before && before !== status ? { action: { label: 'Undo', onClick: () => changeStatus(id, before, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update task.')
     } finally {
@@ -119,6 +131,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
     try {
       await api(`/tasks/${id}`, { method: 'DELETE', auth: true })
       setTasks(prev => prev.filter(t => t.id !== id))
+      toast('Task deleted')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not delete task.')
     } finally {
@@ -217,21 +230,15 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
-                Title *
-                <input value={form.title} onChange={set('title')} placeholder="e.g. Follow up with Bhilai Steel Plant" className={inputCls} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-                Deadline *
-                <input type="date" value={form.deadline} onChange={set('deadline')} className={inputCls} />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-                Assign to *
-                <select value={form.assignedToUserId} onChange={set('assignedToUserId')} className={inputCls}>
-                  <option value="">Select employee…</option>
-                  {employees.map(u => <option key={u.id} value={u.id}>{employeeLabel(u)}</option>)}
-                </select>
-              </label>
+              <Field label="Title" required error={fieldErrors.title} className="sm:col-span-2">
+                <input value={form.title} onChange={e => { set('title')(e); setFieldErrors(p => ({ ...p, title: undefined })) }} placeholder="e.g. Follow up with Bhilai Steel Plant" aria-invalid={!!fieldErrors.title || undefined} className={fieldCls(!!fieldErrors.title)} />
+              </Field>
+              <Field label="Deadline" required error={fieldErrors.deadline}>
+                <DatePicker value={form.deadline} onChange={v => { setForm(p => ({ ...p, deadline: v })); setFieldErrors(p => ({ ...p, deadline: undefined })) }} invalid={!!fieldErrors.deadline} />
+              </Field>
+              <Field label="Assign to" required error={fieldErrors.assignedToUserId}>
+                <SearchSelect value={form.assignedToUserId} onChange={v => { setForm(p => ({ ...p, assignedToUserId: v })); setFieldErrors(p => ({ ...p, assignedToUserId: undefined })) }} options={employees.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="Select employee…" invalid={!!fieldErrors.assignedToUserId} label="Assign to" />
+              </Field>
               <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
                 Description
                 <textarea value={form.description} onChange={set('description')} placeholder="Optional details" rows={2} className={inputCls} />

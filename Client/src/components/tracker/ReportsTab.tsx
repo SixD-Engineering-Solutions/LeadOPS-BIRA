@@ -9,7 +9,7 @@ import { ChartDetailModal } from './ChartDetail'
 import type { ChartDetail } from './ChartDetail'
 import { SkeletonCards } from '../Skeleton'
 import ComparisonView from './ComparisonView'
-import Segmented from './Segmented'
+import Segmented from '../Segmented'
 import {
   FY_MONTHS, STATUS_GROUPS, STATUS_COLORS, DSO_COLORS, PAYMENT_COLORS,
   outcomeOfStatus, groupOfStatus, outcomeColor, round2, dsoLabel, paymentLabel,
@@ -254,21 +254,12 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
               ? 'Similar statuses grouped into sales stages · click a row to see its leads'
               : 'Every exact status, from the imported sheet and the app · click a row to see its leads'}
             action={
-              <div className="flex shrink-0 rounded-lg border border-gray-200 p-0.5 text-[11px] font-semibold dark:border-gray-700" role="group" aria-label="Status view">
-                {(['grouped', 'exact'] as const).map(v => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setStatusView(v)}
-                    aria-pressed={statusView === v}
-                    className={`rounded-md px-2.5 py-1 transition ${statusView === v
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                  >
-                    {v === 'grouped' ? 'Grouped' : 'Exact'}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label="Status view"
+                value={statusView}
+                onChange={setStatusView}
+                options={[{ value: 'grouped', label: 'Grouped' }, { value: 'exact', label: 'Exact' }]}
+              />
             }
           >
             <BarBreakdown data={statusBars} colorOf={statusBarColor} onSelect={selectStatus} />

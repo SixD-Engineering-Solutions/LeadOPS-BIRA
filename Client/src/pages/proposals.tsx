@@ -10,6 +10,11 @@ import { EmptyState } from '../components/EmptyState'
 import { PageHeader, NewButton } from '../components/PageHeader'
 import { CreatePanel } from '../components/CreatePanel'
 import { PAGE_CLASS } from '../lib/pageChrome'
+import { Field } from '../components/form/Field'
+import { SearchSelect } from '../components/form/SearchSelect'
+import { focusFirstInvalid } from '../lib/formStyles'
+import type { FieldErrors } from '../lib/formStyles'
+import { toast } from '../lib/toast'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
 import { useTableView } from '../lib/useTableView'
@@ -19,6 +24,8 @@ import { TableToolbar, TableFooter, NoMatches, RefreshButton } from '../componen
 import { MenuSelect } from '../components/table/MenuSelect'
 import { RowMenu } from '../components/table/RowMenu'
 import { DueDate, RelTime } from '../components/table/RelTime'
+import { btn } from '../lib/ui'
+import { DatePicker } from '../components/form/DatePicker'
 
 const statusStyle = (name: string) => PROPOSAL_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtValue = (v: number | null) => (v == null ? <span className="text-gray-300 dark:text-gray-600">—</span> : formatINR(v))
@@ -37,6 +44,7 @@ export default function Proposals() {
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'leadId'>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
 
   function load() {
@@ -58,7 +66,6 @@ export default function Proposals() {
     return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
   }, [])
 
-  const leadLabel = (l: Lead) => `${l.plant?.plantName ?? 'Unnamed plant'}${l.plant?.client?.clientName ? ` — ${l.plant.client.clientName}` : ''}`
   // One proposal per lead (enforced server-side too) — only leads without one
   // are offered; an existing proposal is revised in place instead.
   const leadsWithProposal = new Set(proposals.map(p => p.leadId))
@@ -67,7 +74,8 @@ export default function Proposals() {
   async function createProposal(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.leadId) { setFormError('Lead is required.'); return }
+    if (!form.leadId) { setFieldErrors({ leadId: 'Choose the lead this proposal is for.' }); focusFirstInvalid(); return }
+    setFieldErrors({})
     setCreating(true)
     try {
       const { proposal } = await api<{ proposal: Proposal }>('/proposals', {
@@ -84,6 +92,7 @@ export default function Proposals() {
       setProposals(prev => [proposal, ...prev])
       setForm({ ...emptyForm })
       setShowCreate(false)
+      toast(`Proposal ${proposal.proposalNumber} added`, { action: { label: 'View', onClick: () => setOpenLeadId(proposal.leadId) } })
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create proposal.')
     } finally {
@@ -91,12 +100,16 @@ export default function Proposals() {
     }
   }
 
-  async function changeStatus(id: string, status: ProposalStatus) {
+  async function changeStatus(id: string, status: ProposalStatus, undoable = true) {
+    const before = proposals.find(p => p.id === id)?.status as ProposalStatus | undefined
     setSavingId(id)
     try {
       const { proposal } = await api<{ proposal: Proposal }>(`/proposals/${id}`, { method: 'PATCH', auth: true, body: { status } })
       setProposals(prev => prev.map(p => (p.id === id ? proposal : p)))
       setError(null)
+      // No undo into or out of Won / Lost: Won creates a project, Lost needs a reason.
+      const canUndo = undoable && before && before !== status && ![before, status].some(x => x === 'Won' || x === 'Lost')
+      toast(`${proposal.proposalNumber} marked ${status}`, canUndo ? { action: { label: 'Undo', onClick: () => changeStatus(id, before!, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update status.')
     } finally {
@@ -267,21 +280,23 @@ export default function Proposals() {
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
-              Lead *
-              <select value={form.leadId} onChange={e => setForm({ ...form, leadId: e.target.value })} className={inputCls}>
-                <option value="">{leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a proposal' : 'Select a lead…'}</option>
-                {availableLeads.map(l => <option key={l.id} value={l.id}>{leadLabel(l)}</option>)}
-              </select>
-              <span className="text-[11px] font-normal text-gray-400 dark:text-gray-400">Only leads without a proposal are listed — one proposal per lead.</span>
-            </label>
+            <Field label="Lead" required error={fieldErrors.leadId} hint="Only leads without a proposal are listed — one proposal per lead." className="sm:col-span-2">
+              <SearchSelect
+                value={form.leadId}
+                onChange={v => { setForm({ ...form, leadId: v }); setFieldErrors({}) }}
+                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.plantName ?? 'Unnamed plant', hint: l.plant?.client?.clientName ?? undefined }))}
+                emptyLabel={leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a proposal' : 'Select a lead…'}
+                invalid={!!fieldErrors.leadId}
+                label="Lead"
+              />
+            </Field>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Value (₹)
               <input type="number" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Submission date
-              <input type="date" value={form.submissionDate} onChange={e => setForm({ ...form, submissionDate: e.target.value })} className={inputCls} />
+              <DatePicker value={form.submissionDate} onChange={v => setForm({ ...form, submissionDate: v })} />
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Probability %
@@ -289,7 +304,7 @@ export default function Proposals() {
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Expected order date
-              <input type="date" value={form.expectedOrderDate} onChange={e => setForm({ ...form, expectedOrderDate: e.target.value })} className={inputCls} />
+              <DatePicker value={form.expectedOrderDate} onChange={v => setForm({ ...form, expectedOrderDate: v })} />
             </label>
           </div>
         </CreatePanel>
@@ -343,25 +358,22 @@ function MarkWonModal({ proposal, onClose, onWon }: { proposal: Proposal; onClos
       <form onSubmit={submit} className="flex flex-col gap-3">
         <label className={label}>
           Responsible engineer *
-          <select value={form.responsibleUserId} onChange={e => setForm({ ...form, responsibleUserId: e.target.value })} className={inputCls} autoFocus>
-            <option value="">Select an engineer…</option>
-            {employees.map(u => <option key={u.id} value={u.id}>{u.userName || u.email}</option>)}
-          </select>
+          <SearchSelect value={form.responsibleUserId} onChange={v => setForm({ ...form, responsibleUserId: v })} options={employees.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="Select an engineer…" label="Responsible engineer" autoFocus />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className={label}>
             Start date *
-            <input type="date" value={form.startDate} max={form.completionDate || undefined} onChange={e => setForm({ ...form, startDate: e.target.value })} className={inputCls} />
+            <DatePicker value={form.startDate} max={form.completionDate || undefined} onChange={v => setForm({ ...form, startDate: v })} />
           </label>
           <label className={label}>
             Completion date *
-            <input type="date" value={form.completionDate} min={form.startDate || undefined} onChange={e => setForm({ ...form, completionDate: e.target.value })} className={inputCls} />
+            <DatePicker value={form.completionDate} min={form.startDate || undefined} onChange={v => setForm({ ...form, completionDate: v })} />
           </label>
         </div>
         {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
-          <button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-rose-400 to-orange-400 px-5 py-2 text-sm font-semibold text-white transition hover:from-rose-500 hover:to-orange-500 disabled:opacity-60">
+          <button type="button" onClick={onClose} className={btn('secondary', 'md')}>Cancel</button>
+          <button type="submit" disabled={saving} className={btn('primary', 'md')}>
             {saving ? 'Saving…' : 'Mark Won & create project'}
           </button>
         </div>
