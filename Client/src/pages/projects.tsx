@@ -55,12 +55,13 @@ export default function Projects() {
   const [savingId, setSavingId] = useState<string | null>(null)
 
   function load() {
-    setLoading(true)
     api<{ projects: Project[] }>('/projects', { auth: true })
       .then(({ projects }) => { setProjects(projects); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load projects.'))
       .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
   useEffect(() => {
     api<{ leads: Lead[] }>('/leads', { auth: true }).then(({ leads }) => setLeads(leads)).catch(() => {})
@@ -279,11 +280,11 @@ export default function Projects() {
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="projects" placeholder="Search work order, project, client…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="projects" exportCsv={{ filename: 'projects', columns: columns }} placeholder="Search work order, project, client…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && projects.length === 0 ? (
           <SkeletonRows />

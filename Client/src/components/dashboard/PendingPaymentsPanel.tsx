@@ -1,7 +1,6 @@
 import type { Invoice } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
 import { formatINR } from '../../lib/format'
-import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
 import { BADGE_TONES } from '../../lib/statusStyles'
 
@@ -15,19 +14,19 @@ export function PendingPaymentsPanel({ pendingInvoices, error, onRetry, onOpenIn
   onRetry: () => void
   onOpenInvoices: () => void
 }) {
-  if (error) return <ErrorBanner message={error} onRetry={onRetry} className="mt-6" />
+  if (error) return <ErrorBanner message={error} onRetry={onRetry} className="" />
 
   return (
-    <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="h-full rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
         <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Pending Payments</h3>
       </div>
       {!pendingInvoices.loaded ? (
         <SkeletonRows rows={2} />
       ) : pendingInvoices.invoices.length === 0 ? (
-        <EmptyState compact icon="check" title="No payments pending" message="Every invoice raised so far has been paid in full." />
+        <p className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">Nothing pending — every invoice raised so far is paid in full.</p>
       ) : (
-      <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
+      <ul className="max-h-80 divide-y divide-gray-50 overflow-y-auto dark:divide-gray-800/60">
         {pendingInvoices.invoices.map(inv => {
           const outstanding = inv.amount - inv.payments.reduce((sum, p) => sum + p.amountReceived, 0)
           return (

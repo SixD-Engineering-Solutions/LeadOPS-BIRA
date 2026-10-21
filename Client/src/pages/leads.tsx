@@ -52,18 +52,14 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const [savingId, setSavingId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
-  async function load() {
-    setLoading(true)
-    try {
-      const { leads } = await api<{ leads: Lead[] }>('/leads', { auth: true })
-      setLeads(leads)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load leads.')
-    } finally {
-      setLoading(false)
-    }
+  function load() {
+    return api<{ leads: Lead[] }>('/leads', { auth: true })
+      .then(({ leads }) => { setLeads(leads); setError(null) })
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load leads.'))
+      .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
 
   // Live updates — any lead created/updated/deleted by anyone (not just leads
@@ -334,11 +330,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="leads" placeholder="Search plant, client, contact, city…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="leads" exportCsv={{ filename: 'leads', columns: columns }} placeholder="Search plant, client, contact, city…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && leads.length === 0 ? (
           <SkeletonRows />

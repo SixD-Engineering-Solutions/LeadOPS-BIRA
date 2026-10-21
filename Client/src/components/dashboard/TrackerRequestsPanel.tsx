@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, NOTIFICATION_EVENT } from '../../lib/api'
 import type { IncomingTrackerRequest, TrackerChangeRequest, TrackerTable, TrackerValue } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
-import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
 import { useTrackerFields, fieldLabel, showValue } from '../../lib/trackerEditFields'
 import type { TrackerFieldDefs } from '../../lib/trackerEditFields'
@@ -57,7 +56,7 @@ export function TrackerRequestsPanel({ isAdmin, onOpenTracker }: { isAdmin: bool
       {!loaded ? (
         <SkeletonRows rows={2} />
       ) : requests.length === 0 ? (
-        <EmptyState compact icon="check" title="No requests waiting" message="When an employee asks to change the tracker, it shows up here for you to approve or decline." />
+        <p className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">No requests waiting. When an employee asks to change the tracker, it shows up here for you to approve or decline.</p>
       ) : (
         <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
           {requests.map(r => isAdmin

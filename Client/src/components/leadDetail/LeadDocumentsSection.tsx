@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api, uploadDocument, downloadDocument } from '../../lib/api'
 import type { LeadDocument } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
-import { DetailSection, fmtDay } from './shared'
+import { DetailSection } from './shared'
+import { fmtDay } from '../../lib/format'
 import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
 
@@ -20,20 +21,23 @@ export function LeadDocumentsSection({ leadId, onUploaded, bare = false }: {
   bare?: boolean
 }) {
   const [documents, setDocuments] = useState<LeadDocument[]>([])
-  const [loadingDocuments, setLoadingDocuments] = useState(true)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  function loadDocuments() {
-    setLoadingDocuments(true)
+  // Loading until the list on screen is for this lead (and the latest retry).
+  const [attempt, setAttempt] = useState(0)
+  const key = `${leadId}:${attempt}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loadingDocuments = loadedKey !== key
+  useEffect(() => {
     api<{ documents: LeadDocument[] }>(`/documents?leadId=${leadId}`, { auth: true })
       .then(({ documents }) => { setDocuments(documents); setDocumentsError(null) })
       .catch(e => setDocumentsError(e instanceof Error ? e.message : 'Failed to load documents.'))
-      .finally(() => setLoadingDocuments(false))
-  }
-  useEffect(() => { loadDocuments() }, [leadId])
+      .finally(() => setLoadedKey(key))
+  }, [key, leadId])
+  const loadDocuments = () => setAttempt(a => a + 1)
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]

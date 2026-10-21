@@ -1,5 +1,5 @@
 import type { Lead, EmployeeUser } from '../../lib/api'
-import { displayName, initials } from './DashboardSidebar'
+import { displayName, initials } from '../../lib/people'
 import { Modal } from '../Modal'
 import { EmptyState } from '../EmptyState'
 import { LEAD_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../../lib/statusStyles'

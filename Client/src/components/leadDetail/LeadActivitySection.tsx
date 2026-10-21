@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api, ACTIVITY_TYPES } from '../../lib/api'
 import type { ActivityType } from '../../lib/api'
-import { inputCls } from './shared'
+import { INPUT_CLS as inputCls } from '../../lib/formStyles'
 import { btn } from '../../lib/ui'
 import { DatePicker } from '../form/DatePicker'
 

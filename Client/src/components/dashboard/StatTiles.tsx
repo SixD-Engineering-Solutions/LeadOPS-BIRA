@@ -2,6 +2,8 @@ import type { LeadStats } from '../../hooks/useLeadStats'
 import type { ProposalStats } from '../../hooks/useProposalStats'
 import { ErrorBanner } from '../ErrorBanner'
 import { formatCount, formatINR, formatINRCompact } from '../../lib/format'
+import type { Insights } from '../../hooks/useDashboardInsights'
+import { Trend } from './InsightCards'
 
 // Thin upward line (2px, rounded ends) with a small end marker. Emerald = growth.
 function Sparkline({ data }: { data: number[] }) {
@@ -39,10 +41,11 @@ function Ring({ pct }: { pct: number }) {
 // a failed source shows a dismissable-by-retry error banner above the grid
 // instead of the tiles it feeds silently going stale.
 export function StatTiles({
-  stats, proposalStats, leadStatsError, proposalStatsError, onRetryLeadStats, onRetryProposalStats,
+  stats, proposalStats, insights, leadStatsError, proposalStatsError, onRetryLeadStats, onRetryProposalStats,
   onOpenAssignments, onOpenProposals, onOpenPipeline,
 }: {
   stats: LeadStats
+  insights: Insights
   proposalStats: ProposalStats
   leadStatsError: string | null
   proposalStatsError: string | null
@@ -77,9 +80,10 @@ export function StatTiles({
           <div className="mt-1 flex items-end justify-between gap-2">
             <div>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.loaded ? formatCount(stats.total) : '—'}</p>
-              <p className={`mt-0.5 text-[11px] font-medium ${stats.loaded && stats.weekAdded > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-400'}`}>
-                {stats.loaded ? (stats.weekAdded > 0 ? `+${stats.weekAdded} this week` : 'No new this week') : ' '}
+              <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
+                {stats.loaded ? `+${formatCount(insights.leadsNew.now)} this month` : ' '}
               </p>
+              {insights.loaded && <p className="mt-0.5 text-[11px] font-medium"><Trend value={insights.leadsNew} prevMonth={insights.prevMonth} /></p>}
             </div>
             <Sparkline data={stats.spark} />
           </div>
@@ -114,6 +118,11 @@ export function StatTiles({
           <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
             {proposalStats.loaded ? `${proposalStats.pendingCount} open proposal${proposalStats.pendingCount === 1 ? '' : 's'}` : ' '}
           </p>
+          {insights.loaded && (
+            <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
+              {formatINRCompact(insights.proposalValueAdded.now)} quoted this month · <Trend value={insights.proposalValueAdded} prevMonth={insights.prevMonth} />
+            </p>
+          )}
         </button>
 
         {/* Orders Received — sum of Won proposal values */}
@@ -130,6 +139,11 @@ export function StatTiles({
           <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
             {proposalStats.loaded ? `${proposalStats.wonCount} won proposal${proposalStats.wonCount === 1 ? '' : 's'}` : ' '}
           </p>
+          {insights.loaded && (
+            <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
+              {formatINRCompact(insights.wonValue.now)} won this month · <Trend value={insights.wonValue} prevMonth={insights.prevMonth} />
+            </p>
+          )}
         </button>
 
         {/* Lost Deals — count + value of Lost proposals */}

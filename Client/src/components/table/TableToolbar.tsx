@@ -3,13 +3,19 @@ import type { ReactNode } from 'react'
 import type { TableView } from '../../lib/useTableView'
 import { formatCount } from '../../lib/format'
 import { Popover } from './Popover'
+import type { Column } from './DataGrid'
+import { exportTableCsv } from '../../lib/csv'
 
-type View = Pick<TableView<unknown>, 'views' | 'view' | 'setView' | 'query' | 'setQuery' | 'facets' | 'setFilter' | 'clearFilters' | 'isFiltered' | 'matching' | 'total'>
+type View = Pick<TableView<unknown>, 'views' | 'view' | 'setView' | 'query' | 'setQuery' | 'facets' | 'setFilter' | 'clearFilters' | 'isFiltered' | 'matching' | 'total'
+  | 'saved' | 'activeSaved' | 'saveFilter' | 'applySaved' | 'removeSaved'>
 
 // Above every table: the view tabs ("All · My leads · Unassigned"), then a
-// search box, a menu per filter, and how many rows are showing. `children`
-// goes at the right end (e.g. a Refresh button).
-export function TableToolbar({ view, noun, placeholder, children }: { view: View; noun: string; placeholder: string; children?: ReactNode }) {
+// search box, a menu per filter, saved filters, and how many rows are
+// showing. `exportCsv` adds an "Export" button that downloads every row the
+// search and filters leave, with the table's own columns. `children` goes at
+// the right end (e.g. a Refresh button).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- any table's columns
+export function TableToolbar({ view, noun, placeholder, exportCsv, children }: { view: View; noun: string; placeholder: string; exportCsv?: { filename: string; columns: Column<any>[] }; children?: ReactNode }) {
   const showing = view.matching.length
   return (
     <div className="border-b border-gray-100 dark:border-gray-800">
@@ -46,6 +52,7 @@ export function TableToolbar({ view, noun, placeholder, children }: { view: View
           </svg>
           <input
             type="search"
+            data-table-search
             value={view.query}
             onChange={e => view.setQuery(e.target.value)}
             placeholder={placeholder}
@@ -61,14 +68,114 @@ export function TableToolbar({ view, noun, placeholder, children }: { view: View
           </button>
         )}
 
+        <SavedMenu view={view} />
+
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400" aria-live="polite">
             {view.isFiltered ? `${formatCount(showing)} of ${formatCount(view.total)} ${noun}` : `${formatCount(showing)} ${noun}`}
           </span>
+          {exportCsv && <ExportButton filename={exportCsv.filename} columns={exportCsv.columns} rows={view.matching} />}
           {children}
         </div>
       </div>
     </div>
+  )
+}
+
+// Named search + filter sets for this table: one click to apply, saved in
+// this browser. "Save current filters…" appears once something is filtered.
+function SavedMenu({ view }: { view: View }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [naming, setNaming] = useState(false)
+  const [name, setName] = useState('')
+  if (view.saved.length === 0 && !view.isFiltered) return null
+  const close = () => { setAnchor(null); setNaming(false); setName('') }
+  const save = () => {
+    const n = name.trim()
+    if (!n) return
+    view.saveFilter(n)
+    close()
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={!!anchor}
+        onClick={e => (anchor ? close() : setAnchor(e.currentTarget))}
+        className={`inline-flex max-w-[200px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-orange-300 ${
+          view.activeSaved
+            ? 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-300'
+            : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-800 dark:border-gray-700 dark:text-gray-300'
+        }`}
+      >
+        <svg className="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v12l7-3.5 7 3.5V5a2 2 0 00-2-2H5z" /></svg>
+        <span className="truncate">{view.activeSaved ?? 'Saved'}</span>
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={close} label="Saved filters" minWidth={240}>
+          {view.saved.length > 0 && (
+            <div className="max-h-64 overflow-y-auto">
+              {view.saved.map(f => (
+                <div key={f.name} className="group flex items-center rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/60">
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={view.activeSaved === f.name}
+                    onClick={() => { view.applySaved(f.name); close() }}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left text-xs text-gray-700 outline-none focus:bg-gray-50 dark:text-gray-200 dark:focus:bg-gray-700/60"
+                  >
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${view.activeSaved === f.name ? 'bg-orange-500' : 'bg-transparent'}`} />
+                    <span className="truncate">{f.name}</span>
+                  </button>
+                  <button type="button" onClick={() => view.removeSaved(f.name)} aria-label={`Delete saved filter ${f.name}`} className="mr-1 rounded px-1.5 text-gray-300 outline-none hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-orange-300 dark:text-gray-600">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {view.isFiltered && !view.activeSaved && (
+            <div className={view.saved.length ? 'mt-1 border-t border-gray-100 pt-1 dark:border-gray-700' : ''}>
+              {naming ? (
+                <form onSubmit={e => { e.preventDefault(); save() }} className="flex gap-1.5 p-1">
+                  <input
+                    autoFocus
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="e.g. My open leads in Steel"
+                    aria-label="Name for these filters"
+                    maxLength={40}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <button type="submit" disabled={!name.trim()} className="rounded-lg bg-orange-500 px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">Save</button>
+                </form>
+              ) : (
+                <button type="button" role="menuitem" onClick={() => setNaming(true)} className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-orange-600 outline-none hover:bg-gray-50 focus:bg-gray-50 dark:text-orange-300 dark:hover:bg-gray-700/60">
+                  + Save current filters…
+                </button>
+              )}
+            </div>
+          )}
+        </Popover>
+      )}
+    </>
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- any table's columns and rows
+function ExportButton({ filename, columns, rows }: { filename: string; columns: Column<any>[]; rows: unknown[] }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={busy || rows.length === 0}
+      onClick={() => { setBusy(true); exportTableCsv(filename, columns, rows).finally(() => setBusy(false)) }}
+      title={`Download these ${formatCount(rows.length)} rows as a spreadsheet (CSV)`}
+      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-800 focus-visible:ring-2 focus-visible:ring-orange-300 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+    >
+      <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v7.6l2.3-2.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4L9 11.6V4a1 1 0 011-1zM4 15a1 1 0 011 1h10a1 1 0 112 0 2 2 0 01-2 2H5a2 2 0 01-2-2 1 1 0 011-1z" clipRule="evenodd" /></svg>
+      {busy ? 'Exporting…' : 'Export'}
+    </button>
   )
 }
 

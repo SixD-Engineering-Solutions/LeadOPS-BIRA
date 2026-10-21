@@ -1,8 +1,6 @@
 // Shared by LeadDetailModal and its three section components (documents,
 // proposals, activity timeline).
 
-export const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-export const fmtDay = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 
 export function DetailSection({ title, children, last = false }: { title: string; children: React.ReactNode; last?: boolean }) {
   return (

@@ -48,6 +48,20 @@ function load(id: string): Partial<Stored> {
   }
 }
 
+/** A named search + filters (+ view tab) someone saved on a table, in this browser. */
+export type SavedFilter = { name: string; view: string; query: string; filters: Record<string, string[]> }
+const savedKey = (id: string) => `leadops.table.${id}.saved`
+function loadSaved(id: string): SavedFilter[] {
+  try { return JSON.parse(localStorage.getItem(savedKey(id)) ?? '[]') as SavedFilter[] } catch { return [] }
+}
+function storeSaved(id: string, list: SavedFilter[]) {
+  try { localStorage.setItem(savedKey(id), JSON.stringify(list)) } catch { /* not remembered */ }
+}
+const sameFilters = (a: Record<string, string[]>, b: Record<string, string[]>) => {
+  const norm = (f: Record<string, string[]>) => JSON.stringify(Object.keys(f).filter(k => f[k]?.length).sort().map(k => [k, [...f[k]].sort()]))
+  return norm(a) === norm(b)
+}
+
 function save(id: string, s: Stored) {
   try { localStorage.setItem(keyOf(id), JSON.stringify(s)) } catch { /* private window etc. — just not remembered */ }
 }
@@ -83,6 +97,8 @@ export function useTableView<T>(opts: {
     }
   })
   const [page, setPage] = useState(0)
+  const [saved, setSaved] = useState<SavedFilter[]>(() => loadSaved(id))
+  const updateSaved = (next: SavedFilter[]) => { setSaved(next); storeSaved(id, next) }
 
   const update = (patch: Partial<Stored>) => {
     setState(prev => {
@@ -189,5 +205,14 @@ export function useTableView<T>(opts: {
     },
     setPage,
     setPageSize: (n: number) => update({ pageSize: n }),
+    /** Saved filters for this table, and the one the table is showing now (if any). */
+    saved,
+    activeSaved: saved.find(f => f.view === state.view && f.query === state.query && sameFilters(f.filters, state.filters))?.name ?? null,
+    saveFilter: (name: string) => updateSaved([...saved.filter(f => f.name !== name), { name, view: state.view, query: state.query, filters: state.filters }]),
+    applySaved: (name: string) => {
+      const f = saved.find(x => x.name === name)
+      if (f) update({ view: views.some(v => v.id === f.view) ? f.view : state.view, query: f.query, filters: f.filters })
+    },
+    removeSaved: (name: string) => updateSaved(saved.filter(f => f.name !== name)),
   }
 }

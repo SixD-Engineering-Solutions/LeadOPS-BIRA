@@ -15,11 +15,13 @@ const EMPTY_STATS: ProposalStats = { pendingValue: 0, pendingCount: 0, wonValue:
 // values grouped by whether they're still open, Won, or Lost.
 export function useProposalStats(active: boolean) {
   const [proposalStats, setProposalStats] = useState<ProposalStats>(EMPTY_STATS)
+  const [proposals, setProposals] = useState<Proposal[]>([])
   const [error, setError] = useState<string | null>(null)
 
   function reload() {
     return api<{ proposals: Proposal[] }>('/proposals', { auth: true })
       .then(({ proposals }) => {
+        setProposals(proposals)
         const pending = proposals.filter(p => p.status !== 'Won' && p.status !== 'Lost')
         const won = proposals.filter(p => p.status === 'Won')
         const lost = proposals.filter(p => p.status === 'Lost')
@@ -49,5 +51,5 @@ export function useProposalStats(active: boolean) {
     return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
   }, [active])
 
-  return { proposalStats, error, reload }
+  return { proposalStats, proposals, error, reload }
 }

@@ -17,7 +17,7 @@ export function DueDate({ ts, done = false, empty = '—' }: { ts: string | null
   return (
     <span className="whitespace-nowrap" title={formatDateTime(ts)}>
       <span className={late ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-gray-700 dark:text-gray-300'}>{formatDate(ts)}</span>
-      {hint && <span className={`block text-[11px] ${late ? 'text-rose-500 dark:text-rose-400' : soon ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'}`}>{hint}</span>}
+      {hint && <span data-csv-skip className={`block text-[11px] ${late ? 'text-rose-500 dark:text-rose-400' : soon ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'}`}>{hint}</span>}
     </span>
   )
 }

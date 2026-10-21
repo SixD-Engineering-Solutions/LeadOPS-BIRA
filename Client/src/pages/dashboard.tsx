@@ -1,24 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { AuthUser, Lead } from '../lib/api'
-import Leads from './leads'
-import Reports from './reports'
-import Team from './team'
-import Tasks from './tasks'
-import Proposals from './proposals'
-import Projects from './projects'
-import Invoices from './invoices'
-import Tracker from './tracker'
-import Cleanup from './cleanup'
+import { SkeletonRows } from '../components/Skeleton'
 import NotificationBell from '../components/NotificationBell'
 import ThemeToggle from '../components/ThemeToggle'
 import LeadDetailModal from '../components/LeadDetailModal'
-import { Icon, icons } from '../components/dashboard/icons'
-import { DashboardSidebar, displayName, type NavItem, type NavGroup } from '../components/dashboard/DashboardSidebar'
+import { Icon } from '../components/dashboard/icons'
+import { icons } from '../lib/iconPaths'
+import { DashboardSidebar, type NavItem, type NavGroup } from '../components/dashboard/DashboardSidebar'
+import { displayName } from '../lib/people'
 import { GlobalSearch } from '../components/GlobalSearch'
 import { PageHeader } from '../components/PageHeader'
 import { PageChromeContext, PAGE_CLASS } from '../lib/pageChrome'
 import { useNavBadges } from '../hooks/useNavBadges'
 import { Toaster } from '../components/Toaster'
+import { KeyboardShortcuts } from '../components/KeyboardShortcuts'
 import { StatTiles } from '../components/dashboard/StatTiles'
 import { FollowUpsPanel } from '../components/dashboard/FollowUpsPanel'
 import { PendingPaymentsPanel } from '../components/dashboard/PendingPaymentsPanel'
@@ -30,7 +25,41 @@ import { useProposalStats } from '../hooks/useProposalStats'
 import { usePendingInvoices } from '../hooks/usePendingInvoices'
 import { useMyTasks } from '../hooks/useMyTasks'
 import { useFollowUps } from '../hooks/useFollowUps'
+import { useDashboardInsights } from '../hooks/useDashboardInsights'
+import { TargetCard, FunnelCard, AttentionCard } from '../components/dashboard/InsightCards'
+import type { AttentionItem } from '../components/dashboard/InsightCards'
 import { api } from '../lib/api'
+
+// Each page downloads the first time it's opened (the Tracker and Reports
+// carry the chart library), and all of them are fetched in the background
+// once the dashboard is idle, so switching pages stays instant.
+const PAGES = {
+  leads: () => import('./leads'),
+  reports: () => import('./reports'),
+  team: () => import('./team'),
+  tasks: () => import('./tasks'),
+  proposals: () => import('./proposals'),
+  projects: () => import('./projects'),
+  invoices: () => import('./invoices'),
+  tracker: () => import('./tracker'),
+  cleanup: () => import('./cleanup'),
+}
+const Leads = lazy(PAGES.leads)
+const Reports = lazy(PAGES.reports)
+const Team = lazy(PAGES.team)
+const Tasks = lazy(PAGES.tasks)
+const Proposals = lazy(PAGES.proposals)
+const Projects = lazy(PAGES.projects)
+const Invoices = lazy(PAGES.invoices)
+const Tracker = lazy(PAGES.tracker)
+const Cleanup = lazy(PAGES.cleanup)
+
+const PageLoading = () => (
+  <div className={PAGE_CLASS} aria-busy="true" aria-label="Loading">
+    <div className="mb-5 h-5 w-40 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"><SkeletonRows /></div>
+  </div>
+)
 
 // ─── module cards shown in the main area ────────────────────────────────────────
 
@@ -44,10 +73,10 @@ const CORE_MODULES: Module[] = [
   { key: 'invoices', title: 'Invoices', desc: 'Bill a project and track payments received.', icon: icons.invoices, action: 'Open', accent: 'from-indigo-400 to-blue-400', glow: 'rgba(129,140,248,0.45)' },
   { key: 'tasks', title: 'Tasks', desc: 'Your follow-ups and to-dos in one place.', icon: icons.tasks, action: 'Open', accent: 'from-amber-400 to-orange-400', glow: 'rgba(251,191,36,0.45)' },
   { key: 'tracker', title: 'Tracker', desc: 'Imported pipeline and invoice data, at a glance.', icon: icons.tracker, action: 'Open', accent: 'from-lime-400 to-emerald-400', glow: 'rgba(163,230,53,0.45)' },
+  { key: 'reports', title: 'Reports', desc: 'Sales, pipeline and invoicing charts, monthly and quarterly.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
 ]
 
 const ADMIN_MODULES: Module[] = [
-  { key: 'reports', title: 'Reports', desc: 'Pipeline, conversion and activity analytics.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
   { key: 'team', title: 'Team Management', desc: 'Manage members, roles and permissions.', icon: icons.team, action: 'Manage', accent: 'from-rose-400 to-pink-400', glow: 'rgba(251,113,133,0.45)' },
 ]
 
@@ -61,12 +90,13 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const modules = isAdmin ? [...CORE_MODULES, ...ADMIN_MODULES] : CORE_MODULES
 
   // The menu, grouped by what the work is: winning it, delivering it, and
-  // looking back at it. Reports and Team are admin-only.
+  // looking back at it. Team and Data clean-up are admin-only (Reports shows
+  // its Sales tab to admins only).
   const navGroups: NavGroup[] = [
     { items: [{ key: 'dashboard', label: 'Dashboard', icon: icons.dashboard }] },
     { label: 'Sales', items: [{ key: 'lead-gen', label: 'Leads', icon: icons.leadGen }, { key: 'proposals', label: 'Proposals', icon: icons.proposals }] },
     { label: 'Delivery', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }, { key: 'tasks', label: 'Tasks', icon: icons.tasks }] },
-    { label: 'Insights', items: [{ key: 'tracker', label: 'Tracker', icon: icons.tracker }, ...(isAdmin ? [{ key: 'reports', label: 'Reports', icon: icons.reports }] : [])] },
+    { label: 'Insights', items: [{ key: 'tracker', label: 'Tracker', icon: icons.tracker }, { key: 'reports', label: 'Reports', icon: icons.reports }] },
     ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }, { key: 'cleanup', label: 'Data clean-up', icon: icons.setup }] }] : []),
   ]
   const navItems: NavItem[] = navGroups.flatMap(g => g.items)
@@ -77,6 +107,10 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   // already-open tab happens to be.
   const [active, setActive] = useState(() => sessionStorage.getItem('leadops_tab') ?? 'dashboard')
   useEffect(() => { sessionStorage.setItem('leadops_tab', active) }, [active])
+  useEffect(() => {
+    const t = window.setTimeout(() => Object.values(PAGES).forEach(load => load().catch(() => {})), 2500)
+    return () => window.clearTimeout(t)
+  }, [])
   const onDashboard = active === 'dashboard'
 
   // The sidebar is open on a desktop unless the person folds it to icons
@@ -99,10 +133,20 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
   const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard, isAdmin)
-  const { proposalStats, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
+  const { proposalStats, proposals, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
   const { pendingInvoices, error: pendingInvoicesError, reload: reloadPendingInvoices } = usePendingInvoices(onDashboard)
   const { myTasks, loaded: myTasksLoaded, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
   const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard)
+  const insights = useDashboardInsights(onDashboard, allLeads, proposals, stats.loaded && proposalStats.loaded)
+
+  // The sidebar's counts, plus proposals gone quiet — each opens its list.
+  const attention: AttentionItem[] = [
+    { key: 'tasks', label: badges.tasks?.title ?? '', count: badges.tasks?.count ?? 0, tone: 'rose', onOpen: () => openModule({ key: 'tasks', label: 'Tasks' }) },
+    { key: 'invoices', label: badges.invoices?.title ?? '', count: badges.invoices?.count ?? 0, tone: 'rose', onOpen: () => openModule({ key: 'invoices', label: 'Invoices' }) },
+    { key: 'quiet', label: `proposal${insights.quietProposals === 1 ? '' : 's'} with no update in 14+ days`, count: insights.quietProposals, tone: 'amber', onOpen: () => openModule({ key: 'proposals', label: 'Proposals' }) },
+    { key: 'leads', label: badges['lead-gen']?.title ?? '', count: badges['lead-gen']?.count ?? 0, tone: 'amber', onOpen: () => openModule({ key: 'lead-gen', label: 'Leads' }) },
+    { key: 'tracker', label: badges.tracker?.title ?? '', count: badges.tracker?.count ?? 0, tone: 'amber', onOpen: () => openModule({ key: 'tracker', label: 'Tracker' }) },
+  ]
 
   // Opens the full lead detail modal from a follow-up entry (which only carries
   // a slim lead summary) by fetching the complete Lead record.
@@ -175,11 +219,12 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         </header>
 
         <PageChromeContext.Provider value={chrome}>
+        <Suspense fallback={<PageLoading />}>
 
         {active === 'lead-gen' || active === 'leads' ? (
           <Leads isAdmin={isAdmin} currentUserId={user.id} />
-        ) : active === 'reports' && isAdmin ? (
-          <Reports />
+        ) : active === 'reports' ? (
+          <Reports isAdmin={isAdmin} />
         ) : active === 'cleanup' && isAdmin ? (
           <Cleanup />
         ) : active === 'team' ? (
@@ -207,6 +252,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <StatTiles
             stats={stats}
             proposalStats={proposalStats}
+            insights={insights}
             leadStatsError={leadStatsError}
             proposalStatsError={proposalStatsError}
             onRetryLeadStats={reloadLeadStats}
@@ -216,21 +262,33 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             onOpenPipeline={() => openModule({ key: 'tracker', label: 'Tracker' })}
           />
 
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <TargetCard target={insights.target} loaded={insights.loaded} onOpen={() => openModule({ key: 'tracker', label: 'Tracker' })} />
+            <FunnelCard
+              funnel={insights.funnel}
+              loaded={insights.loaded}
+              onOpenLeads={() => openModule({ key: 'lead-gen', label: 'Leads' })}
+              onOpenProposals={() => openModule({ key: 'proposals', label: 'Proposals' })}
+            />
+            <AttentionCard items={attention} />
+          </div>
+
           <TrackerRequestsPanel isAdmin={isAdmin} onOpenTracker={() => openModule({ key: 'tracker', label: 'Tracker' })} />
 
-          <FollowUpsPanel
-            followUps={followUps}
-            error={followUpsError}
-            onRetry={reloadFollowUps}
-            onOpenLead={openLeadById}
-          />
-
-          <PendingPaymentsPanel
-            pendingInvoices={pendingInvoices}
-            error={pendingInvoicesError}
-            onRetry={reloadPendingInvoices}
-            onOpenInvoices={() => openModule({ key: 'invoices', label: 'Invoices' })}
-          />
+          <div className="mt-6 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+            <FollowUpsPanel
+              followUps={followUps}
+              error={followUpsError}
+              onRetry={reloadFollowUps}
+              onOpenLead={openLeadById}
+            />
+            <PendingPaymentsPanel
+              pendingInvoices={pendingInvoices}
+              error={pendingInvoicesError}
+              onRetry={reloadPendingInvoices}
+              onOpenInvoices={() => openModule({ key: 'invoices', label: 'Invoices' })}
+            />
+          </div>
 
           <TasksPanel
             isAdmin={isAdmin}
@@ -272,6 +330,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           </div>
         </div>
         )}
+        </Suspense>
         </PageChromeContext.Provider>
       </main>
 
@@ -290,6 +349,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       {selectedLead && <LeadDetailModal lead={selectedLead} onClose={() => setSelectedLead(null)} />}
 
       <Toaster />
+      <KeyboardShortcuts />
     </div>
   )
 }

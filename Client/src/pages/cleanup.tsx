@@ -41,21 +41,22 @@ const plural = (n: number, w: string) => `${formatCount(n)} ${w}${n === 1 ? '' :
 export default function Cleanup() {
   const [kind, setKind] = useState<Kind>('sector')
   const [data, setData] = useState<Listing | null>(null)
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [token, setToken] = useState(0)
   const [renaming, setRenaming] = useState<Item | null>(null)
   const [merging, setMerging] = useState<Item | null>(null)
 
+  const key = `${kind}:${token}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loading = loadedKey !== key
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     api<Listing>(`/catalog/${kind}`, { auth: true })
       .then(d => { if (!cancelled) { setData(d); setError(null) } })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load the list.') })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .finally(() => { if (!cancelled) setLoadedKey(key) })
     return () => { cancelled = true }
-  }, [kind, token])
+  }, [key, kind])
   const reload = () => setToken(t => t + 1)
 
   const items = data?.items ?? []

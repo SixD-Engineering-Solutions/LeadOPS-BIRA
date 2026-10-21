@@ -67,22 +67,17 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
   const [empError, setEmpError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<'email'>>({})
 
-  async function load() {
-    setLoading(true)
-    try {
-      const [{ users }, { leads }] = await Promise.all([
-        api<{ users: EmployeeUser[] }>('/users?includeInactive=true', { auth: true }),
-        api<{ leads: Lead[] }>('/leads', { auth: true }),
-      ])
-      setUsers(users)
-      setLeads(leads)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load employees.')
-    } finally {
-      setLoading(false)
-    }
+  function load() {
+    return Promise.all([
+      api<{ users: EmployeeUser[] }>('/users?includeInactive=true', { auth: true }),
+      api<{ leads: Lead[] }>('/leads', { auth: true }),
+    ])
+      .then(([{ users }, { leads }]) => { setUsers(users); setLeads(leads); setError(null) })
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load employees.'))
+      .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
 
   // Assigned leads grouped by whoever they're currently assigned to.
@@ -296,11 +291,11 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
       </PageHeader>
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="people" placeholder="Search name, email, department…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="people" exportCsv={{ filename: 'team', columns: columns }} placeholder="Search name, email, department…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && users.length === 0 ? (
           <SkeletonRows rows={4} />

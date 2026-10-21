@@ -1,5 +1,32 @@
 export const BASE_URL = process.env.TEST_BASE_URL ?? 'http://localhost:3000'
 
+// A direct connection to the database the server uses (Server/.env) — with
+// Aiven's certificate, or without TLS when the URL says sslmode=disable (the
+// local Docker database), the same rule as src/prisma.ts.
+async function connectDb() {
+  const { config } = await import('dotenv')
+  config()
+  const [{ Client }, fs] = await Promise.all([import('pg'), import('fs')])
+  const url = process.env.DATABASE_URL ?? ''
+  const sslDisabled = /[?&]sslmode=disable(&|$)/i.test(url)
+  const db = new Client({
+    connectionString: url.replace(/[?&]sslmode=[^&]*/, ''),
+    ssl: sslDisabled ? false : { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
+  })
+  await db.connect()
+  return db
+}
+
+// Runs one query and returns its rows — for checking state the API doesn't show.
+export async function dbRows<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const db = await connectDb()
+  try {
+    return (await db.query(sql, params)).rows as T[]
+  } finally {
+    await db.end()
+  }
+}
+
 let adminTokenCache: string | undefined
 let employeeTokenCache: string | undefined
 
@@ -12,12 +39,8 @@ export async function adminToken(): Promise<string> {
   if (adminTokenCache) return adminTokenCache
   const { config } = await import('dotenv')
   config()
-  const [{ Client }, fs, jwt] = await Promise.all([import('pg'), import('fs'), import('jsonwebtoken')])
-  const db = new Client({
-    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
-    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
-  })
-  await db.connect()
+  const jwt = await import('jsonwebtoken')
+  const db = await connectDb()
   try {
     const email = process.env.TEST_ADMIN_EMAIL
     const { rows } = await db.query<{ id: string }>(
@@ -40,12 +63,8 @@ export async function employeeToken(): Promise<string> {
   if (employeeTokenCache) return employeeTokenCache
   const { config } = await import('dotenv')
   config()
-  const [{ Client }, fs, jwt] = await Promise.all([import('pg'), import('fs'), import('jsonwebtoken')])
-  const db = new Client({
-    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
-    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
-  })
-  await db.connect()
+  const jwt = await import('jsonwebtoken')
+  const db = await connectDb()
   try {
     const email = process.env.TEST_EMPLOYEE_EMAIL
     const { rows } = await db.query<{ id: string }>(
@@ -65,12 +84,7 @@ export async function employeeToken(): Promise<string> {
 export async function dbQuery(sql: string, params: unknown[] = []): Promise<void> {
   const { config } = await import('dotenv')
   config()
-  const [{ Client }, fs] = await Promise.all([import('pg'), import('fs')])
-  const db = new Client({
-    connectionString: (process.env.DATABASE_URL ?? '').replace(/[?&]sslmode=[^&]*/, ''),
-    ssl: { ca: fs.readFileSync('./certs/aiven-ca.pem', 'utf8') },
-  })
-  await db.connect()
+  const db = await connectDb()
   try {
     await db.query(sql, params)
   } finally {

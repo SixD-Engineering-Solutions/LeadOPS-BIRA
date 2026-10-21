@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import authRoutes from './routes/auth'
 import leadRoutes from './routes/leads'
 import taskRoutes from './routes/tasks'
@@ -39,6 +40,15 @@ const PORT = process.env.PORT ?? 3000
 // X-Forwarded-For, or every client would share nginx's address. Not trusted
 // in development, where there's no proxy and the header could be spoofed.
 app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false)
+
+// Standard security headers (no sniffing, no framing, HSTS, no referrer
+// leaks…). This server only answers the app's API calls, so the content
+// policy can be the strictest one; resources stay readable cross-origin
+// because the app is served from a different address.
+app.use(helmet({
+  contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:5173'
 app.use(cors({

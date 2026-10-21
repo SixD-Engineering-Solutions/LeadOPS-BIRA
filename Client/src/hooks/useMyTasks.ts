@@ -10,25 +10,23 @@ export function useMyTasks(active: boolean, isAdmin: boolean) {
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
-  function reload() {
-    if (isAdmin) return Promise.resolve()
-    return api<{ tasks: Task[] }>('/tasks', { auth: true })
+  // Bumped to refetch: by Retry, and by any task change anywhere (the server
+  // pings every open tab).
+  const [token, setToken] = useState(0)
+  const reload = () => setToken(t => t + 1)
+
+  useEffect(() => {
+    if (!active || isAdmin) return
+    api<{ tasks: Task[] }>('/tasks', { auth: true })
       .then(({ tasks }) => { setMyTasks(tasks); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load tasks.'))
       .finally(() => setLoaded(true))
-  }
+  }, [active, isAdmin, token])
 
   useEffect(() => {
-    if (active) reload()
-  }, [active, isAdmin])
-
-  useEffect(() => {
-    function onTaskSync() {
-      if (active) reload()
-    }
-    window.addEventListener(TASK_SYNC_EVENT, onTaskSync)
-    return () => window.removeEventListener(TASK_SYNC_EVENT, onTaskSync)
-  }, [active, isAdmin])
+    window.addEventListener(TASK_SYNC_EVENT, reload)
+    return () => window.removeEventListener(TASK_SYNC_EVENT, reload)
+  }, [])
 
   return { myTasks, loaded, error, reload }
 }

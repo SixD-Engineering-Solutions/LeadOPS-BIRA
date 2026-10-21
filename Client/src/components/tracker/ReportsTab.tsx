@@ -142,7 +142,9 @@ function SectorBarChart({ data, onSelect }: { data: { sector: string; fyTotal: n
 // Monthly and status-driven charts covering both the Pipeline and Invoice
 // tracker data — fetches both independently of the other two tabs, same
 // per-tab-owns-its-data pattern PipelineTab/InvoicesTab already use.
-export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[] }) {
+// On the Reports page, `view` picks Overview or Comparisons from the page's
+// own tabs, and the switch here is hidden.
+export default function ReportsTab({ leadStatuses, view: chosenView }: { leadStatuses: LeadStatus[]; view?: 'overview' | 'compare' }) {
   const [pipeline, setPipeline] = useState<PipelineTrackerItem[]>([])
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
@@ -150,10 +152,10 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<ChartDetail | null>(null)
   const [statusView, setStatusView] = useState<'grouped' | 'exact'>('grouped')
-  const [view, setView] = useState<'overview' | 'compare'>('overview')
+  const [ownView, setView] = useState<'overview' | 'compare'>('overview')
+  const view = chosenView ?? ownView
 
   function load() {
-    setLoading(true)
     Promise.all([
       api<{ items: PipelineTrackerItem[] }>('/tracker/pipeline', { auth: true }),
       api<{ summary: InvoiceSectorSummary[]; register: InvoiceRegisterItem[] }>('/tracker/invoices', { auth: true }),
@@ -170,11 +172,12 @@ export default function ReportsTab({ leadStatuses }: { leadStatuses: LeadStatus[
       .finally(() => setLoading(false))
   }
   useEffect(load, [])
+  const reload = () => { setLoading(true); load() }
 
   if (loading) return <SkeletonCards count={4} />
-  if (error) return <ErrorBanner message={error} onRetry={load} />
+  if (error) return <ErrorBanner message={error} onRetry={reload} />
 
-  const viewSwitch = (
+  const viewSwitch = chosenView ? null : (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-xs text-gray-500 dark:text-gray-400">
         {view === 'overview' ? 'The whole financial year at a glance.' : 'Every chart split by period and laid side by side on the same scale.'}

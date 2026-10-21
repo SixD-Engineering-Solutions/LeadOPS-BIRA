@@ -9,7 +9,6 @@ import EditRowModal from '../components/tracker/EditRowModal'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { stageStatusStyle, BADGE_TONES, DEFAULT_STATUS_STYLE } from '../lib/statusStyles'
 import { formatLakhs, formatSheetValue } from '../lib/format'
-import ReportsTab from '../components/tracker/ReportsTab'
 import { EmptyState } from '../components/EmptyState'
 import { SkeletonRows } from '../components/Skeleton'
 import { LeadDetailById } from '../components/LeadDetailModal'
@@ -101,18 +100,20 @@ const canEdit = (editor: RowEditor, row: { id: string }) => !!editor.defs && !ed
 
 function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses: LeadStatus[] }) {
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
-
-  function load() {
-    setLoading(true)
+  // Refetches whenever the editor's token or a retry changes the key; it's
+  // loading until the rows on screen are for the current key.
+  const [attempt, setAttempt] = useState(0)
+  const key = `${editor.reloadToken}:${attempt}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loading = loadedKey !== key
+  useEffect(() => {
     api<{ items: PipelineTrackerItem[] }>('/tracker/pipeline', { auth: true })
       .then(({ items }) => { setItems(items); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the pipeline tracker.'))
-      .finally(() => setLoading(false))
-  }
-  useEffect(load, [editor.reloadToken])
+      .finally(() => setLoadedKey(key))
+  }, [key])
 
   const view = useTableView<PipelineTrackerItem>({
     id: 'tracker-pipeline',
@@ -178,10 +179,10 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
       title="Pipeline"
       subtitle={<>Imported from the Pipeline Tracker sheet, plus every lead raised in the app (marked <AppBadge />, kept up to date) · {editor.isAdmin ? 'click a sheet row to edit it' : 'click a sheet row to request a change'}</>}
     >
-      <TableToolbar view={view} noun="rows" placeholder="Search client, service, owner…">
-        <RefreshButton onClick={load} busy={loading} />
+      <TableToolbar view={view} noun="rows" exportCsv={{ filename: 'tracker-pipeline', columns }} placeholder="Search client, service, owner…">
+        <RefreshButton onClick={() => setAttempt(a => a + 1)} busy={loading} />
       </TableToolbar>
-      {error && <ErrorBanner message={error} onRetry={load} />}
+      {error && <ErrorBanner message={error} onRetry={() => setAttempt(a => a + 1)} />}
       {loading && items.length === 0 ? (
         <SkeletonRows />
       ) : items.length === 0 && !error ? (
@@ -189,6 +190,7 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
       ) : (
         <>
           <DataGrid
+            phoneCards={false}
             columns={columns}
             rows={view.rows}
             getKey={r => r.id}
@@ -239,17 +241,17 @@ function Achievement({ value }: { value: number | null }) {
 function InvoicesTab({ editor }: { editor: RowEditor }) {
   const [summary, setSummary] = useState<InvoiceSectorSummary[]>([])
   const [register, setRegister] = useState<InvoiceRegisterItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  function load() {
-    setLoading(true)
+  const [attempt, setAttempt] = useState(0)
+  const key = `${editor.reloadToken}:${attempt}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loading = loadedKey !== key
+  useEffect(() => {
     api<{ summary: InvoiceSectorSummary[]; register: InvoiceRegisterItem[] }>('/tracker/invoices', { auth: true })
       .then(({ summary, register }) => { setSummary(summary); setRegister(register); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the invoice tracker.'))
-      .finally(() => setLoading(false))
-  }
-  useEffect(load, [editor.reloadToken])
+      .finally(() => setLoadedKey(key))
+  }, [key])
 
   const summaryColumns: Column<InvoiceSectorSummary>[] = [
     {
@@ -347,7 +349,7 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
   ]
 
   if (loading && summary.length === 0 && register.length === 0) return <SkeletonRows />
-  if (error) return <ErrorBanner message={error} onRetry={load} className="" />
+  if (error) return <ErrorBanner message={error} onRetry={() => setAttempt(a => a + 1)} className="" />
 
   return (
     <div className="flex flex-col gap-6">
@@ -356,6 +358,7 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
           <EmptyState icon="chart" title="No sector summary yet" message="The FY sector summary from the tracking sheet will appear here once imported." />
         ) : (
           <DataGrid
+            phoneCards={false}
             columns={summaryColumns}
             rows={summary}
             getKey={r => r.id}
@@ -374,14 +377,15 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
         title="Invoice register"
         subtitle={<>Order-wise invoice and collection detail from the sheet, plus every invoice generated in the app (<AppBadge />, kept up to date as it's paid) · {editor.isAdmin ? 'click a sheet row to edit it' : 'click a sheet row to request a change'}</>}
       >
-        <TableToolbar view={view} noun="invoices" placeholder="Search client, invoice, PO, sector…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="invoices" exportCsv={{ filename: 'tracker-invoices', columns: registerColumns }} placeholder="Search client, invoice, PO, sector…">
+          <RefreshButton onClick={() => setAttempt(a => a + 1)} busy={loading} />
         </TableToolbar>
         {register.length === 0 ? (
           <EmptyState icon="receipt" title="No invoices in the register yet" message="Rows imported from the tracking sheet, and invoices generated in the app, appear here." />
         ) : (
           <>
             <DataGrid
+              phoneCards={false}
               columns={registerColumns}
               rows={view.rows}
               getKey={r => r.id}
@@ -403,10 +407,11 @@ function InvoicesTab({ editor }: { editor: RowEditor }) {
 
 // ─── page ────────────────────────────────────────────────────────────────────
 
-const TAB_LABELS = { pipeline: 'Pipeline', invoices: 'Invoices', report: 'Report' } as const
+// The charts that used to be a third tab here are on the Reports page now.
+const TAB_LABELS = { pipeline: 'Pipeline', invoices: 'Invoices' } as const
 
 export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; currentUserId: string }) {
-  const [tab, setTab] = useState<'pipeline' | 'invoices' | 'report'>('pipeline')
+  const [tab, setTab] = useState<'pipeline' | 'invoices'>('pipeline')
   const [editing, setEditing] = useState<{ table: TrackerTable; row: { id: string } & object } | null>(null)
   const [pendingRowIds, setPendingRowIds] = useState<Set<string>>(new Set())
   const [reloadToken, setReloadToken] = useState(0)
@@ -449,6 +454,7 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
   return (
     <div className={PAGE_CLASS}>
       <PageHeader title="Tracker" crumb={TAB_LABELS[tab]} subtitle="Pipeline and invoice data imported from the tracking sheet, kept up to date with the app." />
+      <p className="mb-4 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs text-gray-500 sm:hidden dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">📱 These are wide sheets — turn your phone sideways to see more columns at once.</p>
 
       <div className="mb-5">
         <Segmented
@@ -475,7 +481,7 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
         </div>
       )}
 
-      {tab === 'pipeline' ? <PipelineTab editor={editor} leadStatuses={leadStatuses} /> : tab === 'invoices' ? <InvoicesTab editor={editor} /> : <ReportsTab leadStatuses={leadStatuses} />}
+      {tab === 'pipeline' ? <PipelineTab editor={editor} leadStatuses={leadStatuses} /> : <InvoicesTab editor={editor} />}
 
       {editing && defs && (
         <EditRowModal

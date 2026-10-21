@@ -58,12 +58,13 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
   const [voidingId, setVoidingId] = useState<string | null>(null)
 
   function load() {
-    setLoading(true)
     api<{ invoices: Invoice[] }>('/invoices', { auth: true })
       .then(({ invoices }) => { setInvoices(invoices); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load invoices.'))
       .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
   useEffect(() => {
     api<{ projects: Project[] }>('/projects', { auth: true }).then(({ projects }) => setProjects(projects)).catch(() => {})
@@ -281,11 +282,11 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="invoices" placeholder="Search invoice, work order, client…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="invoices" exportCsv={{ filename: 'invoices', columns: columns }} placeholder="Search invoice, work order, client…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && invoices.length === 0 ? (
           <SkeletonRows />

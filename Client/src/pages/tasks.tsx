@@ -42,18 +42,14 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<'title' | 'deadline' | 'assignedToUserId'>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
-    try {
-      const { tasks } = await api<{ tasks: Task[] }>('/tasks', { auth: true })
-      setTasks(tasks)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tasks.')
-    } finally {
-      setLoading(false)
-    }
+  function load() {
+    return api<{ tasks: Task[] }>('/tasks', { auth: true })
+      .then(({ tasks }) => { setTasks(tasks); setError(null) })
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load tasks.'))
+      .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
 
   // Live updates — a task assigned/updated/deleted by anyone pings every
@@ -190,11 +186,11 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="tasks" placeholder="Search tasks…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="tasks" exportCsv={{ filename: 'tasks', columns: columns }} placeholder="Search tasks…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && tasks.length === 0 ? (
           <SkeletonRows />

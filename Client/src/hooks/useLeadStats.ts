@@ -28,8 +28,13 @@ export function useLeadStats(active: boolean, isAdmin: boolean) {
   const [employees, setEmployees] = useState<EmployeeUser[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  function reload() {
-    return Promise.all([
+  // Bumped to refetch: by Retry, and by any lead change anywhere.
+  const [token, setToken] = useState(0)
+  const reload = () => setToken(t => t + 1)
+
+  useEffect(() => {
+    if (!active) return
+    Promise.all([
       api<{ leads: Lead[] }>('/leads', { auth: true }),
       isAdmin ? api<{ users: EmployeeUser[] }>('/users', { auth: true }) : Promise.resolve({ users: [] as EmployeeUser[] }),
     ])
@@ -66,24 +71,16 @@ export function useLeadStats(active: boolean, isAdmin: boolean) {
         setStats(EMPTY_STATS)
         setError(e instanceof Error ? e.message : 'Failed to load lead stats.')
       })
-  }
-
-  useEffect(() => {
-    if (!active) return
-    reload()
-  }, [active, isAdmin])
+  }, [active, isAdmin, token])
 
   // Live updates — a lead created/updated/deleted anywhere (by this admin on
   // another tab, or by anyone else) pings every connected client over SSE (see
   // NotificationBell). Re-pull the stats so the tiles don't go stale while the
-  // dashboard is sitting open.
+  // dashboard is sitting open (the fetch above only runs while it's active).
   useEffect(() => {
-    function onLeadSync() {
-      if (active) reload()
-    }
-    window.addEventListener(LEAD_SYNC_EVENT, onLeadSync)
-    return () => window.removeEventListener(LEAD_SYNC_EVENT, onLeadSync)
-  }, [active, isAdmin])
+    window.addEventListener(LEAD_SYNC_EVENT, reload)
+    return () => window.removeEventListener(LEAD_SYNC_EVENT, reload)
+  }, [])
 
   return { stats, allLeads, employees, error, reload }
 }

@@ -48,12 +48,13 @@ export default function Proposals() {
   const [savingId, setSavingId] = useState<string | null>(null)
 
   function load() {
-    setLoading(true)
     api<{ proposals: Proposal[] }>('/proposals', { auth: true })
       .then(({ proposals }) => { setProposals(proposals); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load proposals.'))
       .finally(() => setLoading(false))
   }
+  // First load: `loading` starts true. Refreshes show the spinner again.
+  const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
   useEffect(() => {
     api<{ leads: Lead[] }>('/leads', { auth: true }).then(({ leads }) => setLeads(leads)).catch(() => {})
@@ -218,11 +219,11 @@ export default function Proposals() {
 
       {/* list */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <TableToolbar view={view} noun="proposals" placeholder="Search number, plant, client…">
-          <RefreshButton onClick={load} busy={loading} />
+        <TableToolbar view={view} noun="proposals" exportCsv={{ filename: 'proposals', columns: columns }} placeholder="Search number, plant, client…">
+          <RefreshButton onClick={reload} busy={loading} />
         </TableToolbar>
 
-        {error && <ErrorBanner message={error} onRetry={load} />}
+        {error && <ErrorBanner message={error} onRetry={reload} />}
 
         {loading && proposals.length === 0 ? (
           <SkeletonRows />

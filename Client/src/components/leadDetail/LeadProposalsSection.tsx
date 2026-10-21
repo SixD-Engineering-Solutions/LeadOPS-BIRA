@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { api, PROPOSAL_SYNC_EVENT } from '../../lib/api'
 import type { Proposal } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
-import { DetailSection, inputCls } from './shared'
+import { DetailSection } from './shared'
+import { INPUT_CLS as inputCls } from '../../lib/formStyles'
 import { formatINR } from '../../lib/format'
 import { PROPOSAL_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../../lib/statusStyles'
 import { EmptyState } from '../EmptyState'
@@ -13,27 +14,29 @@ import { DatePicker } from '../form/DatePicker'
 // Proposals raised against a lead — quick-add form and list.
 export function LeadProposalsSection({ leadId }: { leadId: string }) {
   const [proposals, setProposals] = useState<Proposal[]>([])
-  const [loadingProposals, setLoadingProposals] = useState(true)
   const [proposalsError, setProposalsError] = useState<string | null>(null)
   const [propForm, setPropForm] = useState({ value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
   const [creatingProp, setCreatingProp] = useState(false)
   const [propError, setPropError] = useState<string | null>(null)
 
-  function loadProposals() {
-    setLoadingProposals(true)
+  // Loading until the list on screen is for this lead and the latest refresh.
+  const [attempt, setAttempt] = useState(0)
+  const key = `${leadId}:${attempt}`
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loadingProposals = loadedKey !== key
+  useEffect(() => {
     api<{ proposals: Proposal[] }>(`/proposals?leadId=${leadId}`, { auth: true })
       .then(({ proposals }) => { setProposals(proposals); setProposalsError(null) })
       .catch(e => setProposalsError(e instanceof Error ? e.message : 'Failed to load proposals.'))
-      .finally(() => setLoadingProposals(false))
-  }
-  useEffect(() => { loadProposals() }, [leadId])
+      .finally(() => setLoadedKey(key))
+  }, [key, leadId])
+  const loadProposals = () => setAttempt(a => a + 1)
 
   // Live updates — any proposal change anywhere re-syncs this lead's list.
   useEffect(() => {
-    function onProposalSync() { loadProposals() }
-    window.addEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
-    return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, onProposalSync)
-  }, [leadId])
+    window.addEventListener(PROPOSAL_SYNC_EVENT, loadProposals)
+    return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, loadProposals)
+  }, [])
 
   async function createProposal(e: React.FormEvent) {
     e.preventDefault()

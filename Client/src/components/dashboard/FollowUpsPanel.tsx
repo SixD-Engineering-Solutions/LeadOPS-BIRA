@@ -1,6 +1,5 @@
 import type { Activity } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
-import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
 import { BADGE_TONES } from '../../lib/statusStyles'
 
@@ -15,27 +14,25 @@ export function FollowUpsPanel({ followUps, error, onRetry, onOpenLead }: {
   onRetry: () => void
   onOpenLead: (leadId: string) => void
 }) {
-  if (error) return <ErrorBanner message={error} onRetry={onRetry} className="mt-6" />
+  if (error) return <ErrorBanner message={error} onRetry={onRetry} className="" />
   const dueNow = followUps.overdue.length + followUps.today.length
 
   return (
-    <div className="mt-6 rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="h-full rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
         <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Follow-ups</h3>
       </div>
       {!followUps.loaded ? (
         <SkeletonRows rows={3} />
       ) : dueNow === 0 ? (
-        <EmptyState
-          compact
-          icon="calendar"
-          title="No follow-ups due today"
-          message={followUps.upcoming.length > 0
+        <p className="px-5 py-4 text-sm text-gray-500 dark:text-gray-400">
+          Nothing due today.{' '}
+          {followUps.upcoming.length > 0
             ? `${followUps.upcoming.length} coming up in the next 7 days.`
             : 'Set a next action date when you log an activity on a lead.'}
-        />
+        </p>
       ) : (
-      <ul className="divide-y divide-gray-50 dark:divide-gray-800/60">
+      <ul className="max-h-80 divide-y divide-gray-50 overflow-y-auto dark:divide-gray-800/60">
         {[...followUps.overdue, ...followUps.today].map(a => (
           <li
             key={a.id}

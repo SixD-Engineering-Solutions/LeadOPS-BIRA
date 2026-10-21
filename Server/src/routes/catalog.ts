@@ -314,7 +314,10 @@ router.post('/changes/:id/revert', async (req: AuthRequest, res: Response): Prom
       rows++
     }
     if (snap.summaryBefore.length) {
-      await recomputeSectorTotals(tx, snap.summaryBefore[0].id)
+      // The rows go back exactly as saved; only the TOTAL row is worked out
+      // again, as the sum of the sector rows now.
+      const total = (await tx.invoiceSectorSummary.findMany({ select: { id: true, sector: true } })).find(r => (r.sector ?? '').trim().toUpperCase() === SUMMARY_TOTAL_SECTOR)
+      if (total) await recomputeSectorTotals(tx, total.id)
       // Back to their old "last written" too, so the change before this one
       // still sees them as it left them and can be reverted next.
       for (const r of snap.summaryBefore) await tx.$executeRaw`UPDATE invoice_sector_summary SET updated_at = ${new Date(r.updatedAt)} WHERE id = ${r.id}`

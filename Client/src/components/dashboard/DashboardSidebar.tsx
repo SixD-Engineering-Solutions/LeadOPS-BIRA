@@ -1,23 +1,14 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Icon, icons } from './icons'
+import { Icon } from './icons'
+import { icons } from '../../lib/iconPaths'
+import { initials } from '../../lib/people'
 import { Popover, MenuItem, MenuDivider } from '../table/Popover'
 import type { NavBadge } from '../../hooks/useNavBadges'
 import { LogoMark } from '../Logo'
 
 export type NavItem = { key: string; label: string; icon: string }
 export type NavGroup = { label?: string; items: NavItem[] }
-
-/** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
-export function displayName(email: string): string {
-  const raw = email.split('@')[0].replace(/[._-]+/g, ' ').trim()
-  return raw.replace(/\b\w/g, c => c.toUpperCase()) || 'User'
-}
-
-export function initials(name: string): string {
-  const parts = name.split(' ').filter(Boolean)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'U'
-}
 
 const BADGE_TONE = {
   rose: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',

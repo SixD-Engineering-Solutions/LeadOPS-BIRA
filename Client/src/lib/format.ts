@@ -20,6 +20,9 @@ export function formatINRCompact(v: number): string {
 }
 
 /** A value already stored in lakhs (the tracker sheet's unit), e.g. ₹12.5L. */
+/** "Oct 21, 2026". */
+export const fmtDay = (ts: string) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+
 export const formatLakhs = (v: number) => `₹${v.toLocaleString(IN, { maximumFractionDigits: 2 })}L`
 
 const isInr = (currency: string | null | undefined) => !currency?.trim() || currency.trim().toUpperCase() === 'INR'
