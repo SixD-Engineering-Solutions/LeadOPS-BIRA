@@ -48,6 +48,9 @@ app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false)
 app.use(helmet({
   contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // "HTTPS only for a year" is for the HTTPS proxy in front to decide: sent
+  // from here it would also lock out a plain-http address the site is opened on.
+  strictTransportSecurity: false,
 }))
 
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:5173'

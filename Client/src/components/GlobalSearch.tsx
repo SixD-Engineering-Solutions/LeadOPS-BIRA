@@ -58,7 +58,10 @@ export function GlobalSearch({ pages, onNavigate }: { pages: Page[]; onNavigate:
       if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) {
         e.preventDefault()
         setMobileOpen(true)
-        requestAnimationFrame(() => input.current?.focus())
+        // On a desktop the box is already showing: focus it now. On a phone
+        // it appears with this render, so wait a frame.
+        if (input.current?.offsetParent) input.current.focus()
+        else requestAnimationFrame(() => input.current?.focus())
       }
     }
     window.addEventListener('keydown', onKey)
