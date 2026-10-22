@@ -175,6 +175,41 @@ export async function syncInvoiceToTracker(db: Db, invoiceId: string): Promise<v
 // to the mapping above reaches rows written by the previous version, and so
 // invoices generated before this sync existed get counted. One at a time, to
 // stay well inside the DB's small connection limit.
+// One-time repair, run at server start and marked done in `counters` so it
+// never runs twice. Until 2026-10-21, deleting a lead removed its invoices'
+// Invoice Register rows directly, without taking their amounts back out of
+// the sector summary — so a deleted lead's invoices kept counting in the FY
+// totals, the dashboard's target card and the invoicing charts. Those
+// leftovers are exactly the deleted invoices stamped with their lead's own
+// deletion time (a lead's delete stamps both in one go; an invoice deleted on
+// its own gets its own time and was taken back properly) that have no
+// register row left. Takes each one's figure back out the same way a normal
+// sync would. Returns how many it took back.
+const REPAIR_MARK = 'repair:lead-delete-summary'
+export async function repairLeadDeletionLeftovers(): Promise<number> {
+  return prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT id FROM invoice_sector_summary FOR UPDATE`
+    const done = await tx.counter.findUnique({ where: { name: REPAIR_MARK } })
+    if (done) return 0
+    const fyStart = await summaryFyStart(tx)
+    const deleted = await tx.invoice.findMany({
+      where: { deletedAt: { not: null }, project: { lead: { deletedAt: { not: null } } } },
+      include: { project: { select: { lead: { select: { deletedAt: true, sector: { select: { sectorName: true } } } } } } },
+    })
+    const kept = new Set((await tx.invoiceRegisterItem.findMany({ where: { sourceInvoiceId: { in: deleted.map(i => i.id) } }, select: { sourceInvoiceId: true } })).map(r => r.sourceInvoiceId))
+    let taken = 0
+    for (const inv of deleted) {
+      if (inv.deletedAt!.getTime() !== inv.project.lead.deletedAt!.getTime() || kept.has(inv.id)) continue
+      const c = contributionOf({ sector: inv.project.lead.sector?.sectorName.trim() || null, invoiceDate: inv.invoiceDate ?? inv.createdAt, invoiceAmountLakhs: toLakhs(Number(inv.amount)) }, fyStart)
+      if (!c) continue
+      await applyContribution(tx, c, -1, null)
+      taken++
+    }
+    await tx.counter.create({ data: { name: REPAIR_MARK, value: taken } })
+    return taken
+  }, { maxWait: 10000, timeout: 30000 })
+}
+
 export async function resyncAllInvoicesToTracker(): Promise<number> {
   const invoices = await prisma.invoice.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } })
   for (const { id } of invoices) await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, id))

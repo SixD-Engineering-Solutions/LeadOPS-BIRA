@@ -6,6 +6,7 @@ import { notifyUser, broadcastLeadUpdate, broadcastProposalUpdate, broadcastProj
 import { TX_OPTS } from '../utils/sequence'
 import { isAdmin } from '../utils/access'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
+import { syncInvoiceToTracker } from '../utils/invoiceTrackerSync'
 import { sendError } from '../utils/errors'
 import { findSameName } from '../utils/names'
 
@@ -342,12 +343,16 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
     await tx.proposal.updateMany({ where: { leadId: existing.id, deletedAt: null }, data: { deletedAt: now } })
     await tx.document.updateMany({ where: { leadId: existing.id, deletedAt: null }, data: { deletedAt: now } })
     await tx.notification.deleteMany({ where: { leadId: existing.id } })
-    await tx.invoiceRegisterItem.deleteMany({ where: { sourceInvoiceId: { in: invoiceIds } } })
     await tx.pipelineTrackerItem.deleteMany({ where: { sourceLeadId: existing.id } })
     await tx.lead.update({ where: { id: existing.id }, data: { deletedAt: now } })
 
     return { proposalIds: proposals.map(p => p.id), projectIds, invoiceIds }
   }, TX_OPTS)
+
+  // Takes each invoice back out of the Tracker: its Invoice Register row and
+  // its amount in the sector summary (FY totals, the dashboard's target card,
+  // the invoicing charts) — the same as deleting the invoice on its own.
+  for (const id of removed.invoiceIds) await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, id))
 
   broadcastLeadUpdate(existing.id)
   removed.proposalIds.forEach(broadcastProposalUpdate)

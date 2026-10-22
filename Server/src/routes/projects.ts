@@ -19,7 +19,7 @@ const projectInclude = {
   lead: { select: { id: true, plant: { select: { id: true, plantName: true, client: { select: { id: true, clientName: true } } } } } },
   location: { select: { id: true, city: true, state: true } },
   responsibleUser: { select: { id: true, userName: true, email: true } },
-  proposal: { select: { id: true, proposalNumber: true } },
+  proposal: { select: { id: true, proposalNumber: true, value: true } },
 } as const
 
 // Same visibility rule as leads.ts: employees only see projects on their own leads, admins see all.

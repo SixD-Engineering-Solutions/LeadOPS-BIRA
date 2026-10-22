@@ -211,9 +211,10 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <div className="flex flex-1 justify-center">
             <GlobalSearch pages={navItems} onNavigate={openModule} />
           </div>
-          <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-3 md:basis-1/3">
+          <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-3 md:basis-1/3">
             <div ref={setActionSlot} className="flex items-center" />
-            <ThemeToggle />
+            {/* On a phone the light/dark switch lives in the account menu instead, to leave the page name room. */}
+            <div className="hidden sm:block"><ThemeToggle /></div>
             <NotificationBell />
           </div>
         </header>
@@ -241,7 +242,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <Tracker isAdmin={isAdmin} currentUserId={user.id} />
         ) : (
         <div className={PAGE_CLASS}>
-          <PageHeader title={`Welcome back, ${name.split(' ')[0]}`} subtitle="Here’s what’s happening in your workspace today." />
+          <PageHeader title={`Welcome back, ${name.split(' ')[0]}`} phoneTitle={`Hi, ${name.split(' ')[0]}`} subtitle="Here’s what’s happening in your workspace today." />
           {demoNote && (
             <div className="mb-5 flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
               <span>{demoNote}</span>

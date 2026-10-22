@@ -124,6 +124,32 @@ describe('Data clean-up: rename, merge and revert', () => {
     expect(await fingerprint()).toEqual(before)
   })
 
+  it('removes a value no lead uses, refuses one in use, and reverts', async () => {
+    const id = `${tag}-src`
+    await dbQuery(`INSERT INTO lead_sources (id, source_name, is_active, updated_at) VALUES ($1, $2, true, now())`, [id, `${tag} e`])
+    const sourceOf = async () => (await dbRows<{ is_active: boolean }>(`SELECT is_active FROM lead_sources WHERE id = $1`, [id]))[0].is_active
+
+    const removed = await api<{ removed: string }>(`/catalog/source/${id}/remove`, { method: 'POST', token: admin })
+    expect(removed.status).toBe(200)
+    expect(await sourceOf()).toBe(false)
+    const listed = await api<{ items: { id: string }[] }>('/catalog/source', { token: admin })
+    expect(listed.body.items.some(i => i.id === id)).toBe(false)
+
+    const history = await api<{ changes: Change[] }>('/catalog/source/history', { token: admin })
+    const change = history.body.changes.find(c => c.summary.includes(tag))!
+    expect((await api(`/catalog/changes/${change.id}/revert`, { method: 'POST', token: admin })).status).toBe(200)
+    expect(await sourceOf()).toBe(true)
+
+    // A sector still on a lead can't be removed — it has to be merged.
+    const inUse = await api<{ error: string }>(`/catalog/sector/${await sectorId(C)}/remove`, { method: 'POST', token: admin })
+    expect(inUse.status).toBe(409)
+    expect(inUse.body.error).toMatch(/merge it/)
+    expect((await api(`/catalog/source/${id}/remove`, { method: 'POST', token: employee })).status).toBe(403)
+
+    await dbQuery(`DELETE FROM catalog_changes WHERE summary LIKE $1`, [`%${tag}%`])
+    await dbQuery(`DELETE FROM lead_sources WHERE id = $1`, [id])
+  })
+
   it('won’t revert over an edit made to the summary since', async () => {
     await api(`/catalog/sector/${await sectorId(A)}/rename`, { method: 'POST', token: admin, body: { name: `${tag} Hydrocarbons` } })
     const change = await latestChange()

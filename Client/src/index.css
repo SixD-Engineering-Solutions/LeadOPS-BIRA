@@ -42,6 +42,15 @@ tr:focus-within .row-actions,
 .row-actions[aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .row-actions { opacity: 1; } }
 .phone-card .row-actions { opacity: 1; }
+/* A phone card has room to wrap a long name onto a second line, so values
+   aren't cut off with "…" the way a table column has to. */
+.phone-card dd .truncate { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* Phones: iPhones zoom the whole page in when a field with text under 16px
+   is tapped (and don't zoom back out), so form fields use 16px there. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea { font-size: 16px; }
+}
 
 /* Menus and the side panel ease in rather than popping. */
 @keyframes popover-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }

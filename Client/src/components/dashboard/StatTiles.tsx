@@ -85,7 +85,7 @@ export function StatTiles({
               </p>
               {insights.loaded && <p className="mt-0.5 text-[11px] font-medium"><Trend value={insights.leadsNew} prevMonth={insights.prevMonth} /></p>}
             </div>
-            <Sparkline data={stats.spark} />
+            <div className="hidden sm:block"><Sparkline data={stats.spark} /></div>
           </div>
         </button>
 

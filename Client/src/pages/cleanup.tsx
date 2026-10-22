@@ -24,7 +24,7 @@ import { RelTime } from '../components/table/RelTime'
 type Kind = 'sector' | 'vertical' | 'source' | 'service-type'
 type Item = { id: string; name: string; leads: number; trackerRows: number }
 type Listing = { items: Item[]; suggestions: string[][]; sheetNames: string[] }
-type Change = { id: string; action: 'rename' | 'merge'; summary: string; leadsMoved: number; trackerRows: number; byName: string; createdAt: string; revertedAt: string | null; revertedByName: string | null }
+type Change = { id: string; action: 'rename' | 'merge' | 'remove'; summary: string; leadsMoved: number; trackerRows: number; byName: string; createdAt: string; revertedAt: string | null; revertedByName: string | null }
 
 const KIND_LABEL: Record<Kind, { plural: string; one: string }> = {
   sector: { plural: 'Sectors', one: 'sector' },
@@ -45,6 +45,7 @@ export default function Cleanup() {
   const [token, setToken] = useState(0)
   const [renaming, setRenaming] = useState<Item | null>(null)
   const [merging, setMerging] = useState<Item | null>(null)
+  const [confirmDialog, confirm] = useConfirm()
 
   const key = `${kind}:${token}`
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
@@ -60,6 +61,25 @@ export default function Cleanup() {
   const reload = () => setToken(t => t + 1)
 
   const items = data?.items ?? []
+
+  // A value no lead uses (a stray "e" from the old free-text field) can be
+  // switched off: hidden from every list, kept in History and revertible.
+  async function remove(item: Item) {
+    const ok = await confirm({
+      title: `Remove “${item.name}”?`,
+      message: `No lead uses it. It disappears from the ${label.one} lists and from the lead form. You can revert this from History below.`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await api(`/catalog/${kind}/${item.id}/remove`, { method: 'POST', auth: true })
+      toast(`Removed “${item.name}”`)
+      reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove it.')
+    }
+  }
   const nameOf = (id: string) => items.find(i => i.id === id)?.name ?? ''
   const twinsOf = (item: Item) => (data?.suggestions.find(g => g.includes(item.id)) ?? []).filter(id => id !== item.id).map(nameOf)
   // The sheet writes this one differently ("Oil and Gas" vs "Oil & Gas").
@@ -79,6 +99,7 @@ export default function Cleanup() {
             <p className="font-semibold text-gray-900 dark:text-gray-100">{i.name}</p>
             {twins.length > 0 && <p className="text-[11px] text-amber-600 dark:text-amber-400">Same name as {twins.map(t => `“${t}”`).join(', ')} — merge them</p>}
             {sheet && <p className="text-[11px] text-amber-600 dark:text-amber-400">The Tracker sheet writes it “{sheet}” — rename to match</p>}
+            {i.leads === 0 && <p className="text-[11px] text-gray-400">Not used by any lead — can be removed</p>}
           </div>
         )
       },
@@ -124,6 +145,7 @@ export default function Cleanup() {
               <RowMenu label={i.name} actions={[
                 { label: 'Rename…', onSelect: () => setRenaming(i) },
                 items.length > 1 && { label: 'Merge into another…', onSelect: () => setMerging(i) },
+                i.leads === 0 && { label: 'Remove…', danger: true, onSelect: () => remove(i) },
               ]} />
             )}
             maxHeight="none"
@@ -137,6 +159,7 @@ export default function Cleanup() {
       </p>
 
       <History kind={kind} token={token} onReverted={reload} />
+      {confirmDialog}
 
       {renaming && data && (
         <RenameModal kind={kind} item={renaming} suggestions={[...new Set([sheetSpelling(renaming), ...data.sheetNames.filter(n => !items.some(i => i.name === n))].filter((n): n is string => !!n))]}

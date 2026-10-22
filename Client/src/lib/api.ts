@@ -101,7 +101,8 @@ export type Project = {
   id: string
   workOrderNo: string
   proposalId: string | null
-  proposal?: { id: string; proposalNumber: string } | null
+  /** The proposal it was won from; its value is the order value invoices can't exceed. */
+  proposal?: { id: string; proposalNumber: string; value?: number | null } | null
   leadId: string
   lead?: { id: string; plant?: { id: string; plantName: string; client?: { id: string; clientName: string } | null } }
   projectName: string

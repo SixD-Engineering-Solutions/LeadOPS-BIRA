@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import { getTheme, toggleTheme } from '../lib/theme'
+import { toggleTheme, useTheme } from '../lib/theme'
 
 export default function ThemeToggle() {
-  const [theme, setThemeState] = useState(getTheme)
+  // Follows the theme however it was changed (this button or the account menu).
+  const theme = useTheme()
   const isDark = theme === 'dark'
 
   return (
     <button
-      onClick={() => setThemeState(toggleTheme())}
+      onClick={() => toggleTheme()}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       className="rounded-xl border border-gray-200 bg-white p-2 text-gray-500 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"

@@ -57,7 +57,8 @@ export default function WeeklyLineChart({ title, subtitle, data, xKey, series, h
   // Wide enough for the longest formatted tick (e.g. "₹1.2Cr") without
   // guessing — measured against the actual data rather than a fixed width,
   // so plain small numbers keep a narrow axis and currency doesn't clip.
-  const yAxisWidth = Math.max(28, ...data.flatMap(d => series.map(s => formatValue(Number(d[s.key]) || 0).length))) * 7 + 8
+  const longestTick = Math.max(1, ...data.flatMap(d => series.map(s => formatValue(Number(d[s.key]) || 0).length)))
+  const yAxisWidth = Math.max(28, longestTick * 7 + 8)
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">

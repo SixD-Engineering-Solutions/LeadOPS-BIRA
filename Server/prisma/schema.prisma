@@ -611,7 +611,7 @@ model CatalogChange {
   id             String    @id @default(cuid())
   // "sector" | "vertical" | "source" | "service-type"
   kind           String
-  // "rename" | "merge"
+  // "rename" | "merge" | "remove"
   action         String
   // Readable: Renamed “Oil and Gas” to “Oil & Gas”
   summary        String

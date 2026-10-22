@@ -4,6 +4,7 @@ import { Icon } from './icons'
 import { icons } from '../../lib/iconPaths'
 import { initials } from '../../lib/people'
 import { Popover, MenuItem, MenuDivider } from '../table/Popover'
+import { getTheme, toggleTheme } from '../../lib/theme'
 import type { NavBadge } from '../../hooks/useNavBadges'
 import { LogoMark } from '../Logo'
 
@@ -126,6 +127,11 @@ export function DashboardSidebar({
                 </span>
               </div>
               <MenuDivider />
+              {/* Phones have no room for the switch in the top bar, so it's here too. */}
+              <MenuItem onSelect={() => { toggleTheme(); setProfileAnchor(null) }}>
+                <Icon d={getTheme() === 'dark' ? icons.sun : icons.moon} className="h-4 w-4" />
+                {getTheme() === 'dark' ? 'Light mode' : 'Dark mode'}
+              </MenuItem>
               <MenuItem danger onSelect={() => { setProfileAnchor(null); onSignOut() }}>
                 <Icon d={icons.signout} className="h-4 w-4" />
                 Sign out

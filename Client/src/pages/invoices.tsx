@@ -79,12 +79,24 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
   }, [])
 
 
+  // What's left to invoice on a project: its order (the won proposal's value)
+  // minus what's already invoiced. null when there's no order value to check
+  // against (a project raised by hand). The server enforces the same rule.
+  const headroom = (projectId: string) => {
+    const order = projects.find(p => p.id === projectId)?.proposal?.value
+    if (!order) return null
+    const invoiced = invoices.filter(i => i.projectId === projectId).reduce((s, i) => s + Number(i.amount), 0)
+    return { order, invoiced, left: Math.max(0, Math.round((order - invoiced) * 100) / 100) }
+  }
+  const room = form.projectId ? headroom(form.projectId) : null
+
   async function createInvoice(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
     const errs: typeof fieldErrors = {}
     if (!form.projectId) errs.projectId = 'Choose the project to bill.'
     if (!form.amount || Number(form.amount) <= 0) errs.amount = 'Enter an amount greater than 0.'
+    else if (room && Number(form.amount) > room.left) errs.amount = room.left === 0 ? `This project is fully invoiced (${fmtMoney(room.order)} order). Raise the proposal's value first if the order grew.` : `Only ${fmtMoney(room.left)} is left to invoice on this ${fmtMoney(room.order)} order.`
     setFieldErrors(errs)
     if (Object.keys(errs).length) { focusFirstInvalid(); return }
     setCreating(true)
@@ -338,13 +350,16 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
               <SearchSelect
                 value={form.projectId}
                 onChange={v => { setForm({ ...form, projectId: v }); setFieldErrors(p => ({ ...p, projectId: undefined })) }}
-                options={projects.map(p => ({ value: p.id, label: `${p.workOrderNo} — ${p.projectName}`, hint: p.lead?.plant?.client?.clientName ?? undefined }))}
+                options={projects.map(p => {
+                  const h = headroom(p.id)
+                  return { value: p.id, label: `${p.workOrderNo} — ${p.projectName}`, hint: h?.left === 0 ? 'Fully invoiced' : p.lead?.plant?.client?.clientName ?? undefined }
+                })}
                 emptyLabel="Select a project…"
                 invalid={!!fieldErrors.projectId}
                 label="Project"
               />
             </Field>
-            <Field label="Amount (₹)" required error={fieldErrors.amount}>
+            <Field label="Amount (₹)" required error={fieldErrors.amount} hint={room ? (room.left === 0 ? `Fully invoiced — ${fmtMoney(room.order)} order` : `${fmtMoney(room.left)} left to invoice of the ${fmtMoney(room.order)} order`) : undefined}>
               <input type="number" value={form.amount} onChange={e => { setForm({ ...form, amount: e.target.value }); setFieldErrors(p => ({ ...p, amount: undefined })) }} placeholder="e.g. 500000" aria-invalid={!!fieldErrors.amount || undefined} className={fieldCls(!!fieldErrors.amount)} />
             </Field>
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">

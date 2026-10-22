@@ -16,14 +16,14 @@ export default function Segmented<T extends string>({ options, value, onChange, 
 }) {
   const s = SIZES[size]
   return (
-    <div className={`inline-flex shrink-0 border border-gray-200 bg-white font-semibold dark:border-gray-700 dark:bg-gray-900 ${s.frame}`} role="group" aria-label={label}>
+    <div className={`inline-flex max-w-full shrink-0 overflow-x-auto border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-gray-200 bg-white font-semibold dark:border-gray-700 dark:bg-gray-900 ${s.frame}`} role="group" aria-label={label}>
       {options.map(o => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           aria-pressed={value === o.value}
-          className={`outline-none transition focus-visible:ring-2 focus-visible:ring-orange-300 ${s.item} ${value === o.value
+          className={`shrink-0 whitespace-nowrap outline-none transition focus-visible:ring-2 focus-visible:ring-orange-300 ${s.item} ${value === o.value
             ? s.on
             : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
         >

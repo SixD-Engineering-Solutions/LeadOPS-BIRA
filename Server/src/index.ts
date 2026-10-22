@@ -19,7 +19,7 @@ import trackerRequestRoutes from './routes/trackerRequests'
 import { startFollowUpReminderJob } from './services/reminders'
 import { sendError } from './utils/errors'
 import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
-import { resyncAllInvoicesToTracker } from './utils/invoiceTrackerSync'
+import { resyncAllInvoicesToTracker, repairLeadDeletionLeftovers } from './utils/invoiceTrackerSync'
 import { assertRequiredEnv } from './utils/env'
 
 assertRequiredEnv()
@@ -109,7 +109,13 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   sendError(res, 500, 'Something went wrong. Please try again.')
 })
 
-app.listen(PORT, () => {
+// The one-time repair finishes before the server takes any request: a lead
+// deleted by this version is taken out of the summary properly as it's
+// deleted, and must never be mistaken for one of the old leftovers.
+repairLeadDeletionLeftovers()
+  .then(n => { if (n) console.log(`Invoice tracker: took ${n} deleted lead's invoice(s) back out of the sector summary`) })
+  .catch(err => console.error('Invoice tracker repair failed:', err instanceof Error ? err.message : err))
+  .finally(() => app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   startFollowUpReminderJob()
   resyncAllLeadsToPipeline()
@@ -118,4 +124,4 @@ app.listen(PORT, () => {
   resyncAllInvoicesToTracker()
     .then(n => console.log(`Invoice tracker: re-synced ${n} invoice(s)`))
     .catch(err => console.error('Invoice tracker resync failed:', err instanceof Error ? err.message : err))
-})
+}))

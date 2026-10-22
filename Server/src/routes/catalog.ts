@@ -259,7 +259,31 @@ router.post('/:kind/:id/rename', async (req: AuthRequest, res: Response): Promis
   res.json(result)
 })
 
-// GET /catalog/:kind/history — the renames and merges made here, newest first.
+// POST /catalog/:kind/:id/remove — turns off a value no lead uses (a stray
+// "e" typed into the old free-text field): it's hidden from every list and
+// from new leads, kept for history, and revertible like any other change.
+// A value still on a lead has to be merged into another instead.
+router.post('/:kind/:id/remove', async (req: AuthRequest, res: Response): Promise<void> => {
+  const kind = parseKind(req.params.kind)
+  if (!kind) return sendError(res, 404, 'Unknown list.')
+  const id = String(req.params.id)
+  const by = await whoIs(req.userId)
+  const result = await prisma.$transaction(async tx => {
+    const row = (await activeRows(tx, kind)).find(r => r.id === id)
+    if (!row) return { error: 'That value no longer exists — reload and try again.' }
+    const inUse = await tx.lead.count({ where: { [LEAD_FK[kind]]: id, deletedAt: null } })
+    if (inUse > 0) return { error: `“${row.name}” is still on ${inUse} lead${inUse === 1 ? '' : 's'} — merge it into another value instead.` }
+    const snap = emptySnapshot(row.name, row.id)
+    snap.values = await valueRows(tx, kind, [id])
+    await deactivate(tx, kind, [id])
+    await tx.catalogChange.create({ data: { kind, action: 'remove', summary: `Removed unused “${row.name}”`, byUserId: by.id, byName: by.name, snapshot: snap as unknown as Prisma.InputJsonValue } })
+    return { removed: row.name }
+  }, TX_OPTS)
+  if ('error' in result) return sendError(res, 409, result.error!)
+  res.json(result)
+})
+
+// GET /catalog/:kind/history — the renames, merges and removals made here, newest first.
 router.get('/:kind/history', async (req: AuthRequest, res: Response): Promise<void> => {
   const kind = parseKind(req.params.kind)
   if (!kind) return sendError(res, 404, 'Unknown list.')

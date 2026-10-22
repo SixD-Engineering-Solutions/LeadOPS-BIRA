@@ -49,6 +49,34 @@ async function totalPaid(db: Db, invoiceId: string): Promise<number> {
   return payments.reduce((sum, p) => sum + Number(p.amountReceived), 0)
 }
 
+const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+
+// A project can't be invoiced for more than its order — the value of the
+// proposal it was won from. Locks the project row first, so two invoices
+// raised at the same moment can't each see the same headroom and together
+// go over (same reasoning as the payment lock below). Projects raised by hand
+// without a proposal, or whose proposal has no value, have no limit.
+// `excludeInvoiceId`: the invoice being edited, whose old amount is replaced.
+async function assertWithinOrderValue(tx: Prisma.TransactionClient, projectId: string, amount: number, excludeInvoiceId?: string) {
+  await tx.$executeRaw`SELECT id FROM projects WHERE id = ${projectId} FOR UPDATE`
+  const project = await tx.project.findUnique({ where: { id: projectId }, select: { proposal: { select: { proposalNumber: true, value: true } } } })
+  const orderValue = project?.proposal?.value != null ? Number(project.proposal.value) : null
+  if (orderValue == null || orderValue <= 0) return
+  const others = await tx.invoice.findMany({
+    where: { projectId, deletedAt: null, ...(excludeInvoiceId ? { id: { not: excludeInvoiceId } } : {}) },
+    select: { amount: true },
+  })
+  const invoiced = Math.round(others.reduce((s, i) => s + Number(i.amount), 0) * 100) / 100
+  const left = Math.max(0, Math.round((orderValue - invoiced) * 100) / 100)
+  if (Math.round((invoiced + amount) * 100) / 100 > orderValue) {
+    throw new ValidationError(
+      left === 0
+        ? `This project is fully invoiced — ${inr(invoiced)} of its ${inr(orderValue)} order (${project!.proposal!.proposalNumber}). If the order grew, raise the proposal's value first.`
+        : `Only ${inr(left)} is left to invoice on this project (${inr(invoiced)} of its ${inr(orderValue)} order already invoiced). If the order grew, raise the proposal's value first.`,
+    )
+  }
+}
+
 // Recomputes status from what's actually been paid — Paid/Partially Paid are
 // derived, never hand-set, so they can't drift out of sync with payments.
 // Draft/Sent/Overdue stay manual (Overdue has no time-based auto-trigger —
@@ -126,6 +154,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // Reserving the invoice number and creating the row together — see the
     // same reasoning in projects.ts/proposals.ts.
     const invoice = await prisma.$transaction(async tx => {
+      await assertWithinOrderValue(tx, d.projectId, d.amount)
       const invoiceNumber = await nextSequenceNumber(tx, 'invoice', 'INV')
       const created = await tx.invoice.create({
         data: {
@@ -147,8 +176,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, project.leadId))
     broadcastInvoiceUpdate(invoice.id)
     res.status(201).json({ invoice })
-  } catch {
-    sendError(res, 400, 'Could not create invoice.')
+  } catch (e) {
+    sendError(res, 400, e instanceof ValidationError ? e.message : 'Could not create invoice.')
   }
 })
 
@@ -186,6 +215,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
   try {
     const invoice = await prisma.$transaction(async tx => {
+      if (d.amount) await assertWithinOrderValue(tx, existing.projectId, d.amount, existing.id)
       await tx.invoice.update({ where: { id: existing.id }, data })
       // Amount changed → what's already been paid may no longer cover it (or
       // now covers it in full), so the derived Paid/Partially Paid state
@@ -206,8 +236,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     broadcastInvoiceUpdate(existing.id)
     res.json({ invoice })
-  } catch {
-    sendError(res, 400, 'Could not update invoice.')
+  } catch (e) {
+    sendError(res, 400, e instanceof ValidationError ? e.message : 'Could not update invoice.')
   }
 })
 
