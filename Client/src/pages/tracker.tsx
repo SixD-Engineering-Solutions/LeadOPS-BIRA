@@ -24,6 +24,8 @@ import { RowMenu } from '../components/table/RowMenu'
 import type { RowAction } from '../components/table/RowMenu'
 import { formatDate, formatDateTime } from '../lib/relativeTime'
 import { comparePipelineValue, comparePipelineStage, expectedCloseOrder, priorityOrder, dsoOrder } from '../lib/trackerSorts'
+import { useIsPhone } from '../lib/useMediaQuery'
+import PipelineDetails from '../components/tracker/PipelineDetails'
 
 // ─── formatting helpers ──────────────────────────────────────────────────────
 
@@ -100,6 +102,11 @@ const canEdit = (editor: RowEditor, row: { id: string }) => !!editor.defs && !ed
 
 function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses: LeadStatus[] }) {
   const [items, setItems] = useState<PipelineTrackerItem[]>([])
+  const [layout, setLayout] = useState<'compact' | 'sheet'>('compact')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const isPhone = useIsPhone()
+  const fullSheet = layout === 'sheet' && !isPhone
+  const selected = items.find(r => r.id === selectedId)
   const [error, setError] = useState<string | null>(null)
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
   // Refetches whenever the editor's token or a retry changes the key; it's
@@ -172,13 +179,40 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
     { id: 'notes', header: 'Notes', cell: r => clip(r.notes) },
   ]
 
-  const openRow = (r: PipelineTrackerItem) => (r.sourceLeadId ? setOpenLeadId(r.sourceLeadId) : editor.open('pipeline', r))
+  const stageBadge = (r: PipelineTrackerItem) => {
+    if (!text(r.status)) return <StatusBadge label="Not recorded" tone={DEFAULT_STATUS_STYLE} />
+    const group = groupOfStatus(r.status, leadStatuses)
+    const label = ({ 'Enquiry / Discussion': 'Enquiry', 'Quoted / Offer Sent': 'Quoted', 'Negotiation / Follow-up': 'Follow-up' } as Record<string, string>)[group] ?? group
+    return <span title={r.status ?? 'Not recorded'}><StatusBadge label={label} tone={group === 'On Hold' ? BADGE_TONES.amber : pipelineRowStyle(r)} /></span>
+  }
+  const compactColumns: Column<PipelineTrackerItem>[] = [
+    {
+      id: 'client', header: 'Opportunity', className: 'w-[32%] !whitespace-normal',
+      cell: r => <div className="min-w-0 max-w-[300px]">
+        <div className="flex flex-wrap items-center gap-1.5"><span className="break-words text-sm font-semibold text-gray-900 dark:text-gray-100">{r.client?.trim() || 'Unnamed client'}</span>{r.sourceLeadId && <AppBadge />}{editor.pendingRowIds.has(r.id) && <PendingBadge />}</div>
+        <p className="mt-0.5 break-words text-xs text-gray-500 dark:text-gray-400">{[r.location, r.service].filter(Boolean).join(' · ')}</p>
+        {r.description && <p className="mt-1 line-clamp-2 break-words text-xs text-gray-600 dark:text-gray-300" title={r.description}>{r.description}</p>}
+      </div>,
+    },
+    { id: 'value', header: 'Value', align: 'right', cell: r => <span className="font-semibold text-gray-900 dark:text-gray-100">{r.valueLakhs == null ? 'Not recorded' : formatSheetValue(r.valueLakhs, r.currency)}</span> },
+    { id: 'status', header: 'Stage', cell: stageBadge },
+    { id: 'owner', header: 'Owner', className: 'max-w-[150px]', cell: r => <PersonChip name={text(r.owner)} empty="Unassigned" /> },
+    { id: 'followUp', header: 'Follow-up', className: 'max-w-[160px] !whitespace-normal break-words', cell: r => <span>{text(r.followUpDate) ?? 'Not scheduled'}</span> },
+  ]
+  const openRow = (r: PipelineTrackerItem) => setSelectedId(r.id)
+  const detailsAction = selected?.sourceLeadId
+    ? { label: 'Open linked lead', onSelect: () => { setSelectedId(null); setOpenLeadId(selected.sourceLeadId) } }
+    : selected ? editAction(editor, 'pipeline', selected) : null
 
   return (
     <Card
       title="Pipeline"
-      subtitle={<>Imported from the Pipeline Tracker sheet, plus every lead raised in the app (marked <AppBadge />, kept up to date) · {editor.isAdmin ? 'click a sheet row to edit it' : 'click a sheet row to request a change'}</>}
+      subtitle="Open an opportunity for its full details, notes and available actions."
     >
+      <div className="hidden items-center justify-between gap-3 border-b border-gray-100 px-5 py-3 sm:flex dark:border-gray-800">
+        <p className="text-xs text-gray-500 dark:text-gray-400">{fullSheet ? 'All original columns for detailed review.' : 'The essentials at a glance. Open a row to see more.'}</p>
+        <Segmented label="Pipeline layout" value={layout} onChange={setLayout} options={[{ value: 'compact', label: 'Compact' }, { value: 'sheet', label: 'Full sheet' }]} />
+      </div>
       <TableToolbar view={view} noun="rows" exportCsv={{ filename: 'tracker-pipeline', columns }} placeholder="Search client, service, owner…">
         <RefreshButton onClick={() => setAttempt(a => a + 1)} busy={loading} />
       </TableToolbar>
@@ -190,26 +224,26 @@ function PipelineTab({ editor, leadStatuses }: { editor: RowEditor; leadStatuses
       ) : (
         <>
           <DataGrid
-            phoneCards={false}
-            columns={columns}
+            phoneCards
+            columns={fullSheet ? columns : compactColumns}
             rows={view.rows}
             getKey={r => r.id}
             view={view}
             onRowClick={openRow}
-            isRowClickable={r => !!r.sourceLeadId || canEdit(editor, r)}
-            rowLabel={r => (r.sourceLeadId ? `Open the lead for ${r.client ?? 'this row'}` : `${editor.isAdmin ? 'Edit' : 'Request a change to'} ${r.client ?? 'this row'}`)}
+            rowLabel={r => `View pipeline details for ${r.client ?? 'this opportunity'}`}
             actions={r => (
               <RowMenu
                 label={r.client ?? 'row'}
-                actions={r.sourceLeadId ? [{ label: 'Open lead', onSelect: () => setOpenLeadId(r.sourceLeadId!) }] : [editAction(editor, 'pipeline', r)]}
+                actions={[{ label: 'View details', onSelect: () => openRow(r) }, ...(r.sourceLeadId ? [{ label: 'Open lead', onSelect: () => setOpenLeadId(r.sourceLeadId!) }] : [editAction(editor, 'pipeline', r)])]}
               />
             )}
             empty={<NoMatches noun="rows" onClear={view.clearFilters} />}
-            minWidth={2050}
+            minWidth={fullSheet ? 2050 : 0}
           />
           <TableFooter view={view} />
         </>
       )}
+      {selected && <PipelineDetails row={selected} stage={stageBadge(selected)} onClose={() => setSelectedId(null)} action={detailsAction ? { ...detailsAction, onSelect: () => { setSelectedId(null); detailsAction.onSelect() } } : null} />}
       {openLeadId && <LeadDetailById leadId={openLeadId} onClose={() => setOpenLeadId(null)} />}
     </Card>
   )
@@ -454,7 +488,7 @@ export default function Tracker({ isAdmin, currentUserId }: { isAdmin: boolean; 
   return (
     <div className={PAGE_CLASS}>
       <PageHeader title="Tracker" crumb={TAB_LABELS[tab]} subtitle="Pipeline and invoice data imported from the tracking sheet, kept up to date with the app." />
-      <p className="mb-4 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs text-gray-500 sm:hidden dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">📱 These are wide sheets — turn your phone sideways to see more columns at once.</p>
+      {tab === 'invoices' && <p className="mb-4 rounded-xl border border-gray-100 bg-white px-3 py-2 text-xs text-gray-500 sm:hidden dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">📱 These are wide sheets — turn your phone sideways to see more columns at once.</p>}
 
       <div className="mb-5">
         <Segmented
