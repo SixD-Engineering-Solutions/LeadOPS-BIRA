@@ -43,6 +43,7 @@ const PAGES = {
   invoices: () => import('./invoices'),
   tracker: () => import('./tracker'),
   cleanup: () => import('./cleanup'),
+  activity: () => import('./activity'),
 }
 const Leads = lazy(PAGES.leads)
 const Reports = lazy(PAGES.reports)
@@ -53,6 +54,7 @@ const Projects = lazy(PAGES.projects)
 const Invoices = lazy(PAGES.invoices)
 const Tracker = lazy(PAGES.tracker)
 const Cleanup = lazy(PAGES.cleanup)
+const ActivityLog = lazy(PAGES.activity)
 
 const PageLoading = () => (
   <div className={PAGE_CLASS} aria-busy="true" aria-label="Loading">
@@ -97,7 +99,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
     { label: 'Sales', items: [{ key: 'lead-gen', label: 'Leads', icon: icons.leadGen }, { key: 'proposals', label: 'Proposals', icon: icons.proposals }] },
     { label: 'Delivery', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }, { key: 'tasks', label: 'Tasks', icon: icons.tasks }] },
     { label: 'Insights', items: [{ key: 'tracker', label: 'Tracker', icon: icons.tracker }, { key: 'reports', label: 'Reports', icon: icons.reports }] },
-    ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }, { key: 'cleanup', label: 'Data clean-up', icon: icons.setup }] }] : []),
+    ...(isAdmin ? [{ label: 'Admin', items: [{ key: 'team', label: 'Team', icon: icons.team }, { key: 'cleanup', label: 'Data clean-up', icon: icons.setup }, { key: 'activity', label: 'Activity log', icon: icons.history }] }] : []),
   ]
   const navItems: NavItem[] = navGroups.flatMap(g => g.items)
   const badges = useNavBadges(isAdmin)
@@ -173,7 +175,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const unassignedLeads = useMemo(() => allLeads.filter(l => !l.assignedToUserId), [allLeads])
 
   // These keys render real views; everything else is a demo placeholder.
-  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tracker', 'cleanup'])
+  const REAL_VIEWS = new Set(['dashboard', 'lead-gen', 'leads', 'reports', 'team', 'tasks', 'proposals', 'projects', 'invoices', 'tracker', 'cleanup', 'activity'])
 
   function openModule(m: { key: string; label?: string; title?: string }) {
     setActive(m.key)
@@ -226,6 +228,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <Leads isAdmin={isAdmin} currentUserId={user.id} />
         ) : active === 'reports' ? (
           <Reports isAdmin={isAdmin} />
+        ) : active === 'activity' && isAdmin ? (
+          <ActivityLog />
         ) : active === 'cleanup' && isAdmin ? (
           <Cleanup />
         ) : active === 'team' ? (

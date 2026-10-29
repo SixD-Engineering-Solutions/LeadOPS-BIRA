@@ -9,6 +9,7 @@ import { isAdmin, canAccessProject } from '../utils/access'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { syncInvoiceToTracker } from '../utils/invoiceTrackerSync'
+import { logActivity, invoiceSnapshot, invoiceLabel } from '../utils/auditLog'
 
 type Db = typeof prisma | Prisma.TransactionClient
 
@@ -175,6 +176,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoice.id))
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, project.leadId))
     broadcastInvoiceUpdate(invoice.id)
+    await logActivity({ userId: req.userId, entity: 'invoice', entityId: invoice.id, label: invoiceLabel(invoice), leadId: project.leadId, action: 'created', after: invoiceSnapshot(invoice) })
     res.status(201).json({ invoice })
   } catch (e) {
     sendError(res, 400, e instanceof ValidationError ? e.message : 'Could not create invoice.')
@@ -233,6 +235,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
       // The lead's Pipeline row shows this invoice's status ("Invoice:Paid").
       await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+      await logActivity({ userId: req.userId, entity: 'invoice', entityId: invoice.id, label: invoiceLabel(invoice), leadId: invoice.project.lead.id, action: 'updated', before: invoiceSnapshot(existing), after: invoiceSnapshot(invoice) })
     }
     broadcastInvoiceUpdate(existing.id)
     res.json({ invoice })
@@ -301,6 +304,11 @@ router.post('/:id/payments', async (req: AuthRequest, res: Response): Promise<vo
     if (invoice) {
       await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
       await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+      await logActivity({
+        userId: req.userId, entity: 'invoice', entityId: invoice.id, label: invoiceLabel(invoice), leadId: invoice.project.lead.id, action: 'payment',
+        summary: `${inr(d.amountReceived)} received${d.paymentDate ? ` on ${d.paymentDate.toISOString().slice(0, 10)}` : ''}`,
+        before: invoiceSnapshot(existing), after: invoiceSnapshot(invoice),
+      })
     }
     broadcastInvoiceUpdate(existing.id)
     res.status(201).json({ invoice })
@@ -326,6 +334,7 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
     sendError(res, 404, 'Payment not found.')
     return
   }
+  const before = await prisma.invoice.findUnique({ where: { id: invoiceId } })
   const invoice = await prisma.$transaction(async tx => {
     await tx.payment.update({ where: { id: paymentId }, data: { deletedAt: new Date() } })
     await recomputeStatus(tx, invoiceId)
@@ -334,6 +343,11 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
   if (invoice) {
     await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, invoiceId))
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, invoice.project.lead.id))
+    await logActivity({
+      userId: req.userId, entity: 'invoice', entityId: invoice.id, label: invoiceLabel(invoice), leadId: invoice.project.lead.id, action: 'payment voided',
+      summary: `${inr(Number(payment.amountReceived))} payment voided`,
+      before: before ? invoiceSnapshot(before) : null, after: invoiceSnapshot(invoice),
+    })
   }
   broadcastInvoiceUpdate(invoiceId)
   res.json({ invoice })
@@ -341,12 +355,13 @@ router.delete('/:id/payments/:paymentId', requireAdmin, async (req: AuthRequest,
 
 // DELETE /invoices/:id — admin-only soft delete, same pattern as leads/tasks/proposals/projects.
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const existing = await prisma.invoice.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
+  const existing = await prisma.invoice.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: invoiceInclude })
   if (!existing) {
     sendError(res, 404, 'Invoice not found.')
     return
   }
   await prisma.invoice.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  await logActivity({ userId: req.userId, entity: 'invoice', entityId: existing.id, label: invoiceLabel(existing), leadId: existing.project.lead.id, action: 'deleted', summary: `${inr(Number(existing.amount))} invoice` })
   // Takes it back out of the Tracker's Invoice Register and sector summary.
   await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, existing.id))
   // If that was the lead's only invoice, its Pipeline row drops back to the

@@ -8,6 +8,7 @@ import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 import { isAdmin, canAccessLead } from '../utils/access'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
+import { logActivity, projectSnapshot, projectLabel } from '../utils/auditLog'
 
 const router = Router()
 router.use(authenticate)
@@ -136,6 +137,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // After the transaction, not inside it.
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
     broadcastProjectUpdate(project.id)
+    await logActivity({ userId: req.userId, entity: 'project', entityId: project.id, label: projectLabel(project), leadId: project.leadId, action: 'created', after: projectSnapshot(project) })
     res.status(201).json({ project })
   } catch (err) {
     if (err instanceof DuplicateProjectError) {
@@ -171,6 +173,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const admin = await isAdmin(req.userId)
   const existing = await prisma.project.findFirst({
     where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
+    include: projectInclude,
   })
   if (!existing) {
     sendError(res, 404, 'Project not found.')
@@ -216,6 +219,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     const project = await prisma.project.update({ where: { id: existing.id }, data, include: projectInclude })
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
     broadcastProjectUpdate(project.id)
+    await logActivity({ userId: req.userId, entity: 'project', entityId: project.id, label: projectLabel(project), leadId: project.leadId, action: 'updated', before: projectSnapshot(existing), after: projectSnapshot(project) })
     res.json({ project })
   } catch {
     sendError(res, 400, 'Could not update project.')
@@ -224,7 +228,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
 // DELETE /projects/:id — admin-only soft delete, same pattern as leads/tasks/proposals.
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const existing = await prisma.project.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
+  const existing = await prisma.project.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: projectInclude })
   if (!existing) {
     sendError(res, 404, 'Project not found.')
     return
@@ -232,6 +236,7 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
   await prisma.project.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
   await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
   broadcastProjectUpdate(existing.id)
+  await logActivity({ userId: req.userId, entity: 'project', entityId: existing.id, label: projectLabel(existing), leadId: existing.leadId, action: 'deleted' })
   res.json({ message: 'Project deleted.' })
 })
 

@@ -602,6 +602,35 @@ model TrackerChangeRequest {
   @@map("tracker_change_requests")
 }
 
+// The admin Activity log: one row per create / change / delete of a lead,
+// proposal, project or invoice (and each payment logged or voided) — who did
+// it, when, on what, and each field's value before and after. Plain values,
+// no foreign keys, so an entry still reads correctly after its record or the
+// person is deleted or renamed.
+model AuditLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  userId   String?  @map("user_id")
+  userName String   @map("user_name")
+  // "lead" | "proposal" | "project" | "invoice"
+  entity   String
+  entityId String   @map("entity_id")
+  // Readable name of the record at the time, e.g. "PROP-0003 · Bhilai Steel Plant"
+  label    String
+  // The lead it belongs to, so the log can open it
+  leadId   String?  @map("lead_id")
+  // "created" | "updated" | "deleted" | "payment" | "payment voided"
+  action   String
+  // A one-line note, e.g. "with 1 proposal, 1 project, 2 invoices"
+  summary  String?
+  // [{ field, from, to }]
+  changes  Json
+
+  @@index([at])
+  @@index([entityId])
+  @@map("audit_logs")
+}
+
 // One rename or merge made on the admin Data clean-up screen
 // (routes/catalog.ts), with a snapshot of everything it changed — the list
 // values, the leads it moved, the Tracker rows it renamed and the sector

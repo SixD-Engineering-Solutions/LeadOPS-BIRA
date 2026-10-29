@@ -7,6 +7,7 @@ import { TX_OPTS } from '../utils/sequence'
 import { isAdmin } from '../utils/access'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { syncInvoiceToTracker } from '../utils/invoiceTrackerSync'
+import { logActivity, leadSnapshot, leadLabel } from '../utils/auditLog'
 import { sendError } from '../utils/errors'
 import { findSameName } from '../utils/names'
 
@@ -218,6 +219,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       notifyUser(lead.assignedToUserId, `You've been assigned a new lead: ${lead.plant.plantName}`, lead.id)
         .catch(err => console.error('notifyUser failed:', err.message))
     }
+    await logActivity({ userId: req.userId, entity: 'lead', entityId: lead.id, label: leadLabel(lead), leadId: lead.id, action: 'created', after: leadSnapshot(lead) })
     res.status(201).json({ lead })
   } catch {
     sendError(res, 400, 'Could not create lead.')
@@ -293,11 +295,14 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if ('remark' in parse.data) data.remark = parse.data.remark ?? null
 
   try {
+    // As it was, for the Activity log's before → after.
+    const before = await prisma.lead.findUnique({ where: { id: existing.id }, include: leadInclude })
     const lead = await prisma.lead.update({
       where: { id: existing.id },
       data, // updatedAt refreshes automatically (@updatedAt)
       include: leadInclude,
     })
+    await logActivity({ userId: req.userId, entity: 'lead', entityId: lead.id, label: leadLabel(lead), leadId: lead.id, action: 'updated', before: before ? leadSnapshot(before) : null, after: leadSnapshot(lead) })
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, lead.id))
     broadcastLeadUpdate(lead.id)
     if (
@@ -317,7 +322,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 // DELETE /leads/:id — soft delete (sets deleted_at; row is kept for audit).
 // Admin-only: entries stay until an admin explicitly removes them.
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
+  const existing = await prisma.lead.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: leadInclude })
   if (!existing) {
     sendError(res, 404, 'Lead not found.')
     return
@@ -353,6 +358,13 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
   // its amount in the sector summary (FY totals, the dashboard's target card,
   // the invoicing charts) — the same as deleting the invoice on its own.
   for (const id of removed.invoiceIds) await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, id))
+
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+  const along = [plural(removed.proposalIds.length, 'proposal'), plural(removed.projectIds.length, 'project'), plural(removed.invoiceIds.length, 'invoice')]
+  await logActivity({
+    userId: req.userId, entity: 'lead', entityId: existing.id, label: leadLabel(existing), leadId: existing.id, action: 'deleted',
+    summary: removed.proposalIds.length + removed.projectIds.length + removed.invoiceIds.length ? `Removed with ${along.join(', ')}` : undefined,
+  })
 
   broadcastLeadUpdate(existing.id)
   removed.proposalIds.forEach(broadcastProposalUpdate)

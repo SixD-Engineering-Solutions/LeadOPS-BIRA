@@ -8,6 +8,7 @@ import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
 import { isAdmin, canAccessLead } from '../utils/access'
 import { sendError } from '../utils/errors'
+import { logActivity, proposalSnapshot, proposalLabel, projectSnapshot, projectLabel } from '../utils/auditLog'
 
 const router = Router()
 router.use(authenticate)
@@ -120,6 +121,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }, TX_OPTS)
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
     broadcastProposalUpdate(proposal.id)
+    await logActivity({ userId: req.userId, entity: 'proposal', entityId: proposal.id, label: proposalLabel(proposal), leadId: proposal.leadId, action: 'created', after: proposalSnapshot(proposal) })
     res.status(201).json({ proposal })
   } catch (err) {
     if (err instanceof DuplicateProposalError) {
@@ -254,6 +256,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, result.proposal.leadId))
     broadcastProposalUpdate(result.proposal.id)
     if (result.project) broadcastProjectUpdate(result.project.id)
+    await logActivity({ userId: req.userId, entity: 'proposal', entityId: existing.id, label: proposalLabel(result.proposal), leadId: existing.leadId, action: 'updated', before: proposalSnapshot(existing), after: proposalSnapshot(result.proposal) })
+    if (result.project) {
+      const project = await prisma.project.findUnique({ where: { id: result.project.id }, include: { responsibleUser: { select: { userName: true, email: true } }, location: { select: { city: true } } } })
+      if (project) await logActivity({ userId: req.userId, entity: 'project', entityId: project.id, label: projectLabel(project), leadId: project.leadId, action: 'created', after: projectSnapshot(project), summary: `Created by marking ${existing.proposalNumber} Won` })
+    }
     res.json({ proposal: result.proposal })
   } catch (err) {
     if (err instanceof ProjectDetailsRequiredError) {
@@ -270,7 +277,7 @@ class ProjectDetailsRequiredError extends Error {
 
 // DELETE /proposals/:id — admin-only soft delete, same pattern as leads/tasks.
 router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const existing = await prisma.proposal.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
+  const existing = await prisma.proposal.findFirst({ where: { id: String(req.params.id), deletedAt: null }, include: proposalInclude })
   if (!existing) {
     sendError(res, 404, 'Proposal not found.')
     return
@@ -278,6 +285,7 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
   await prisma.proposal.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
   await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
   broadcastProposalUpdate(existing.id)
+  await logActivity({ userId: req.userId, entity: 'proposal', entityId: existing.id, label: proposalLabel(existing), leadId: existing.leadId, action: 'deleted' })
   res.json({ message: 'Proposal deleted.' })
 })
 

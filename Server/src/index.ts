@@ -13,6 +13,7 @@ import invoiceRoutes from './routes/invoices'
 import eventRoutes from './routes/events'
 import referenceRoutes from './routes/reference'
 import catalogRoutes from './routes/catalog'
+import activityLogRoutes from './routes/activityLog'
 import notificationRoutes from './routes/notifications'
 import trackerRoutes from './routes/tracker'
 import trackerRequestRoutes from './routes/trackerRequests'
@@ -72,6 +73,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/auth', authRoutes)
 app.use('/catalog', catalogRoutes)
+app.use('/activity-log', activityLogRoutes)
 app.use('/leads', leadRoutes)
 app.use('/tasks', taskRoutes)
 app.use('/activities', activityRoutes)
