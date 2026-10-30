@@ -33,4 +33,10 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/health || exit 1
-CMD ["node", "dist/index.js"]
+# Applies any database migrations this version brings before starting, so a
+# redeploy never leaves the API running against an out-of-date schema (new
+# pages failing with "Something went wrong" until someone remembers to run
+# `prisma migrate deploy`). Migrations only ever add; one that fails is logged
+# and the API starts anyway, so the site stays up — then run
+# `npx prisma migrate deploy` in this container by hand to see why.
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy || echo '[startup] Database migration FAILED - the API is starting anyway. Run: npx prisma migrate deploy'; exec node dist/index.js"]

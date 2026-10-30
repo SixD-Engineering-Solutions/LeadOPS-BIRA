@@ -130,6 +130,18 @@ would not be there. Cancel the Aiven plan once you're confident.
 
 Do not run the demo seed or `prisma migrate reset` against this database.
 
+### Database updates on every redeploy
+
+From `leadops-api:2026-10-30b` on, the API container applies any pending
+database migrations itself every time it starts (`prisma migrate deploy`,
+then the server). Redeploying the stack with a new image is all a release
+needs — there's no separate migration step. Its log shows either
+*"No pending migrations to apply."* or the ones it applied. If one fails, the
+log says `[startup] Database migration FAILED` and the API starts anyway, so
+the site stays up; run `npx prisma migrate deploy` in the `leadops-api`
+container's console to see the error. Take a database backup before any
+release, as before.
+
 Keep the new site inaccessible to users until these steps are complete. Stop
 the old API at cutover: multiple API processes sharing the database can run the
 same reminder jobs and split live notifications.
