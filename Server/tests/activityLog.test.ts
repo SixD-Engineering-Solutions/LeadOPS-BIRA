@@ -25,7 +25,7 @@ describe('Activity log', () => {
     const meId = (await api<{ user: { id: string } }>('/auth/me', { token: employee })).body.user.id
     const me = (await api<{ users: { id: string; userName: string | null; email: string }[] }>('/users', { token: admin })).body.users.find(u => u.id === meId)!
     employeeName = me.userName || me.email
-    const created = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: 'Steel', assignedToName: me.email } })
+    const created = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: `${tag} sector`, assignedToName: me.email } })
     expect(created.status).toBe(201)
     leadId = created.body.lead.id
   })
@@ -44,7 +44,7 @@ describe('Activity log', () => {
     const log = await entriesFor(leadId)
     expect(log.map(e => e.action)).toEqual(['created', 'updated'])
     expect(change(log[0], 'Plant')?.to).toBe(tag)
-    expect(change(log[0], 'Sector')?.to).toBe('Steel')
+    expect(change(log[0], 'Sector')?.to).toBe(`${tag} sector`)
     expect(log[1].userName).toBe(employeeName)
     expect(change(log[1], 'Status')).toEqual({ field: 'Status', from: 'Submitted', to: 'In Process' })
     expect(log[1].changes).toHaveLength(1) // only what actually changed

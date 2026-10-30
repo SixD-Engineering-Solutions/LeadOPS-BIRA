@@ -362,10 +362,25 @@ router.post('/changes/:id/revert', async (req: AuthRequest, res: Response): Prom
 async function mergeSummaryRows(tx: Tx, fromName: string, toName: string, snap: Snapshot): Promise<number> {
   const same = (a: string | null, b: string) => (a ?? '').trim().toLowerCase() === b.trim().toLowerCase()
   const rows = await tx.invoiceSectorSummary.findMany()
-  const sources = rows.filter(r => same(r.sector, fromName) && !same(r.sector, SUMMARY_TOTAL_SECTOR))
-  if (sources.length === 0) return 0
+  const remember = (r: SummaryRow) => { if (!snap.summaryBefore.some(b => b.id === r.id)) snap.summaryBefore.push(r) }
+
+  // Same name, only written differently ("steel" → "Steel"): nothing to add
+  // together — the rows already are that sector's rows. Just write the name
+  // the new way. (Treating it as a merge would add a row to itself and then
+  // delete it.)
+  if (same(fromName, toName)) {
+    const differently = rows.filter(r => same(r.sector, fromName) && r.sector !== toName && !same(r.sector, SUMMARY_TOTAL_SECTOR))
+    for (const r of differently) {
+      remember(r)
+      await tx.invoiceSectorSummary.update({ where: { id: r.id }, data: { sector: toName } })
+    }
+    return differently.length
+  }
+
   let target = rows.find(r => same(r.sector, toName))
-  for (const r of [...sources, ...(target ? [target] : [])]) if (!snap.summaryBefore.some(b => b.id === r.id)) snap.summaryBefore.push(r)
+  const sources = rows.filter(r => same(r.sector, fromName) && r.id !== target?.id && !same(r.sector, SUMMARY_TOTAL_SECTOR))
+  if (sources.length === 0) return 0
+  for (const r of [...sources, ...(target ? [target] : [])]) remember(r)
   for (const src of sources) {
     if (!target) {
       target = await tx.invoiceSectorSummary.update({ where: { id: src.id }, data: { sector: toName } })

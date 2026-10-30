@@ -150,6 +150,32 @@ describe('Data clean-up: rename, merge and revert', () => {
     await dbQuery(`DELETE FROM lead_sources WHERE id = $1`, [id])
   })
 
+  it('renames or merges a name that differs only in capitals ("steel" → "Steel")', async () => {
+    // Like the live case: the app's sector is lower case, the sheet's summary
+    // and register rows use the proper spelling.
+    const lower = `${tag} metal`, proper = `${tag} Metal`
+    const { body } = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: `${tag} metal plant`, sectorName: lower } })
+    leadIds.push(body.lead.id)
+    await dbQuery(`INSERT INTO invoice_sector_summary (id, sort_order, sector, apr, fy_target, updated_at) VALUES ($1, 99995, $2, 7, 50, now())`, [`${tag}-sum-metal`, proper])
+    await dbQuery(`INSERT INTO invoice_register_items (id, sort_order, sector, updated_at) VALUES ($1, 99995, $2, now())`, [`${tag}-reg-metal`, proper])
+    const summaryRow = async () => (await dbRows<{ sector: string; apr: number; fy_target: number }>(`SELECT sector, apr, fy_target FROM invoice_sector_summary WHERE id = $1`, [`${tag}-sum-metal`]))[0]
+    const before = await fingerprint()
+
+    const renamed = await api(`/catalog/sector/${await sectorId(lower)}/rename`, { method: 'POST', token: admin, body: { name: proper } })
+    expect(renamed.status).toBe(200)
+    expect(await summaryRow()).toEqual({ sector: proper, apr: 7, fy_target: 50 }) // untouched — not added to itself
+    expect(await sectorId(proper)).toBeTruthy()
+    expect((await api(`/catalog/changes/${(await latestChange()).id}/revert`, { method: 'POST', token: admin })).status).toBe(200)
+    expect(await fingerprint()).toEqual(before)
+
+    // A lower-case duplicate merged into the properly spelled sector.
+    await dbQuery(`UPDATE sectors SET sector_name = $1 WHERE id = $2`, [proper, await sectorId(lower)])
+    await dbQuery(`INSERT INTO sectors (id, sector_name, is_active, updated_at) VALUES ($1, $2, true, now())`, [`${tag}-dup`, lower])
+    const merged = await api(`/catalog/sector/merge`, { method: 'POST', token: admin, body: { fromIds: [`${tag}-dup`], toId: await sectorId(proper) } })
+    expect(merged.status).toBe(200)
+    expect(await summaryRow()).toEqual({ sector: proper, apr: 7, fy_target: 50 })
+  })
+
   it('won’t revert over an edit made to the summary since', async () => {
     await api(`/catalog/sector/${await sectorId(A)}/rename`, { method: 'POST', token: admin, body: { name: `${tag} Hydrocarbons` } })
     const change = await latestChange()
