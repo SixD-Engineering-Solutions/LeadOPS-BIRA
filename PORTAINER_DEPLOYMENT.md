@@ -142,6 +142,54 @@ the site stays up; run `npx prisma migrate deploy` in the `leadops-api`
 container's console to see the error. Take a database backup before any
 release, as before.
 
+### Daily sync from the SharePoint sheet
+
+From `leadops-api:2026-11-11` on, the API can pull the live business tracker
+workbook from SharePoint/OneDrive once a day and refresh the Tracker's sheet
+rows (Pipeline Tracker and Invoice & Billing Tracker tabs). Rows that come from
+the app's own leads and invoices are never touched, and the app invoices'
+amounts are added back onto the sector summary, so nothing is lost or counted
+twice. Nothing is written unless the whole workbook reads correctly, and a file
+with under half the rows the Tracker has now is refused. Without these settings
+the sync is off.
+
+**One-time setup in Azure (Entra ID → App registrations → the LeadOps app):**
+
+1. **API permissions → Add → Microsoft Graph → Application permissions →
+   `Files.Read.All`** → **Grant admin consent**. (Tighter alternative when the file
+   is on a SharePoint *team site*: `Sites.Selected`, then grant the app read
+   access to that one site.)
+2. **Certificates & secrets → New client secret.** Copy its *Value* at once.
+   Note its expiry date — the sync stops when it expires (admins get a
+   notification); create a new one before then and update the variable.
+
+**Stack variables:**
+
+| Variable | Value |
+| --- | --- |
+| `SHEET_SYNC_SHARE_URL` | The workbook's sharing link (as copied from SharePoint's *Share → Copy link*) |
+| `SHEET_SYNC_CLIENT_SECRET` | The client secret value from step 2 |
+| `SHEET_SYNC_HOUR` | Optional; hour of day in India time, `0`–`23`. Default `2` (02:00) |
+| `SHEET_SYNC_DRIVE_ID`, `SHEET_SYNC_ITEM_ID` | Optional, recommended once known: the file's permanent ids. After the first successful sync the API log prints them (`[sheet sync] file ids — …`). With them set, the sync keeps working even if the sharing link is changed or switched off; then `SHEET_SYNC_SHARE_URL` can be removed |
+| `SHEET_SYNC_TENANT_ID`, `SHEET_SYNC_CLIENT_ID` | Optional; default to `MS_TENANT_ID` / `MS_CLIENT_ID` |
+
+Restart the API. Its log shows `[sheet sync] on — daily at 02:00 India time`,
+and the first sync runs about a minute after start (then daily; a server that
+was down at that hour catches up when it's back; a failed run is retried an
+hour later). Each run logs `[sheet sync] schedule: Pipeline 152 · Invoices 96 …`
+or the reason it failed.
+
+Admins can also check and trigger it through the API:
+`GET /api/tracker/sheet-sync` (status and recent runs) and
+`POST /api/tracker/sheet-sync/run` (sync now; `{"force": true}` applies a
+workbook even when it has far fewer rows).
+
+**Keep in mind:** the workbook is the source of truth for the sheet rows —
+edits made to those rows in the app (admin edits, approved change requests) are
+replaced at the next sync, so make them in the workbook. Record each invoice in
+one place only: an invoice raised in the app *and* typed into the workbook is
+counted twice in the sector totals.
+
 Keep the new site inaccessible to users until these steps are complete. Stop
 the old API at cutover: multiple API processes sharing the database can run the
 same reminder jobs and split live notifications.

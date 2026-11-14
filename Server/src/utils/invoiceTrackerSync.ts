@@ -210,6 +210,27 @@ export async function repairLeadDeletionLeftovers(): Promise<number> {
   }, { maxWait: 10000, timeout: 30000 })
 }
 
+// After the sector summary has been reloaded from the sheet (services/
+// sheetSync.ts), the sheet's figures no longer include the app's own
+// invoices: adds each app register row's figure back, exactly as the
+// register row recorded it, so nothing is counted twice or lost. Then makes
+// the TOTAL row the sum of the sectors, as every other summary change does.
+// Call inside the transaction that reloaded the summary, holding its lock.
+export async function reapplyAppInvoiceContributions(tx: Prisma.TransactionClient): Promise<number> {
+  const fyStart = await summaryFyStart(tx)
+  const appRows = await tx.invoiceRegisterItem.findMany({ where: { sourceInvoiceId: { not: null } }, orderBy: { createdAt: 'asc' } })
+  let added = 0
+  for (const r of appRows) {
+    const c = contributionOf(r, fyStart)
+    if (!c) continue
+    await applyContribution(tx, c, 1, r.bmOwner)
+    added++
+  }
+  const first = await tx.invoiceSectorSummary.findFirst({ where: { NOT: { sector: { equals: SUMMARY_TOTAL_SECTOR, mode: 'insensitive' } } }, orderBy: { sortOrder: 'asc' } })
+  if (first) await recomputeSectorTotals(tx, first.id)
+  return added
+}
+
 export async function resyncAllInvoicesToTracker(): Promise<number> {
   const invoices = await prisma.invoice.findMany({ select: { id: true }, orderBy: { createdAt: 'asc' } })
   for (const { id } of invoices) await syncTrackerBestEffort(() => syncInvoiceToTracker(prisma, id))

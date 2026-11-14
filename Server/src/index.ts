@@ -18,6 +18,7 @@ import notificationRoutes from './routes/notifications'
 import trackerRoutes from './routes/tracker'
 import trackerRequestRoutes from './routes/trackerRequests'
 import { startFollowUpReminderJob } from './services/reminders'
+import { startSheetSyncJob } from './services/sheetSync'
 import { sendError } from './utils/errors'
 import { resyncAllLeadsToPipeline } from './utils/pipelineSync'
 import { resyncAllInvoicesToTracker, repairLeadDeletionLeftovers } from './utils/invoiceTrackerSync'
@@ -120,6 +121,7 @@ repairLeadDeletionLeftovers()
   .finally(() => app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   startFollowUpReminderJob()
+  startSheetSyncJob()
   resyncAllLeadsToPipeline()
     .then(n => console.log(`Pipeline tracker: re-synced ${n} lead(s)`))
     .catch(err => console.error('Pipeline tracker resync failed:', err instanceof Error ? err.message : err))

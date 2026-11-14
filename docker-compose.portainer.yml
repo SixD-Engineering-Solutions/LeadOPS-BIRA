@@ -53,6 +53,16 @@ services:
       MS_ALLOWED_TENANT_IDS: ${MS_ALLOWED_TENANT_IDS:-}
       # Emergency: "true" re-enables password sign-in for admins only.
       ADMIN_PASSWORD_LOGIN: ${ADMIN_PASSWORD_LOGIN:-false}
+      # Daily sync of the Tracker from the SharePoint workbook (see
+      # PORTAINER_DEPLOYMENT.md, "Daily sync from the SharePoint sheet").
+      # Off while neither the share URL nor the drive/item ids are set.
+      SHEET_SYNC_SHARE_URL: ${SHEET_SYNC_SHARE_URL:-}
+      SHEET_SYNC_DRIVE_ID: ${SHEET_SYNC_DRIVE_ID:-}
+      SHEET_SYNC_ITEM_ID: ${SHEET_SYNC_ITEM_ID:-}
+      SHEET_SYNC_CLIENT_SECRET: ${SHEET_SYNC_CLIENT_SECRET:-}
+      SHEET_SYNC_TENANT_ID: ${SHEET_SYNC_TENANT_ID:-}
+      SHEET_SYNC_CLIENT_ID: ${SHEET_SYNC_CLIENT_ID:-}
+      SHEET_SYNC_HOUR: ${SHEET_SYNC_HOUR:-2}
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
     volumes:
       - leadops-uploads:/app/uploads

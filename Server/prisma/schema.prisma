@@ -631,6 +631,27 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// One pull of the live tracker workbook from SharePoint into the Tracker's
+// sheet rows (services/sheetSync.ts) — scheduled daily, or run by an admin.
+// status: "running" | "success" | "failed". `changes` holds the row counts
+// ({ pipeline: { kept, added, removed }, register: …, summary: … }).
+model SheetSyncRun {
+  id         String    @id @default(cuid())
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  // "schedule" | "manual" | "script"
+  trigger    String
+  // Who ran it by hand; null for the schedule.
+  userName   String?   @map("user_name")
+  status     String    @default("running")
+  message    String?
+  fileHash   String?   @map("file_hash")
+  changes    Json?
+
+  @@index([startedAt])
+  @@map("sheet_sync_runs")
+}
+
 // One rename or merge made on the admin Data clean-up screen
 // (routes/catalog.ts), with a snapshot of everything it changed — the list
 // values, the leads it moved, the Tracker rows it renamed and the sector
