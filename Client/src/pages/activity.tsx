@@ -94,10 +94,12 @@ export default function ActivityLog() {
       { id: 'all', label: 'All' },
       { id: 'today', label: 'Today', match: e => new Date(e.at).getTime() >= startOfToday() },
       { id: 'week', label: 'Last 7 days', match: e => new Date(e.at).getTime() >= startOfToday() - 6 * 86_400_000 },
+      { id: 'assign', label: 'Assignments', match: e => e.entity === 'lead' && e.changes.some(c => c.field === 'Assigned to') },
     ],
     filters: [
       { id: 'who', label: 'Who', value: e => e.userName },
       { id: 'type', label: 'Record', value: e => ENTITY[e.entity], order: Object.values(ENTITY) },
+      { id: 'lead', label: 'Lead', value: e => (e.entity === 'lead' ? e.label : '') },
       { id: 'action', label: 'Action', value: e => ACTION[e.action].label, order: ACTION_ORDER },
     ],
     sorts: {

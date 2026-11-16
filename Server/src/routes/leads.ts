@@ -323,7 +323,10 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       data, // updatedAt refreshes automatically (@updatedAt)
       include: leadInclude,
     })
-    await logActivity({ userId: req.userId, entity: 'lead', entityId: lead.id, label: leadLabel(lead), leadId: lead.id, action: 'updated', before: before ? leadSnapshot(before) : null, after: leadSnapshot(lead) })
+    const from = before ? leadSnapshot(before)['Assigned to'] : null
+    const to = leadSnapshot(lead)['Assigned to']
+    const summary = from !== to ? (to ? (from ? `Reassigned: ${from} → ${to}` : `Assigned to ${to}`) : `Unassigned (was ${from})`) : undefined
+    await logActivity({ userId: req.userId, entity: 'lead', entityId: lead.id, label: leadLabel(lead), leadId: lead.id, action: 'updated', before: before ? leadSnapshot(before) : null, after: leadSnapshot(lead), summary })
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, lead.id))
     broadcastLeadUpdate(lead.id)
     if (
