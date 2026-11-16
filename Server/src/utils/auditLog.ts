@@ -8,7 +8,7 @@ import { prisma } from '../prisma'
 // list of changes. Writing an entry never fails the request that made the
 // change — a log that can't be written is reported, not raised.
 
-export type Entity = 'lead' | 'proposal' | 'project' | 'invoice'
+export type Entity = 'lead' | 'proposal' | 'project' | 'invoice' | 'task' | 'team' | 'tracker'
 export type Action = 'created' | 'updated' | 'deleted' | 'payment' | 'payment voided'
 type Value = string | null
 export type Snapshot = Record<string, Value>
@@ -32,6 +32,7 @@ type LeadLike = {
   source?: { sourceName: string } | null
   serviceType?: { serviceTypeName: string } | null
   contact?: { contactPersonName: string | null } | null
+  extraContacts?: { contact: { contactPersonName: string | null } }[]
   remark?: string | null
   lostReason?: string | null
 }
@@ -47,6 +48,7 @@ export const leadSnapshot = (l: LeadLike): Snapshot => ({
   Source: text(l.source?.sourceName),
   'Service type': text(l.serviceType?.serviceTypeName),
   Contact: text(l.contact?.contactPersonName),
+  'Other contacts': text(l.extraContacts?.map(c => c.contact.contactPersonName).filter(Boolean).join(', ')),
   Remark: text(l.remark),
   'Reason lost': text(l.lostReason),
 })
@@ -87,7 +89,39 @@ export const invoiceSnapshot = (i: InvoiceLike): Snapshot => ({
   'Due date': day(i.dueDate),
 })
 
+type TaskLike = { title?: string | null; status?: string | null; deadline?: Date | null; description?: string | null; assignedToUser?: Person }
+export const taskSnapshot = (t: TaskLike): Snapshot => ({
+  Title: text(t.title),
+  Status: text(t.status),
+  Deadline: day(t.deadline),
+  'Assigned to': person(t.assignedToUser),
+  Description: text(t.description),
+})
+
+type UserLike = { userName?: string | null; email?: string | null; role?: string | null; isActive?: boolean | null; department?: string | null; phoneNumber?: string | null }
+export const userSnapshot = (u: UserLike): Snapshot => ({
+  Name: text(u.userName),
+  Email: text(u.email),
+  Role: text(u.role),
+  Department: text(u.department),
+  Phone: text(u.phoneNumber),
+  Active: u.isActive == null ? null : u.isActive ? 'Yes' : 'No (removed)',
+})
+
+// A Tracker row edit as before/after snapshots, keyed by the field's label.
+export function trackerSnapshots(changes: Record<string, { from: unknown; to: unknown }>, labelOf: (field: string) => string): { before: Snapshot; after: Snapshot } {
+  const before: Snapshot = {}
+  const after: Snapshot = {}
+  for (const [field, c] of Object.entries(changes)) {
+    before[labelOf(field)] = text(c.from)
+    after[labelOf(field)] = text(c.to)
+  }
+  return { before, after }
+}
+
 // ── Labels: how a record is named in the log ────────────────────────────────
+export const taskLabel = (t: { title: string }) => t.title
+export const userLabel = (u: { userName?: string | null; email: string }) => u.userName || u.email
 
 export const leadLabel = (l: LeadLike) => [l.plant?.plantName, l.plant?.client?.clientName].filter(Boolean).join(' · ') || 'Lead'
 export const proposalLabel = (p: { proposalNumber: string; lead?: { plant?: { plantName: string } | null } | null }) =>

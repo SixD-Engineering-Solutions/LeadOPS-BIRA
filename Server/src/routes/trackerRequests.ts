@@ -5,6 +5,7 @@ import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { notifyUser } from '../services/notify'
 import { sendError } from '../utils/errors'
+import { logActivity, trackerSnapshots } from '../utils/auditLog'
 import {
   TRACKER_TABLES, tableTitle, isTrackerTable, findTrackerRow, rowLockReason, rowLabel, diffChanges, applyTrackerChanges, toJsonValue,
 } from '../utils/trackerFields'
@@ -42,6 +43,13 @@ async function currentUser(id: string | undefined) {
   return id ? prisma.user.findUnique({ where: { id }, select: { ...personSelect, role: true, isActive: true } }) : null
 }
 
+// Records a Tracker row edit in the Activity log, field by field.
+async function logTrackerEdit(userId: string | undefined, table: TrackerTable, rowId: string, label: string, changes: Record<string, FieldChange>, summary?: string) {
+  const labels = new Map((TRACKER_TABLES[table].fields as { key: string; label: string }[]).map(f => [f.key, f.label] as const))
+  const { before, after } = trackerSnapshots(changes, f => labels.get(f) ?? f)
+  await logActivity({ userId, entity: 'tracker', entityId: rowId, label: `${tableTitle(table)} · ${label}`, action: 'updated', before, after, summary })
+}
+
 const changesSchema = z.record(z.string(), z.union([z.string(), z.number(), z.null()]))
 
 // PATCH /tracker/rows/:table/:id — admin only: edit an imported row directly.
@@ -53,6 +61,7 @@ router.patch('/rows/:table/:id', requireAdmin, async (req: AuthRequest, res: Res
     return
   }
   try {
+    let logged = null as { id: string; label: string; changes: Record<string, FieldChange> } | null
     const changed = await prisma.$transaction(async tx => {
       const row = await findTrackerRow(tx, table, String(req.params.id))
       if (!row) throw new RequestError(404, 'That tracker row no longer exists.')
@@ -61,8 +70,10 @@ router.patch('/rows/:table/:id', requireAdmin, async (req: AuthRequest, res: Res
       const diff = diffChanges(table, row, parsed.data.changes)
       if (!diff.ok) throw new RequestError(400, diff.error)
       if (Object.keys(diff.changes).length > 0) await applyTrackerChanges(tx, table, row.id, diff.changes)
+      logged = { id: row.id, label: rowLabel(table, row), changes: diff.changes }
       return Object.keys(diff.changes).length
     })
+    if (changed && logged) await logTrackerEdit(req.userId, table, logged.id, logged.label, logged.changes)
     res.json({ message: changed ? 'Tracker updated.' : 'Nothing changed.' })
   } catch (e) {
     if (e instanceof RequestError) { sendError(res, e.status, e.message); return }
@@ -193,6 +204,7 @@ router.post('/requests/:id/approve', requireAdmin, async (req: AuthRequest, res:
       await closeRequest(tx, request.id, REQUEST_STATUS.approved, null)
       return request
     })
+    await logTrackerEdit(req.userId, request.tableName as TrackerTable, request.rowId, request.rowLabel, request.changes as Record<string, FieldChange>, 'Approved change request')
     await notifyUser(request.requesterId, `Your change to “${request.rowLabel}” was approved, and the tracker has been updated.`)
     res.json({ message: 'Approved — the tracker has been updated.' })
   } catch (e) {

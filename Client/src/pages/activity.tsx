@@ -21,7 +21,7 @@ type Entry = {
   id: string
   at: string
   userName: string
-  entity: 'lead' | 'proposal' | 'project' | 'invoice'
+  entity: 'lead' | 'proposal' | 'project' | 'invoice' | 'task' | 'team' | 'tracker'
   entityId: string
   label: string
   leadId: string | null
@@ -30,7 +30,7 @@ type Entry = {
   changes: Change[]
 }
 
-const ENTITY: Record<Entry['entity'], string> = { lead: 'Lead', proposal: 'Proposal', project: 'Project', invoice: 'Invoice' }
+const ENTITY: Record<Entry['entity'], string> = { lead: 'Lead', proposal: 'Proposal', project: 'Project', invoice: 'Invoice', task: 'Task', team: 'Team member', tracker: 'Tracker row' }
 const ACTION: Record<Entry['action'], { label: string; tone: string }> = {
   created: { label: 'Created', tone: BADGE_TONES.emerald },
   updated: { label: 'Changed', tone: BADGE_TONES.sky },

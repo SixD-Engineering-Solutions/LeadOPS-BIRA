@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api, PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
-import type { Lead, Proposal, Project } from '../lib/api'
+import { api, PROPOSAL_SYNC_EVENT, INVOICE_SYNC_EVENT } from '../lib/api'
+import type { Lead, Proposal } from '../lib/api'
 
 /** This month so far, and the same number of days at the start of last month. */
 export type MonthCompare = { now: number; prev: number }
@@ -84,11 +84,9 @@ function targetOf(summary: SummaryRow[], now: Date): TargetProgress | null {
 }
 
 // The dashboard's month-on-month trends, funnel and FY target. Leads and
-// proposals come from the hooks the tiles already use; this adds projects
-// (a won proposal's project is created the moment it's won, so its date is
-// the win date) and the Tracker's sector summary (the FY targets).
+// proposals come from the hooks the tiles already use (a win is dated by the
+// proposal's `decidedAt`); this adds the Tracker's sector summary (the FY targets).
 export function useDashboardInsights(active: boolean, leads: Lead[], proposals: Proposal[], ready: boolean): Insights {
-  const [projects, setProjects] = useState<Project[]>([])
   const [summary, setSummary] = useState<SummaryRow[]>([])
   const [fetched, setFetched] = useState(false)
   const [token, setToken] = useState(0)
@@ -96,12 +94,8 @@ export function useDashboardInsights(active: boolean, leads: Lead[], proposals: 
   useEffect(() => {
     if (!active) return
     let cancelled = false
-    Promise.all([
-      api<{ projects: Project[] }>('/projects', { auth: true }).then(r => r.projects).catch(() => [] as Project[]),
-      api<{ summary: SummaryRow[] }>('/tracker/invoices', { auth: true }).then(r => r.summary).catch(() => [] as SummaryRow[]),
-    ]).then(([p, s]) => {
+    api<{ summary: SummaryRow[] }>('/tracker/invoices', { auth: true }).then(r => r.summary).catch(() => [] as SummaryRow[]).then(s => {
       if (cancelled) return
-      setProjects(p)
       setSummary(s)
       setFetched(true)
     })
@@ -110,14 +104,14 @@ export function useDashboardInsights(active: boolean, leads: Lead[], proposals: 
 
   useEffect(() => {
     const bump = () => setToken(t => t + 1)
-    const events = [PROPOSAL_SYNC_EVENT, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT]
+    const events = [PROPOSAL_SYNC_EVENT, INVOICE_SYNC_EVENT]
     events.forEach(e => window.addEventListener(e, bump))
     return () => events.forEach(e => window.removeEventListener(e, bump))
   }, [])
 
   const now = new Date()
-  const valueOf = new Map(proposals.map(p => [p.id, p.value ?? 0]))
-  const wonProjects = projects.filter(p => p.proposalId && valueOf.has(p.proposalId))
+  // Won value is dated by when the proposal was won, not when its project was created.
+  const wonProposals = proposals.filter(p => p.status === 'Won' && p.decidedAt)
   const quietBefore = now.getTime() - QUIET_DAYS * 86_400_000
 
   return {
@@ -125,7 +119,7 @@ export function useDashboardInsights(active: boolean, leads: Lead[], proposals: 
     prevMonth: windows(now).prevMonth,
     leadsNew: compare(leads, l => l.createdAt, () => 1, now),
     proposalValueAdded: compare(proposals, p => p.createdAt, p => p.value ?? 0, now),
-    wonValue: compare(wonProjects, p => p.createdAt, p => valueOf.get(p.proposalId!) ?? 0, now),
+    wonValue: compare(wonProposals, p => p.decidedAt!, p => p.value ?? 0, now),
     funnel: funnelOf(leads, proposals),
     target: targetOf(summary, now),
     quietProposals: proposals.filter(p => !['Won', 'Lost', 'Hold'].includes(p.status) && new Date(p.updatedAt).getTime() < quietBefore).length,

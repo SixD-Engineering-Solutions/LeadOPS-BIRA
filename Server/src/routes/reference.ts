@@ -7,6 +7,7 @@ import { sendError } from '../utils/errors'
 import { TX_OPTS } from '../utils/sequence'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { broadcastLeadUpdate } from '../services/notify'
+import { logActivity, userSnapshot, userLabel } from '../utils/auditLog'
 
 // List + create endpoints for the supporting tables (locations, plants,
 // contacts, verticals, sectors, lead statuses, users). All require auth;
@@ -177,6 +178,7 @@ router.post('/users', requireAdmin, async (req, res) => {
   if (!p.success) return void bad(res, 'A valid email is required.')
   try {
     const user = await prisma.user.create({ data: p.data })
+    await logActivity({ userId: (req as AuthRequest).userId, entity: 'team', entityId: user.id, label: userLabel(user), action: 'created', after: userSnapshot(user) })
     res.status(201).json({ user: { id: user.id, userName: user.userName, email: user.email, role: user.role, department: user.department, phoneNumber: user.phoneNumber, isActive: user.isActive } })
   } catch { bad(res, 'Could not create user. Email may already exist.') }
 })
@@ -195,6 +197,7 @@ router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res:
     data: { isActive: true },
     select: { id: true, userName: true, email: true, role: true, department: true, phoneNumber: true, isActive: true },
   })
+  await logActivity({ userId: req.userId, entity: 'team', entityId: id, label: userLabel(user), action: 'updated', before: userSnapshot({ ...user, isActive: false }), after: userSnapshot(user) })
   res.json({ user })
 })
 
@@ -262,6 +265,7 @@ router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Resp
       await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, leadId))
       broadcastLeadUpdate(leadId)
     }
+    await logActivity({ userId: req.userId, entity: 'team', entityId: id, label: userLabel(result.user), action: 'updated', before: userSnapshot({ ...result.user, role: target.role }), after: userSnapshot(result.user), summary: result.unassignedLeadIds.length ? `${result.unassignedLeadIds.length} lead(s) unassigned` : undefined })
     res.json({ user: result.user, unassignedLeads: result.unassignedLeadIds.length })
   } catch (err) {
     if (err instanceof RoleChangeRefused) {
@@ -303,6 +307,7 @@ router.patch('/users/:id/email', requireAdmin, async (req: AuthRequest, res: Res
   }
 
   const user = await prisma.user.update({ where: { id }, data: { email, microsoftOid: null }, select: userSelect })
+  await logActivity({ userId: req.userId, entity: 'team', entityId: id, label: userLabel(user), action: 'updated', before: userSnapshot({ ...user, email: target.email }), after: userSnapshot(user) })
 
   // The Tracker shows people by name, falling back to email — refresh the
   // rows of leads they own or manage.
@@ -331,7 +336,7 @@ router.delete('/users/:id', requireAdmin, async (req: AuthRequest, res: Response
     sendError(res, 400, 'You cannot delete your own account.')
     return
   }
-  const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true, role: true } })
+  const existing = await prisma.user.findUnique({ where: { id }, select: { isActive: true, role: true, userName: true, email: true } })
   if (!existing || !existing.isActive) {
     sendError(res, 404, 'Employee not found.')
     return
@@ -346,6 +351,7 @@ router.delete('/users/:id', requireAdmin, async (req: AuthRequest, res: Response
     }
   }
   await prisma.user.update({ where: { id }, data: { isActive: false } })
+  await logActivity({ userId: req.userId, entity: 'team', entityId: id, label: userLabel(existing), action: 'deleted' })
   res.json({ message: 'Employee removed.' })
 })
 

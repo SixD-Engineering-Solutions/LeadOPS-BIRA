@@ -23,6 +23,8 @@ const leadInclude = {
   serviceType: { select: { id: true, serviceTypeName: true } },
   event: { select: { id: true, eventName: true } },
   contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true, isPrimaryContact: true } },
+  // Further people contacted, beyond the primary one above.
+  extraContacts: { orderBy: { createdAt: 'asc' as const }, select: { contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true } } } },
   assignedToUser: { select: { id: true, userName: true, email: true } },
   assignedByUser: { select: { id: true, userName: true, email: true } },
   bmUser: { select: { id: true, userName: true, email: true } },
@@ -145,6 +147,12 @@ const createSchema = z.object({
   contactName: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
   contactNumber: z.string().optional(),
+  // More people contacted at the same plant — each needs a name.
+  extraContacts: z.array(z.object({
+    name: z.string(),
+    email: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
+    phone: z.string().optional(),
+  })).max(10, 'At most 10 additional contacts.').optional(),
   verticalName: z.string().optional(),
   sectorName: z.string().optional(),
   sourceName: z.string().optional(),
@@ -174,6 +182,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, LOST_REASON_REQUIRED)
     return
   }
+  const extras = (d.extraContacts ?? []).filter(c => clean(c.name) || clean(c.email) || clean(c.phone))
+  if (extras.some(c => !clean(c.name))) {
+    sendError(res, 400, 'Enter a name for every additional contact.')
+    return
+  }
   const bm = clean(d.bmUserId) ? await activeUser(clean(d.bmUserId)) : null
   if (clean(d.bmUserId) && !bm) {
     sendError(res, 400, BM_INVALID)
@@ -184,6 +197,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
     const plant = await forePlant(clean(d.plantName), location?.id ?? null, client?.id ?? null)
     const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null) : null
+    // Each extra person is found-or-created like the primary; the same person
+    // listed twice (or also as the primary) is only linked once.
+    const extraIds = new Set<string>()
+    for (const c of extras) {
+      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null)
+      if (person.id !== contact?.id) extraIds.add(person.id)
+    }
     const vertical = clean(d.verticalName) ? await foreVertical(clean(d.verticalName)) : null
     const sector = clean(d.sectorName) ? await foreSector(clean(d.sectorName)) : null
     const source = clean(d.sourceName) ? await foreSource(clean(d.sourceName)) : null
@@ -199,6 +219,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       data: {
         plantId: plant.id,
         contactId: contact?.id ?? null,
+        extraContacts: { create: [...extraIds].map(contactId => ({ contactId })) },
         verticalId: vertical?.id ?? null,
         sectorId: sector?.id ?? null,
         sourceId: source?.id ?? null,

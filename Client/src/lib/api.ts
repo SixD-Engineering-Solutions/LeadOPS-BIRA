@@ -36,6 +36,8 @@ export type Lead = {
   event?: { id: string; eventName: string } | null
   contactId: string | null
   contact?: { id: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean } | null
+  /** Further people contacted, beyond the primary contact above. */
+  extraContacts?: { contact: { id: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null } }[]
   assignedToUserId: string | null
   assignedToUser?: { id: string; userName: string | null; email: string } | null
   assignedByUserId: string | null
@@ -85,6 +87,8 @@ export type Proposal = {
   probabilityPct: number | null
   expectedOrderDate: string | null
   lostReason: string | null // required while status is Lost
+  /** When the status became Won or Lost; null while undecided. */
+  decidedAt: string | null
   createdByUserId: string
   createdByUser?: { id: string; userName: string | null; email: string }
   createdAt: string

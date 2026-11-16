@@ -68,6 +68,8 @@ const createSchema = z.object({
 // to Lost, and cleared if it moves off Lost.
 const LOST_REASON_REQUIRED = 'Give a reason why the proposal was lost (at least 3 characters).'
 const validReason = (r?: string | null) => (r?.trim().length ?? 0) >= 3
+// Won and Lost are the two "decided" outcomes; decidedAt records when.
+const isDecided = (status?: string | null) => status === 'Won' || status === 'Lost'
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
@@ -114,6 +116,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
           probabilityPct: d.probabilityPct ?? null,
           expectedOrderDate: d.expectedOrderDate ?? null,
           lostReason: d.status === 'Lost' ? d.lostReason!.trim() : null,
+          decidedAt: isDecided(d.status) ? new Date() : null,
           createdByUserId: req.userId!,
         },
         include: proposalInclude,
@@ -183,6 +186,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if ('value' in d) data.value = d.value
   if ('submissionDate' in d) data.submissionDate = d.submissionDate
   if (d.status) data.status = d.status
+  // The decision date follows the status: stamped when it lands on Won/Lost
+  // (including Won → Lost), cleared when it moves off both, left alone otherwise.
+  if (d.status && d.status !== existing.status) data.decidedAt = isDecided(d.status) ? new Date() : null
   if ('probabilityPct' in d) data.probabilityPct = d.probabilityPct
   if ('expectedOrderDate' in d) data.expectedOrderDate = d.expectedOrderDate
   const willBeLost = (d.status ?? existing.status) === 'Lost'

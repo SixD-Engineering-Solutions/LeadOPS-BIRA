@@ -185,6 +185,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      {/* keyboard users skip the sidebar: first Tab stop, visible only when focused */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[90] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-gray-900 focus:shadow-lg focus:ring-2 focus:ring-orange-400 dark:focus:bg-gray-800 dark:focus:text-gray-100">Skip to main content</a>
 
       <DashboardSidebar
         name={name}
@@ -202,7 +204,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
       />
 
       {/* ── Main ────────────────────────────────────────────────────────────── */}
-      <main className="min-w-0 flex-1 scroll-pt-20 overflow-y-auto">
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 scroll-pt-20 overflow-y-auto outline-none">
         {/* top bar: where you are (filled by the page) · search · the page's action, theme, notifications */}
         <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:px-6">
           {/* menu button — opens the off-canvas nav on mobile, where the sidebar is hidden */}

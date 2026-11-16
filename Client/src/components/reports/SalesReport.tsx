@@ -44,16 +44,16 @@ function weeklyTrend(leads: Lead[], WEEKS: number) {
   })
 }
 
-// Won vs Lost proposal value per calendar month, last N months. Uses
-// `updatedAt` as a proxy for "when it was decided" — there's no dedicated
-// wonDate/lostDate field, and status changes are what bump updatedAt.
+// Won vs Lost proposal value per calendar month, last N months, by the date
+// the proposal was decided (`decidedAt`).
 function monthlyPerformance(proposals: Proposal[], MONTHS: number) {
   const now = new Date()
   return Array.from({ length: MONTHS }, (_, i) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS - 1 - i), 1)
     const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)
     const inMonth = (p: Proposal) => {
-      const u = new Date(p.updatedAt)
+      if (!p.decidedAt) return false
+      const u = new Date(p.decidedAt)
       return u >= monthStart && u < monthEnd
     }
     const won = proposals.filter(p => p.status === 'Won' && inMonth(p))
@@ -110,7 +110,7 @@ function ProposalsListModal({ title, proposals, onClose }: { title: string; prop
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800">
           {[...proposals].sort((a, b) => (b.value ?? 0) - (a.value ?? 0)).map(p => {
-            const meta = [p.proposalNumber, fmtDay(p.updatedAt) && `Decided ${fmtDay(p.updatedAt)}`, p.status === 'Lost' && p.lostReason && `Reason: ${p.lostReason}`].filter(Boolean).join('  ·  ')
+            const meta = [p.proposalNumber, fmtDay(p.decidedAt ?? p.updatedAt) && `Decided ${fmtDay(p.decidedAt ?? p.updatedAt)}`, p.status === 'Lost' && p.lostReason && `Reason: ${p.lostReason}`].filter(Boolean).join('  ·  ')
             return (
               <li key={p.id} className="py-3">
                 <div className="flex items-baseline justify-between gap-3">

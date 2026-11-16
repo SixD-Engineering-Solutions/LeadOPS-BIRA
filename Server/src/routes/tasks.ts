@@ -5,6 +5,7 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/authentic
 import { notifyUser, broadcastTaskUpdate } from '../services/notify'
 import { isAdmin } from '../utils/access'
 import { sendError } from '../utils/errors'
+import { logActivity, taskSnapshot, taskLabel } from '../utils/auditLog'
 
 const router = Router()
 router.use(authenticate)
@@ -86,6 +87,7 @@ router.post('/', requireAdmin, async (req: AuthRequest, res: Response): Promise<
       include: taskInclude,
     })
     broadcastTaskUpdate(task.id)
+    await logActivity({ userId: req.userId, entity: 'task', entityId: task.id, label: taskLabel(task), action: 'created', after: taskSnapshot(task) })
     notifyUser(assignee.id, `New task assigned: "${task.title}" — due ${fmtDate(task.deadline)}`)
       .catch(err => console.error('notifyUser failed:', err.message))
     res.status(201).json({ task })
@@ -143,8 +145,10 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 
   try {
+    const before = await prisma.task.findUnique({ where: { id: existing.id }, include: taskInclude })
     const task = await prisma.task.update({ where: { id: existing.id }, data, include: taskInclude })
     broadcastTaskUpdate(task.id)
+    await logActivity({ userId: req.userId, entity: 'task', entityId: task.id, label: taskLabel(task), action: 'updated', before: before ? taskSnapshot(before) : null, after: taskSnapshot(task) })
     if (data.assignedToUserId && data.assignedToUserId !== req.userId) {
       notifyUser(data.assignedToUserId, `You've been assigned a task: "${task.title}" — due ${fmtDate(task.deadline)}`)
         .catch(err => console.error('notifyUser failed:', err.message))
@@ -164,6 +168,7 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
   }
   await prisma.task.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
   broadcastTaskUpdate(existing.id)
+  await logActivity({ userId: req.userId, entity: 'task', entityId: existing.id, label: taskLabel(existing), action: 'deleted' })
   res.json({ message: 'Task deleted.' })
 })
 

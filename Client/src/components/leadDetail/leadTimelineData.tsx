@@ -48,7 +48,7 @@ export function buildTimeline(lead: Lead, r: LeadRecords): TimelineEvent[] {
     })
     if (p.status === 'Won' || p.status === 'Lost') {
       events.push({
-        id: `prop-${p.id}-${p.status}`, at: p.updatedAt, kind: p.status === 'Won' ? 'won' : 'lost',
+        id: `prop-${p.id}-${p.status}`, at: p.decidedAt ?? p.updatedAt, kind: p.status === 'Won' ? 'won' : 'lost',
         title: <>Proposal {p.proposalNumber} <span className={p.status === 'Won' ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-semibold text-rose-600 dark:text-rose-400'}>{p.status.toLowerCase()}</span></>,
         body: p.lostReason && <p className="whitespace-pre-line">{p.lostReason}</p>,
       })

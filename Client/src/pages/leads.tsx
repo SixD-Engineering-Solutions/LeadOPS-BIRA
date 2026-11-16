@@ -36,6 +36,9 @@ const statusOf = (l: Lead) => l.status?.statusName ?? 'Submitted'
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+type ExtraContact = { name: string; email: string; phone: string }
+const emptyExtra: ExtraContact = { name: '', email: '', phone: '' }
+const MAX_EXTRA_CONTACTS = 10
 
 export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: boolean; currentUserId?: string }) {
   const [leads, setLeads] = useState<Lead[]>([])
@@ -44,6 +47,10 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const [team, setTeam] = useState<EmployeeUser[]>([])
 
   const [form, setForm] = useState({ ...emptyForm })
+  // "More than one person contacted" — extra people beyond the main contact.
+  const [multiContact, setMultiContact] = useState(false)
+  const [extras, setExtras] = useState<ExtraContact[]>([{ ...emptyExtra }])
+  const [extraErrors, setExtraErrors] = useState<{ name?: string; email?: string }[]>([])
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -105,8 +112,24 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     if (!form.plantName.trim()) errs.plantName = 'Plant is required.'
     if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) errs.contactEmail = 'Enter an email like name@company.com.'
     if (form.statusName === 'Dead' && form.lostReason.trim().length < 3) errs.lostReason = 'Say why it was lost (at least 3 characters).'
+    // Every additional person needs a name; a half-filled row is not ignored.
+    const exErrs = multiContact
+      ? extras.map(c => {
+          const started = c.name.trim() || c.email.trim() || c.phone.trim()
+          return {
+            name: started && !c.name.trim() ? 'Enter this person’s name.' : undefined,
+            email: c.email.trim() && !EMAIL_RE.test(c.email.trim()) ? 'Enter an email like name@company.com.' : undefined,
+          }
+        })
+      : []
+    setExtraErrors(exErrs)
     setFieldErrors(errs)
-    return Object.keys(errs).length === 0
+    return Object.keys(errs).length === 0 && !exErrs.some(x => x.name || x.email)
+  }
+
+  const setExtra = (i: number, k: keyof ExtraContact, v: string) => {
+    setExtras(prev => prev.map((c, j) => (j === i ? { ...c, [k]: v } : c)))
+    if (k !== 'phone') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
   }
 
   async function createLead(e: React.FormEvent) {
@@ -115,9 +138,12 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     if (!validate()) { focusFirstInvalid(); return }
     setCreating(true)
     try {
-      const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: form })
+      const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: { ...form, extraContacts: multiContact ? extras.filter(c => c.name.trim()) : [] } })
       setLeads(prev => [lead, ...prev])
       setForm({ ...emptyForm })
+      setMultiContact(false)
+      setExtras([{ ...emptyExtra }])
+      setExtraErrors([])
       setFieldErrors({})
       setShowCreate(false)
       toast(`Lead added · ${lead.plant?.plantName ?? 'new lead'}`, { action: { label: 'View', onClick: () => setSelectedLead(lead) } })
@@ -416,6 +442,40 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
               />
             </Field>
             {field('Contact phone', 'contactNumber', 'e.g. 98765 43210', '', 'tel')}
+            <div className="sm:col-span-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="checkbox" checked={multiContact} onChange={e => setMultiContact(e.target.checked)} className="h-4 w-4 accent-orange-400" />
+                More than one person contacted
+              </label>
+              {multiContact && (
+                <div className="mt-3 space-y-3">
+                  {extras.map((c, i) => (
+                    <div key={i} className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Contact person {i + 2}</p>
+                        {extras.length > 1 && (
+                          <button type="button" onClick={() => { setExtras(prev => prev.filter((_, j) => j !== i)); setExtraErrors(prev => prev.filter((_, j) => j !== i)) }} className="text-xs text-red-500 hover:underline">Remove</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <Field label="Name" required error={extraErrors[i]?.name} className="sm:col-span-2">
+                          <input value={c.name} onChange={e => setExtra(i, 'name', e.target.value)} placeholder="Contact person name" aria-invalid={!!extraErrors[i]?.name || undefined} className={fieldCls(!!extraErrors[i]?.name)} />
+                        </Field>
+                        <Field label="Email" error={extraErrors[i]?.email}>
+                          <input type="email" value={c.email} onChange={e => setExtra(i, 'email', e.target.value)} placeholder="e.g. name@company.com" aria-invalid={!!extraErrors[i]?.email || undefined} className={fieldCls(!!extraErrors[i]?.email)} />
+                        </Field>
+                        <Field label="Phone">
+                          <input type="tel" value={c.phone} onChange={e => setExtra(i, 'phone', e.target.value)} placeholder="e.g. 98765 43210" className={fieldCls(false)} />
+                        </Field>
+                      </div>
+                    </div>
+                  ))}
+                  {extras.length < MAX_EXTRA_CONTACTS && (
+                    <button type="button" onClick={() => setExtras(prev => [...prev, { ...emptyExtra }])} className="text-sm font-medium text-orange-600 hover:underline">+ Add another person</button>
+                  )}
+                </div>
+              )}
+            </div>
             <Field label="Vertical">
               <Combobox value={form.verticalName} onChange={v => setForm(p => ({ ...p, verticalName: v }))} options={lookups.verticals} placeholder="e.g. AI Automation" noun="vertical" />
             </Field>

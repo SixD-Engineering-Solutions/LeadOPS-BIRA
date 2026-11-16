@@ -144,6 +144,15 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
               {!lead.contact && <p className="text-xs text-gray-400">No contact person recorded.</p>}
             </DetailSection>
 
+            {(lead.extraContacts ?? []).map(({ contact: c }, i) => (
+              <DetailSection key={c.id} title={`Contact person ${i + 2}`}>
+                <DetailRow label="Name" value={c.contactPersonName} />
+                <DetailRow label="Designation" value={c.designation} />
+                <DetailRow label="Email" value={c.mailId} href={c.mailId ? `mailto:${c.mailId}` : undefined} />
+                <DetailRow label="Phone" value={c.contactPersonNumber} href={c.contactPersonNumber ? `tel:${c.contactPersonNumber.replace(/\s/g, '')}` : undefined} />
+              </DetailSection>
+            ))}
+
             <DetailSection title="Classification">
               <DetailRow label="Vertical" value={lead.vertical?.verticalName} />
               <DetailRow label="Sector" value={lead.sector?.sectorName} />

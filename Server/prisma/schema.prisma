@@ -160,10 +160,25 @@ model Contact {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  leads Lead[]
+  leads      Lead[]
+  leadLinks  LeadContact[]
 
   @@index([plantId])
   @@map("contacts")
+}
+
+// Further people contacted on a lead, beyond its primary contact (Lead.contactId).
+model LeadContact {
+  id        String   @id @default(cuid())
+  leadId    String   @map("lead_id")
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contactId String   @map("contact_id")
+  contact   Contact  @relation(fields: [contactId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([leadId, contactId])
+  @@index([contactId])
+  @@map("lead_contacts")
 }
 
 // ─── Lookup / reference tables ──────────────────────────────────────────────
@@ -274,6 +289,7 @@ model Lead {
   proposals        Proposal[]
   projects         Project[]
   documents        Document[]
+  extraContacts    LeadContact[]
 
   @@index([plantId])
   @@index([assignedToUserId])
@@ -342,6 +358,9 @@ model Proposal {
   expectedOrderDate DateTime? @map("expected_order_date")
   // Mandatory whenever the status is "Lost"; cleared if it moves off Lost.
   lostReason        String?   @map("lost_reason")
+  // When the proposal was decided: set when its status becomes Won or Lost,
+  // cleared if it moves off both. (updatedAt moves on every edit, so it can't say.)
+  decidedAt         DateTime? @map("decided_at")
   createdByUserId   String    @map("created_by_user_id")
   createdByUser     User      @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id])
   createdAt         DateTime  @default(now()) @map("created_at")
