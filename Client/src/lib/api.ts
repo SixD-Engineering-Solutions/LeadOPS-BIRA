@@ -132,6 +132,8 @@ export type LeadDocument = {
   fileSize: number
   createdAt: string
   uploadedByUser?: { id: string; userName: string | null; email: string }
+  /** Set by the list endpoint: admins, and the person who uploaded it. */
+  canDelete?: boolean
 }
 
 // ─── Invoice / Payment (billing against a project) ───────────────────────────

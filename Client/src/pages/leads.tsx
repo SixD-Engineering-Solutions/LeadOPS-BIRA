@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { api, LEAD_SYNC_EVENT } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { api, uploadDocument, LEAD_SYNC_EVENT } from '../lib/api'
 import type { Lead, EmployeeUser } from '../lib/api'
 import LeadDetailModal from '../components/LeadDetailModal'
 import { LostReasonModal } from '../components/LostReasonModal'
@@ -36,6 +36,8 @@ const statusOf = (l: Lead) => l.status?.statusName ?? 'Submitted'
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
+const DOC_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
 type ExtraContact = { name: string; email: string; phone: string }
 const emptyExtra: ExtraContact = { name: '', email: '', phone: '' }
 const MAX_EXTRA_CONTACTS = 10
@@ -51,6 +53,10 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const [multiContact, setMultiContact] = useState(false)
   const [extras, setExtras] = useState<ExtraContact[]>([{ ...emptyExtra }])
   const [extraErrors, setExtraErrors] = useState<{ name?: string; email?: string }[]>([])
+  // Documents attached while raising the lead; uploaded right after it's saved.
+  const [files, setFiles] = useState<File[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -132,6 +138,17 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     if (k !== 'phone') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
   }
 
+  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? [])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    const bad = picked.find(f => !DOC_EXTENSIONS.some(ext => f.name.toLowerCase().endsWith(ext)))
+      ? 'Only PDF, Excel (.xlsx/.xls) or CSV files are accepted.'
+      : picked.find(f => f.size > 10 * 1024 * 1024) ? 'Each file must be 10MB or smaller.' : null
+    setFileError(bad)
+    if (bad) return
+    setFiles(prev => [...prev, ...picked.filter(f => !prev.some(p => p.name === f.name && p.size === f.size))].slice(0, 10))
+  }
+
   async function createLead(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
@@ -140,13 +157,21 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     try {
       const { lead } = await api<{ lead: Lead }>('/leads', { method: 'POST', auth: true, body: { ...form, extraContacts: multiContact ? extras.filter(c => c.name.trim()) : [] } })
       setLeads(prev => [lead, ...prev])
+      // The lead exists now — attach the chosen documents to it.
+      const failed: string[] = []
+      for (const f of files) {
+        try { await uploadDocument(lead.id, f) } catch { failed.push(f.name) }
+      }
+      if (failed.length) toast(`Lead added, but these files didn’t upload: ${failed.join(', ')}. Add them from the lead’s Documents tab.`, { tone: 'error' })
+      setFiles([])
+      setFileError(null)
       setForm({ ...emptyForm })
       setMultiContact(false)
       setExtras([{ ...emptyExtra }])
       setExtraErrors([])
       setFieldErrors({})
       setShowCreate(false)
-      toast(`Lead added · ${lead.plant?.plantName ?? 'new lead'}`, { action: { label: 'View', onClick: () => setSelectedLead(lead) } })
+      if (!failed.length) toast(`Lead added · ${lead.plant?.plantName ?? 'new lead'}${files.length ? ` · ${files.length} document${files.length > 1 ? 's' : ''} attached` : ''}`, { action: { label: 'View', onClick: () => setSelectedLead(lead) } })
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create lead.')
     } finally {
@@ -500,6 +525,24 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
             <Field label="Remark" className="sm:col-span-2">
               <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
             </Field>
+            <div className="sm:col-span-2">
+              <input ref={fileInputRef} type="file" multiple accept={DOC_EXTENSIONS.join(',')} onChange={addFiles} className="sr-only" tabIndex={-1} aria-hidden="true" />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-xl border border-dashed border-orange-300 bg-orange-50/60 px-4 py-2 text-sm font-semibold text-orange-600 outline-none hover:bg-orange-50 focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-orange-800 dark:bg-orange-950/20 dark:text-orange-300">
+                + Add documentation
+              </button>
+              <span className="ml-2 text-[11px] text-gray-400">PDF, Excel or CSV, up to 10MB each.</span>
+              {fileError && <p role="alert" className="mt-1 text-xs text-red-500 dark:text-red-400">{fileError}</p>}
+              {files.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {files.map((f, i) => (
+                    <li key={`${f.name}:${f.size}`} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-xs dark:bg-gray-800/60">
+                      <span className="min-w-0 truncate font-medium text-gray-800 dark:text-gray-100">{f.name}</span>
+                      <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="shrink-0 font-semibold text-red-500 hover:text-red-600">Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {form.statusName === 'Dead' && (
               <Field label="Reason lost" required error={fieldErrors.lostReason} className="sm:col-span-2">
                 <textarea value={form.lostReason} onChange={e => { set('lostReason')(e); setFieldErrors(p => ({ ...p, lostReason: undefined })) }} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} aria-invalid={!!fieldErrors.lostReason || undefined} className={`${fieldCls(!!fieldErrors.lostReason)} resize-none`} />

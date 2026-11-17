@@ -6,6 +6,7 @@ import { DetailSection } from './shared'
 import { fmtDay } from '../../lib/format'
 import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
+import { useConfirm } from '../../lib/useConfirm'
 
 const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`)
 
@@ -56,7 +57,7 @@ export function LeadDocumentsSection({ leadId, onUploaded, bare = false }: {
     setUploading(true)
     try {
       const document = await uploadDocument(leadId, file)
-      setDocuments(prev => [document, ...prev])
+      setDocuments(prev => [{ ...document, canDelete: true }, ...prev]) // you just uploaded it
       onUploaded?.()
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : 'Could not upload document.')
@@ -71,6 +72,25 @@ export function LeadDocumentsSection({ leadId, onUploaded, bare = false }: {
       await downloadDocument(doc.id, doc.fileName)
     } catch {
       setUploadError('Could not download document.')
+    }
+  }
+
+  const [confirmDialog, confirm] = useConfirm()
+  async function handleRemove(doc: LeadDocument) {
+    const ok = await confirm({
+      title: `Remove ${doc.fileName}?`,
+      message: 'It will no longer appear on this lead. Use this if you attached the wrong file.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await api(`/documents/${doc.id}`, { method: 'DELETE', auth: true })
+      setDocuments(prev => prev.filter(d => d.id !== doc.id))
+      setUploadError(null)
+      onUploaded?.()
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Could not remove document.')
     }
   }
 
@@ -99,12 +119,18 @@ export function LeadDocumentsSection({ leadId, onUploaded, bare = false }: {
                   {fmtSize(doc.fileSize)} · {doc.uploadedByUser ? (doc.uploadedByUser.userName || doc.uploadedByUser.email) : 'Unknown'} · {fmtDay(doc.createdAt)}
                 </p>
               </div>
-              <button onClick={() => handleDownload(doc)} className="shrink-0 font-semibold text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Download</button>
+              <div className="flex shrink-0 items-center gap-3">
+                <button onClick={() => handleDownload(doc)} className="font-semibold text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Download</button>
+                {doc.canDelete && (
+                  <button onClick={() => handleRemove(doc)} aria-label={`Remove ${doc.fileName}`} className="font-semibold text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300">Remove</button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
       )}
     </>
   )
-  return bare ? body : <DetailSection title="Documents">{body}</DetailSection>
+  const content = <>{body}{confirmDialog}</>
+  return bare ? content : <DetailSection title="Documents">{content}</DetailSection>
 }

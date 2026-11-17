@@ -4,7 +4,7 @@ import { Router, Response } from 'express'
 import multer from 'multer'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../prisma'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { authenticate, AuthRequest } from '../middleware/authenticate'
 import { isAdmin, canAccessLead } from '../utils/access'
 import { sendError } from '../utils/errors'
 
@@ -94,7 +94,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
   const documents = await prisma.document.findMany({ where: { leadId, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
-  res.json({ documents })
+  res.json({ documents: documents.map(d => ({ ...d, canDelete: admin || d.uploadedByUser?.id === req.userId })) })
 })
 
 // POST /documents — multipart/form-data: leadId + file (PDF/Excel/CSV, <=10MB).
@@ -159,11 +159,22 @@ router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<voi
   })
 })
 
-// DELETE /documents/:id — admin-only soft delete (row kept for audit, same
-// pattern as leads/tasks/proposals/projects; the file on disk is left alone).
-router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+// DELETE /documents/:id — soft delete (row kept for audit, same pattern as
+// leads/tasks/proposals/projects; the file on disk is left alone). An admin
+// can remove any document; an employee only one they uploaded themselves,
+// and only while the lead is still assigned to them.
+router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const admin = await isAdmin(req.userId)
   const existing = await prisma.document.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
+    sendError(res, 404, 'Document not found.')
+    return
+  }
+  if (!admin && existing.uploadedByUserId !== req.userId) {
+    sendError(res, 403, 'Only an admin or the person who uploaded this document can remove it.')
+    return
+  }
+  if (!admin && !(await canAccessLead(existing.leadId, req.userId, false))) {
     sendError(res, 404, 'Document not found.')
     return
   }
