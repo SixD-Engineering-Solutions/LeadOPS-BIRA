@@ -6,6 +6,10 @@
 services:
   leadops-db:
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    # Same switch as the API/web images: "never" uses only an image already
+    # loaded on the server (needed for the custom leadops-db image, which isn't
+    # in any registry).
+    pull_policy: ${IMAGE_PULL_POLICY:-missing}
     # Fixed name so the migration and backup scripts in deploy/ can find it.
     container_name: leadops-db
     restart: unless-stopped
