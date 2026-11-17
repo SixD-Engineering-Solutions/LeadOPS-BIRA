@@ -34,12 +34,12 @@ const person = (u?: { userName: string | null; email: string } | null) => (u ? u
 const statusOf = (l: Lead) => l.status?.statusName ?? 'Submitted'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
+const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactDesignation: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
 const DOC_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
-type ExtraContact = { name: string; email: string; phone: string }
-const emptyExtra: ExtraContact = { name: '', email: '', phone: '' }
+type ExtraContact = { name: string; designation: string; email: string; phone: string }
+const emptyExtra: ExtraContact = { name: '', designation: '', email: '', phone: '' }
 const MAX_EXTRA_CONTACTS = 10
 
 export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: boolean; currentUserId?: string }) {
@@ -135,7 +135,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
   const setExtra = (i: number, k: keyof ExtraContact, v: string) => {
     setExtras(prev => prev.map((c, j) => (j === i ? { ...c, [k]: v } : c)))
-    if (k !== 'phone') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
+    if (k !== 'phone' && k !== 'designation') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
   }
 
   function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -455,6 +455,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
             </Field>
             {field('City', 'city', 'e.g. Bhilai')}
             {field('Contact', 'contactName', 'Contact person name')}
+            {field('Contact designation', 'contactDesignation', 'e.g. DGM Maintenance')}
             <Field label="Contact email" error={fieldErrors.contactEmail}>
               <input
                 type="email"
@@ -485,6 +486,9 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <Field label="Name" required error={extraErrors[i]?.name} className="sm:col-span-2">
                           <input value={c.name} onChange={e => setExtra(i, 'name', e.target.value)} placeholder="Contact person name" aria-invalid={!!extraErrors[i]?.name || undefined} className={fieldCls(!!extraErrors[i]?.name)} />
+                        </Field>
+                        <Field label="Designation" className="sm:col-span-2">
+                          <input value={c.designation} onChange={e => setExtra(i, 'designation', e.target.value)} placeholder="e.g. DGM Maintenance" className={fieldCls(false)} />
                         </Field>
                         <Field label="Email" error={extraErrors[i]?.email}>
                           <input type="email" value={c.email} onChange={e => setExtra(i, 'email', e.target.value)} placeholder="e.g. name@company.com" aria-invalid={!!extraErrors[i]?.email || undefined} className={fieldCls(!!extraErrors[i]?.email)} />

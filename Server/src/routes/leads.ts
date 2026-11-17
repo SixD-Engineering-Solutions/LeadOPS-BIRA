@@ -88,15 +88,16 @@ async function forePlant(name: string, locationId: string | null, clientId: stri
   }
   return prisma.plant.create({ data: { plantName: name, locationId, clientId } })
 }
-async function foreContact(name: string, plantId: string, email: string | null, phone: string | null) {
+async function foreContact(name: string, plantId: string, email: string | null, phone: string | null, designation: string | null = null) {
   const existing = await prisma.contact.findFirst({ where: { plantId, contactPersonName: ci(name) } })
   if (existing) {
-    const data: { mailId?: string; contactPersonNumber?: string } = {}
+    const data: { mailId?: string; contactPersonNumber?: string; designation?: string } = {}
+    if (designation && !existing.designation) data.designation = designation
     if (email && !existing.mailId) data.mailId = email
     if (phone && !existing.contactPersonNumber) data.contactPersonNumber = phone
     return Object.keys(data).length ? prisma.contact.update({ where: { id: existing.id }, data }) : existing
   }
-  return prisma.contact.create({ data: { plantId, contactPersonName: name, mailId: email, contactPersonNumber: phone } })
+  return prisma.contact.create({ data: { plantId, contactPersonName: name, designation, mailId: email, contactPersonNumber: phone } })
 }
 // Vertical / sector / source / service type: reuse an active one whose name is
 // this one written any way ("Oil and Gas" = "Oil & Gas" = "oil & gas"), so a
@@ -145,11 +146,13 @@ const createSchema = z.object({
   clientName: z.string().optional(),
   city: z.string().optional(),
   contactName: z.string().optional(),
+  contactDesignation: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   // More people contacted at the same plant — each needs a name.
   extraContacts: z.array(z.object({
     name: z.string(),
+    designation: z.string().optional(),
     email: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
     phone: z.string().optional(),
   })).max(10, 'At most 10 additional contacts.').optional(),
@@ -196,12 +199,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const location = clean(d.city) ? await foreLocation(clean(d.city)) : null
     const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
     const plant = await forePlant(clean(d.plantName), location?.id ?? null, client?.id ?? null)
-    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null) : null
+    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null) : null
     // Each extra person is found-or-created like the primary; the same person
     // listed twice (or also as the primary) is only linked once.
     const extraIds = new Set<string>()
     for (const c of extras) {
-      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null)
+      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null, clean(c.designation) || null)
       if (person.id !== contact?.id) extraIds.add(person.id)
     }
     const vertical = clean(d.verticalName) ? await foreVertical(clean(d.verticalName)) : null

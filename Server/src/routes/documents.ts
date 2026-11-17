@@ -74,26 +74,46 @@ const upload = multer({
 const documentSelect = {
   id: true,
   leadId: true,
+  invoiceId: true,
   fileName: true,
   fileSize: true,
   createdAt: true,
   uploadedByUser: { select: { id: true, userName: true, email: true } },
 } as const
 
-// GET /documents?leadId=xxx — metadata list for one lead (not the file itself).
+// An invoice the caller may see: admins any, employees only on their own leads' projects.
+async function findInvoiceFor(id: string, userId: string | undefined, admin: boolean) {
+  return prisma.invoice.findFirst({
+    where: { id, deletedAt: null, ...(admin ? {} : { project: { lead: { assignedToUserId: userId } } }) },
+    select: { id: true, project: { select: { leadId: true } } },
+  })
+}
+
+// GET /documents?leadId=xxx (or ?invoiceId=xxx) — metadata list for one lead (not the file itself).
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const leadId = req.query.leadId ? String(req.query.leadId) : undefined
+  const invoiceId = req.query.invoiceId ? String(req.query.invoiceId) : undefined
+  const admin = await isAdmin(req.userId)
+  let leadId = req.query.leadId ? String(req.query.leadId) : undefined
+  if (invoiceId) {
+    // An invoice's documents: same visibility as the invoice itself.
+    const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
+    if (!invoice) {
+      sendError(res, 404, 'Invoice not found.')
+      return
+    }
+    leadId = invoice.project.leadId
+  }
   if (!leadId) {
-    sendError(res, 400, 'leadId is required.')
+    sendError(res, 400, 'leadId or invoiceId is required.')
     return
   }
-  const admin = await isAdmin(req.userId)
   const lead = await canAccessLead(leadId, req.userId, admin)
   if (!lead) {
     sendError(res, 404, 'Lead not found.')
     return
   }
-  const documents = await prisma.document.findMany({ where: { leadId, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
+  // The lead's Documents tab shows lead documents only; invoice files live on the invoice.
+  const documents = await prisma.document.findMany({ where: { leadId, invoiceId: invoiceId ?? null, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
   res.json({ documents: documents.map(d => ({ ...d, canDelete: admin || d.uploadedByUser?.id === req.userId })) })
 })
 
@@ -108,9 +128,11 @@ router.post('/', (req: AuthRequest, res: Response) => {
       sendError(res, 400, err instanceof Error ? err.message : 'Could not upload file.')
       return
     }
-    const leadId = String(req.body.leadId ?? '')
-    if (!leadId) {
-      sendError(res, 400, 'leadId is required.')
+    let leadId = String(req.body.leadId ?? '')
+    const invoiceId = String(req.body.invoiceId ?? '')
+    if (!leadId && !invoiceId) {
+      if (req.file) fs.unlink(req.file.path, () => {})
+      sendError(res, 400, 'leadId or invoiceId is required.')
       return
     }
     if (!req.file) {
@@ -118,6 +140,15 @@ router.post('/', (req: AuthRequest, res: Response) => {
       return
     }
     const admin = await isAdmin(req.userId)
+    if (invoiceId) {
+      const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
+      if (!invoice) {
+        fs.unlink(req.file.path, () => {})
+        sendError(res, 404, 'Invoice not found.')
+        return
+      }
+      leadId = invoice.project.leadId
+    }
     const lead = await canAccessLead(leadId, req.userId, admin)
     if (!lead) {
       fs.unlink(req.file.path, () => {})
@@ -128,6 +159,7 @@ router.post('/', (req: AuthRequest, res: Response) => {
       const document = await prisma.document.create({
         data: {
           leadId,
+          invoiceId: invoiceId || null,
           fileName: req.file.originalname,
           storedFileName: req.file.filename,
           fileSize: req.file.size,

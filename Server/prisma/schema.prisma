@@ -418,6 +418,10 @@ model Document {
   id               String    @id @default(cuid())
   leadId           String    @map("lead_id")
   lead             Lead      @relation(fields: [leadId], references: [id])
+  // Set when the file is the paper copy of an invoice (shown on the Invoices
+  // page, not the lead's Documents tab).
+  invoiceId        String?   @map("invoice_id")
+  invoice          Invoice?  @relation(fields: [invoiceId], references: [id])
   fileName         String    @map("file_name")
   storedFileName   String    @unique @map("stored_file_name")
   fileSize         Int       @map("file_size")
@@ -427,6 +431,7 @@ model Document {
   deletedAt        DateTime? @map("deleted_at")
 
   @@index([leadId])
+  @@index([invoiceId])
   @@map("documents")
 }
 
@@ -449,7 +454,8 @@ model Invoice {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")
 
-  payments Payment[]
+  payments  Payment[]
+  documents Document[]
 
   @@index([projectId])
   @@index([status])

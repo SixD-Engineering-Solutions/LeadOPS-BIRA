@@ -26,6 +26,7 @@ import { DueDate } from '../components/table/RelTime'
 import { formatDate, formatRelative } from '../lib/relativeTime'
 import { btn } from '../lib/ui'
 import { DatePicker } from '../components/form/DatePicker'
+import { InvoiceDocuments } from '../components/InvoiceDocuments'
 
 const statusStyle = (name: string) => INVOICE_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtMoney = formatINR
@@ -260,6 +261,8 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
         </button>
       </form>
       {payError && <p className="mb-2 text-xs text-red-500 dark:text-red-400">{payError}</p>}
+
+      <InvoiceDocuments invoiceId={inv.id} invoiceNumber={inv.invoiceNumber} />
 
       {inv.payments.length === 0 ? (
         <p className="text-xs text-gray-400 dark:text-gray-500">No payments recorded yet.</p>
