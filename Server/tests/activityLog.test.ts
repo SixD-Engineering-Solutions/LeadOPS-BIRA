@@ -39,14 +39,14 @@ describe('Activity log', () => {
   })
 
   it('records a lead being created and changed, by whoever did it', async () => {
-    const changed = await api(`/leads/${leadId}`, { method: 'PATCH', token: employee, body: { statusName: 'In Process' } })
+    const changed = await api(`/leads/${leadId}`, { method: 'PATCH', token: employee, body: { statusName: 'Follow-up' } })
     expect(changed.status).toBe(200)
     const log = await entriesFor(leadId)
     expect(log.map(e => e.action)).toEqual(['created', 'updated'])
     expect(change(log[0], 'Plant')?.to).toBe(tag)
     expect(change(log[0], 'Sector')?.to).toBe(`${tag} sector`)
     expect(log[1].userName).toBe(employeeName)
-    expect(change(log[1], 'Status')).toEqual({ field: 'Status', from: 'Submitted', to: 'In Process' })
+    expect(change(log[1], 'Status')).toEqual({ field: 'Status', from: 'Cold call', to: 'Follow-up' })
     expect(log[1].changes).toHaveLength(1) // only what actually changed
   })
 

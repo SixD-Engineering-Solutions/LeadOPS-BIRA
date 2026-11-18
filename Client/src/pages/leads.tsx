@@ -27,14 +27,15 @@ import { RowMenu } from '../components/table/RowMenu'
 import { RelTime } from '../components/table/RelTime'
 
 // Fixed status options.
-const STATUSES = ['Submitted', 'In Process', 'Dead'] as const
+const STATUSES = ['Cold call', 'Warm', 'Hot', 'Qualified', 'Follow-up', 'Lost'] as const
 
 const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name ?? ''] ?? DEFAULT_STATUS_STYLE
 const person = (u?: { userName: string | null; email: string } | null) => (u ? u.userName || u.email : null)
-const statusOf = (l: Lead) => l.status?.statusName ?? 'Submitted'
+const statusOf = (l: Lead) => l.status?.statusName ?? 'Cold call'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', contactName: '', contactDesignation: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Submitted', lostReason: '' }
+const emptyForm = { plantName: '', clientName: '', city: '', state: '', contactName: '', contactDesignation: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Cold call', lostReason: '' }
+const INDIAN_STATES = ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
 const DOC_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
@@ -64,6 +65,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const lookups = useLookups(showCreate)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  // The lead being corrected in the panel (null = the panel is "New lead").
+  const [editing, setEditing] = useState<Lead | null>(null)
 
   function load() {
     return api<{ leads: Lead[] }>('/leads', { auth: true })
@@ -117,7 +120,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     const errs: typeof fieldErrors = {}
     if (!form.plantName.trim()) errs.plantName = 'Plant is required.'
     if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) errs.contactEmail = 'Enter an email like name@company.com.'
-    if (form.statusName === 'Dead' && form.lostReason.trim().length < 3) errs.lostReason = 'Say why it was lost (at least 3 characters).'
+    if (form.statusName === 'Lost' && form.lostReason.trim().length < 3) errs.lostReason = 'Say why it was lost (at least 3 characters).'
     // Every additional person needs a name; a half-filled row is not ignored.
     const exErrs = multiContact
       ? extras.map(c => {
@@ -149,8 +152,82 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     setFiles(prev => [...prev, ...picked.filter(f => !prev.some(p => p.name === f.name && p.size === f.size))].slice(0, 10))
   }
 
+  function resetForm() {
+    setForm({ ...emptyForm })
+    setMultiContact(false)
+    setExtras([{ ...emptyExtra }])
+    setExtraErrors([])
+    setFieldErrors({})
+    setFormError(null)
+    setFiles([])
+    setFileError(null)
+  }
+  function openCreate() {
+    if (editing) { setEditing(null); resetForm() }
+    setShowCreate(true)
+  }
+  // Opens the panel filled with the lead's current values so a mistake can be fixed.
+  function openEdit(lead: Lead) {
+    const others = (lead.extraContacts ?? []).map(x => ({ name: x.contact.contactPersonName ?? '', designation: x.contact.designation ?? '', email: x.contact.mailId ?? '', phone: x.contact.contactPersonNumber ?? '' }))
+    resetForm()
+    setForm({
+      ...emptyForm,
+      plantName: lead.plant?.plantName ?? '',
+      clientName: lead.plant?.client?.clientName ?? '',
+      city: lead.plant?.location?.city ?? '',
+      state: lead.plant?.location?.state ?? '',
+      contactName: lead.contact?.contactPersonName ?? '',
+      contactDesignation: lead.contact?.designation ?? '',
+      contactEmail: lead.contact?.mailId ?? '',
+      contactNumber: lead.contact?.contactPersonNumber ?? '',
+      verticalName: lead.vertical?.verticalName ?? '',
+      sectorName: lead.sector?.sectorName ?? '',
+      sourceName: lead.source?.sourceName ?? '',
+      serviceTypeName: lead.serviceType?.serviceTypeName ?? '',
+      remark: lead.remark ?? '',
+    })
+    setMultiContact(others.length > 0)
+    setExtras(others.length ? others : [{ ...emptyExtra }])
+    setEditing(lead)
+    setShowCreate(true)
+  }
+  function closePanel() {
+    setShowCreate(false)
+    if (editing) { setEditing(null); resetForm() }
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    setFormError(null)
+    if (!validate()) { focusFirstInvalid(); return }
+    setCreating(true)
+    try {
+      const { lead } = await api<{ lead: Lead }>(`/leads/${editing.id}`, {
+        method: 'PATCH', auth: true,
+        body: {
+          plantName: form.plantName, clientName: form.clientName, city: form.city, state: form.state,
+          contactName: form.contactName, contactDesignation: form.contactDesignation, contactEmail: form.contactEmail, contactNumber: form.contactNumber,
+          extraContacts: multiContact ? extras.filter(c => c.name.trim() || c.email.trim() || c.phone.trim()) : [],
+          verticalName: form.verticalName, sectorName: form.sectorName, sourceName: form.sourceName, serviceTypeName: form.serviceTypeName,
+          remark: form.remark.trim() ? form.remark : null,
+        },
+      })
+      setLeads(prev => prev.map(l => (l.id === lead.id ? lead : l)))
+      setSelectedLead(prev => (prev && prev.id === lead.id ? lead : prev))
+      setEditing(null)
+      resetForm()
+      setShowCreate(false)
+      toast(`Lead updated · ${lead.plant?.plantName ?? 'lead'}`)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Could not update lead.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   async function createLead(e: React.FormEvent) {
     e.preventDefault()
+    if (editing) { await saveEdit(); return }
     setFormError(null)
     if (!validate()) { focusFirstInvalid(); return }
     setCreating(true)
@@ -187,7 +264,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
-      const canUndo = undoable && before && before !== statusName && before !== 'Dead' && statusName !== 'Dead'
+      const canUndo = undoable && before && before !== statusName && before !== 'Lost' && statusName !== 'Lost'
       toast(`Status changed to ${statusName}`, canUndo ? { action: { label: 'Undo', onClick: () => changeStatus(id, before!, undefined, false) } } : {})
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update status.')
@@ -196,11 +273,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
     }
   }
 
-  // Marking a lead Dead asks why first (mandatory); the status only changes
+  // Marking a lead Lost asks why first (mandatory); the status only changes
   // once a reason is given.
   const [lostFor, setLostFor] = useState<Lead | null>(null)
   function onStatusSelect(lead: Lead, statusName: string) {
-    if (statusName === 'Dead' && lead.status?.statusName !== 'Dead') setLostFor(lead)
+    if (statusName === 'Lost' && lead.status?.statusName !== 'Lost') setLostFor(lead)
     else changeStatus(lead.id, statusName)
   }
 
@@ -261,14 +338,14 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const view = useTableView<Lead>({
     id: 'leads',
     rows: leads,
-    search: l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.vertical?.verticalName,
+    search: l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.plant?.location?.state, l.vertical?.verticalName,
       l.sector?.sectorName, l.source?.sourceName, l.serviceType?.serviceTypeName, person(l.assignedToUser), person(l.bmUser), statusOf(l), l.remark].join(' '),
     views: [
       { id: 'all', label: 'All' },
       ...(!isAdmin && currentUserId ? [{ id: 'mine', label: 'Assigned to me', match: (l: Lead) => l.assignedToUserId === currentUserId }] : []),
-      { id: 'open', label: 'Open', match: l => statusOf(l) !== 'Dead' },
+      { id: 'open', label: 'Open', match: l => statusOf(l) !== 'Lost' },
       { id: 'unassigned', label: 'Unassigned', match: l => !l.assignedToUserId },
-      { id: 'dead', label: 'Dead', match: l => statusOf(l) === 'Dead' },
+      { id: 'lost', label: 'Lost', match: l => statusOf(l) === 'Lost' },
     ],
     filters: [
       { id: 'status', label: 'Status', value: statusOf, order: STATUSES },
@@ -303,7 +380,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       cell: l => (
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{l.plant?.plantName ?? '—'}</p>
-          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[l.plant?.client?.clientName, l.contact?.contactPersonName ?? 'No contact', l.plant?.location?.city].filter(Boolean).join(' · ')}</p>
+          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[l.plant?.client?.clientName, l.contact?.contactPersonName ?? 'No contact', [l.plant?.location?.city, l.plant?.location?.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</p>
         </div>
       ),
     },
@@ -375,8 +452,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
   return (
     <div className={PAGE_CLASS}>
-      <PageHeader title="Leads" subtitle="Matching plants, contacts, verticals and sectors are reused or created automatically.">
-        <NewButton label="New lead" onClick={() => setShowCreate(true)} />
+      <PageHeader title="Leads">
+        <NewButton label="New lead" onClick={openCreate} />
       </PageHeader>
 
       {/* list */}
@@ -390,7 +467,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
         {loading && leads.length === 0 ? (
           <SkeletonRows />
         ) : leads.length === 0 && !error ? (
-          <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: () => setShowCreate(true) }} />
+          <EmptyState icon="users" title="No leads yet" message="Raise your first lead — it will also appear in the Tracker’s pipeline." action={{ label: 'Create lead', onClick: openCreate }} />
         ) : (
           <>
             <DataGrid
@@ -405,6 +482,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
                   label={l.plant?.plantName ?? 'lead'}
                   actions={[
                     { label: 'Open lead', onSelect: () => setSelectedLead(l) },
+                    { label: 'Edit lead', disabled: savingId === l.id, onSelect: () => openEdit(l) },
                     isAdmin && { label: 'Delete lead', danger: true, disabled: savingId === l.id, onSelect: () => removeLead(l) },
                   ]}
                 />
@@ -425,10 +503,10 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       {lostFor && (
         <LostReasonModal
           title="Why was this lead lost?"
-          subject={`Marking ${lostFor.plant?.plantName ?? 'this lead'} as Dead — the reason is required.`}
+          subject={`Marking ${lostFor.plant?.plantName ?? 'this lead'} as Lost — the reason is required.`}
           onCancel={() => setLostFor(null)}
           onConfirm={async reason => {
-            const { lead } = await api<{ lead: Lead }>(`/leads/${lostFor.id}`, { method: 'PATCH', auth: true, body: { statusName: 'Dead', lostReason: reason } })
+            const { lead } = await api<{ lead: Lead }>(`/leads/${lostFor.id}`, { method: 'PATCH', auth: true, body: { statusName: 'Lost', lostReason: reason } })
             setLeads(prev => prev.map(l => (l.id === lead.id ? lead : l)))
             setSelectedLead(prev => (prev && prev.id === lead.id ? lead : prev))
             setLostFor(null)
@@ -437,12 +515,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       )}
       {showCreate && (
         <CreatePanel
-          title="New lead"
-          subtitle="Matching plants, contacts, verticals and sectors are reused or created automatically."
-          onClose={() => setShowCreate(false)}
+          title={editing ? (editing.plant?.plantName ?? 'Lead') : 'New lead'}
+          onClose={closePanel}
           onSubmit={createLead}
           saving={creating}
-          submitLabel="Add lead"
+          submitLabel={editing ? 'Save changes' : 'Add lead'}
           savingLabel="Saving…"
           error={formError}
         >
@@ -454,6 +531,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
               <input value={form.plantName} onChange={e => { set('plantName')(e); setFieldErrors(p => ({ ...p, plantName: undefined })) }} placeholder="e.g. Bhilai Steel Plant" aria-invalid={!!fieldErrors.plantName || undefined} className={fieldCls(!!fieldErrors.plantName)} />
             </Field>
             {field('City', 'city', 'e.g. Bhilai')}
+            <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+              State
+              <input list="lead-states" value={form.state} onChange={set('state')} placeholder="e.g. Chhattisgarh" className={inputCls} />
+              <datalist id="lead-states">{INDIAN_STATES.map(st => <option key={st} value={st} />)}</datalist>
+            </label>
             {field('Contact', 'contactName', 'Contact person name')}
             {field('Contact designation', 'contactDesignation', 'e.g. DGM Maintenance')}
             <Field label="Contact email" error={fieldErrors.contactEmail}>
@@ -517,6 +599,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
             <Field label="Service type">
               <Combobox value={form.serviceTypeName} onChange={v => setForm(p => ({ ...p, serviceTypeName: v }))} options={lookups.serviceTypes} placeholder="e.g. Laser scanning / BIM" noun="service type" />
             </Field>
+            {!editing && <>
             <Field label="BM/Contact (branch manager)">
               <SearchSelect value={form.bmUserId} onChange={v => setForm(p => ({ ...p, bmUserId: v }))} options={team.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="None" allowEmpty label="Branch manager" />
             </Field>
@@ -526,10 +609,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
             <Field label="Status">
               <SearchSelect value={form.statusName} onChange={v => setForm(p => ({ ...p, statusName: v }))} options={STATUSES.map(st => ({ value: st, label: st }))} label="Status" />
             </Field>
+            </>}
             <Field label="Remark" className="sm:col-span-2">
               <textarea value={form.remark} onChange={set('remark')} placeholder="Optional note — one point per line" rows={2} className={`${inputCls} resize-none`} />
             </Field>
-            <div className="sm:col-span-2">
+            {!editing && <div className="sm:col-span-2">
               <input ref={fileInputRef} type="file" multiple accept={DOC_EXTENSIONS.join(',')} onChange={addFiles} className="sr-only" tabIndex={-1} aria-hidden="true" />
               <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-xl border border-dashed border-orange-300 bg-orange-50/60 px-4 py-2 text-sm font-semibold text-orange-600 outline-none hover:bg-orange-50 focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-orange-800 dark:bg-orange-950/20 dark:text-orange-300">
                 + Add documentation
@@ -546,8 +630,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
                   ))}
                 </ul>
               )}
-            </div>
-            {form.statusName === 'Dead' && (
+            </div>}
+            {!editing && form.statusName === 'Lost' && (
               <Field label="Reason lost" required error={fieldErrors.lostReason} className="sm:col-span-2">
                 <textarea value={form.lostReason} onChange={e => { set('lostReason')(e); setFieldErrors(p => ({ ...p, lostReason: undefined })) }} placeholder="Why was this lead lost? e.g. budget cut, went with a competitor" rows={2} aria-invalid={!!fieldErrors.lostReason || undefined} className={`${fieldCls(!!fieldErrors.lostReason)} resize-none`} />
               </Field>

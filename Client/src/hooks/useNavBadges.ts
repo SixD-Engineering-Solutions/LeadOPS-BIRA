@@ -46,7 +46,7 @@ export function useNavBadges(isAdmin: boolean): NavBadges {
     if (isAdmin) {
       api<{ leads: Lead[] }>('/leads', { auth: true })
         .then(({ leads }) => {
-          const n = leads.filter(l => !l.assignedToUserId && l.status?.statusName !== 'Dead').length
+          const n = leads.filter(l => !l.assignedToUserId && l.status?.statusName !== 'Lost').length
           set('lead-gen', badge(n, 'amber', `${plural(n, 'lead')} unassigned`))
         })
         .catch(() => {})

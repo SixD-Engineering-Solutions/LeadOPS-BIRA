@@ -23,7 +23,7 @@ const inr = (n: unknown) => (n == null ? null : `₹${Number(n).toLocaleString('
 // ── Snapshots: what an admin would want to see change, as plain text ─────────
 
 type LeadLike = {
-  plant?: { plantName: string; client?: { clientName: string } | null; location?: { city: string } | null } | null
+  plant?: { plantName: string; client?: { clientName: string } | null; location?: { city: string; state?: string | null } | null } | null
   status?: { statusName: string } | null
   assignedToUser?: Person
   bmUser?: Person
@@ -40,6 +40,7 @@ export const leadSnapshot = (l: LeadLike): Snapshot => ({
   Plant: text(l.plant?.plantName),
   Client: text(l.plant?.client?.clientName),
   City: text(l.plant?.location?.city),
+  State: text(l.plant?.location?.state),
   Status: text(l.status?.statusName),
   'Assigned to': person(l.assignedToUser),
   'BM/Contact': person(l.bmUser),

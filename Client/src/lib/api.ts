@@ -47,7 +47,7 @@ export type Lead = {
   statusId: string | null
   status?: { id: string; statusName: string; statusCategory: string | null } | null
   remark: string | null
-  lostReason: string | null // required while status is Dead
+  lostReason: string | null // required while status is Lost
   createdByUserId: string
   createdByUser?: { id: string; userName: string | null; email: string }
   createdAt: string
@@ -129,6 +129,7 @@ export type LeadDocument = {
   id: string
   leadId: string
   invoiceId?: string | null
+  proposalId?: string | null
   fileName: string
   fileSize: number
   createdAt: string
@@ -374,11 +375,12 @@ export async function api<T = unknown>(
 
 // Multipart upload — bypasses `api()`'s JSON body since the browser needs to
 // set its own multipart boundary in Content-Type.
-export async function uploadDocument(target: string | { invoiceId: string }, file: File): Promise<LeadDocument> {
+export async function uploadDocument(target: string | { invoiceId: string } | { proposalId: string }, file: File): Promise<LeadDocument> {
   const token = getToken()
   const formData = new FormData()
-  // A string is a lead id; { invoiceId } attaches the file to that invoice.
+  // A string is a lead id; { invoiceId } / { proposalId } attach the file to that invoice / proposal.
   if (typeof target === 'string') formData.append('leadId', target)
+  else if ('proposalId' in target) formData.append('proposalId', target.proposalId)
   else formData.append('invoiceId', target.invoiceId)
   formData.append('file', file)
   const res = await fetch(`${BASE_URL}/documents`, {

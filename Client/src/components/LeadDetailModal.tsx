@@ -41,7 +41,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
     <div className="pr-10">
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Lead</span>
-        <StatusBadge label={lead.status?.statusName ?? 'Submitted'} tone={LEAD_STATUS_STYLES[lead.status?.statusName ?? ''] ?? DEFAULT_STATUS_STYLE} />
+        <StatusBadge label={lead.status?.statusName ?? 'Cold call'} tone={LEAD_STATUS_STYLES[lead.status?.statusName ?? ''] ?? DEFAULT_STATUS_STYLE} />
       </div>
       <h2 className="mt-1.5 truncate text-lg font-bold text-gray-900 dark:text-gray-100">{lead.plant?.plantName ?? 'Lead'}</h2>
       {place && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{place}</p>}
@@ -130,6 +130,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
               <DetailRow label="Company" value={lead.plant?.companyName} />
               <DetailRow label="Plant code" value={lead.plant?.plantCode} />
               <DetailRow label="City" value={lead.plant?.location?.city} />
+              <DetailRow label="State" value={lead.plant?.location?.state} />
               <DetailRow label="State" value={lead.plant?.location?.state} />
               <DetailRow label="Country" value={lead.plant?.location?.country} />
               <DetailRow label="Address" value={lead.plant?.location?.address} />

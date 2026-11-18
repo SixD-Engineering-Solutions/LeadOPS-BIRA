@@ -181,6 +181,18 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 
   const d = parse.data
+  // Invoices on the project can't exceed this value (see invoices.ts), so it
+  // can't be corrected to less than what has already been invoiced.
+  if (d.value != null && d.value > 0) {
+    const invoiced = Number((await prisma.invoice.aggregate({
+      where: { deletedAt: null, project: { proposalId: existing.id, deletedAt: null } },
+      _sum: { amount: true },
+    }))._sum.amount ?? 0)
+    if (invoiced > d.value + 0.005) {
+      sendError(res, 400, `₹${invoiced.toLocaleString('en-IN', { maximumFractionDigits: 2 })} is already invoiced on this proposal’s project, so the value can’t be lowered below that.`)
+      return
+    }
+  }
   const data: Record<string, unknown> = {}
   if ('projectName' in d) data.projectName = d.projectName?.trim() || null
   if ('value' in d) data.value = d.value
@@ -288,7 +300,12 @@ router.delete('/:id', requireAdmin, async (req: AuthRequest, res: Response): Pro
     sendError(res, 404, 'Proposal not found.')
     return
   }
-  await prisma.proposal.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+  const now = new Date()
+  await prisma.$transaction([
+    prisma.proposal.update({ where: { id: existing.id }, data: { deletedAt: now } }),
+    // Its attached files go with it, like a deleted lead's documents.
+    prisma.document.updateMany({ where: { proposalId: existing.id, deletedAt: null }, data: { deletedAt: now } }),
+  ])
   await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
   broadcastProposalUpdate(existing.id)
   await logActivity({ userId: req.userId, entity: 'proposal', entityId: existing.id, label: proposalLabel(existing), leadId: existing.leadId, action: 'deleted' })

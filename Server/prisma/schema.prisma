@@ -368,6 +368,7 @@ model Proposal {
   deletedAt         DateTime? @map("deleted_at")
 
   project Project?
+  documents Document[]
 
   @@index([leadId])
   @@index([status])
@@ -422,6 +423,10 @@ model Document {
   // page, not the lead's Documents tab).
   invoiceId        String?   @map("invoice_id")
   invoice          Invoice?  @relation(fields: [invoiceId], references: [id])
+  // Set when the file is attached to a proposal (shown on the Proposals page,
+  // not the lead's Documents tab).
+  proposalId       String?   @map("proposal_id")
+  proposal         Proposal? @relation(fields: [proposalId], references: [id])
   fileName         String    @map("file_name")
   storedFileName   String    @unique @map("stored_file_name")
   fileSize         Int       @map("file_size")
@@ -432,6 +437,7 @@ model Document {
 
   @@index([leadId])
   @@index([invoiceId])
+  @@index([proposalId])
   @@map("documents")
 }
 

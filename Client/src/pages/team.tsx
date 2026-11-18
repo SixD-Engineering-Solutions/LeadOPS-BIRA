@@ -372,7 +372,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
                     <p className="truncate text-xs text-gray-400">{lead.plant?.client?.clientName ? `${lead.plant.client.clientName} · ` : ''}Updated <RelTime ts={lead.updatedAt} /></p>
                   </button>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
-                    {lead.status?.statusName ?? 'Submitted'}
+                    {lead.status?.statusName ?? 'Cold call'}
                   </span>
                   <RowMenu label={lead.plant?.plantName ?? 'lead'} actions={[
                     { label: 'Open lead', onSelect: () => setSelectedLead(lead) },

@@ -17,9 +17,12 @@ export const DEFAULT_STATUS_STYLE = GRAY
 export const BADGE_TONES = { gray: GRAY, sky: SKY, amber: AMBER, orange: ORANGE, violet: VIOLET, emerald: EMERALD, rose: ROSE } as const
 
 export const LEAD_STATUS_STYLES: Record<string, string> = {
-  Submitted: SKY,
-  'In Process': AMBER,
-  Dead: ROSE,
+  'Cold call': SKY,
+  Warm: ORANGE,
+  Hot: ROSE,
+  Qualified: EMERALD,
+  'Follow-up': AMBER,
+  Lost: GRAY,
 }
 
 export const PROPOSAL_STATUS_STYLES: Record<string, string> = {

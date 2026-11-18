@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Modal } from './Modal'
 import { btn } from '../lib/ui'
 
-// Asked whenever a lead is marked Dead or a proposal Lost — the reason is
+// Asked whenever a lead is marked Lost or a proposal Lost — the reason is
 // mandatory (the server refuses the change without one), so the status only
 // changes once this is confirmed; Cancel leaves it as it was.
 export function LostReasonModal({ title, subject, onCancel, onConfirm }: {

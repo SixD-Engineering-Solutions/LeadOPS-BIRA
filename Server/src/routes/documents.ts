@@ -75,6 +75,7 @@ const documentSelect = {
   id: true,
   leadId: true,
   invoiceId: true,
+  proposalId: true,
   fileName: true,
   fileSize: true,
   createdAt: true,
@@ -89,12 +90,29 @@ async function findInvoiceFor(id: string, userId: string | undefined, admin: boo
   })
 }
 
-// GET /documents?leadId=xxx (or ?invoiceId=xxx) — metadata list for one lead (not the file itself).
+// A proposal the caller may see: admins any, employees only on their own leads.
+async function findProposalFor(id: string, userId: string | undefined, admin: boolean) {
+  return prisma.proposal.findFirst({
+    where: { id, deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: userId } }) },
+    select: { id: true, leadId: true },
+  })
+}
+
+// GET /documents?leadId=xxx (or ?invoiceId=xxx or ?proposalId=xxx) — metadata list for one lead (not the file itself).
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const invoiceId = req.query.invoiceId ? String(req.query.invoiceId) : undefined
+  const proposalId = req.query.proposalId ? String(req.query.proposalId) : undefined
   const admin = await isAdmin(req.userId)
   let leadId = req.query.leadId ? String(req.query.leadId) : undefined
-  if (invoiceId) {
+  if (proposalId) {
+    // A proposal's documents: same visibility as the proposal itself.
+    const proposal = await findProposalFor(proposalId, req.userId, admin)
+    if (!proposal) {
+      sendError(res, 404, 'Proposal not found.')
+      return
+    }
+    leadId = proposal.leadId
+  } else if (invoiceId) {
     // An invoice's documents: same visibility as the invoice itself.
     const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
     if (!invoice) {
@@ -104,7 +122,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     leadId = invoice.project.leadId
   }
   if (!leadId) {
-    sendError(res, 400, 'leadId or invoiceId is required.')
+    sendError(res, 400, 'leadId, invoiceId or proposalId is required.')
     return
   }
   const lead = await canAccessLead(leadId, req.userId, admin)
@@ -112,8 +130,8 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 404, 'Lead not found.')
     return
   }
-  // The lead's Documents tab shows lead documents only; invoice files live on the invoice.
-  const documents = await prisma.document.findMany({ where: { leadId, invoiceId: invoiceId ?? null, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
+  // The lead's Documents tab shows lead documents only; invoice and proposal files live on their own records.
+  const documents = await prisma.document.findMany({ where: { leadId, invoiceId: invoiceId ?? null, proposalId: proposalId ?? null, deletedAt: null }, select: documentSelect, orderBy: { createdAt: 'desc' } })
   res.json({ documents: documents.map(d => ({ ...d, canDelete: admin || d.uploadedByUser?.id === req.userId })) })
 })
 
@@ -130,9 +148,10 @@ router.post('/', (req: AuthRequest, res: Response) => {
     }
     let leadId = String(req.body.leadId ?? '')
     const invoiceId = String(req.body.invoiceId ?? '')
-    if (!leadId && !invoiceId) {
+    const proposalId = String(req.body.proposalId ?? '')
+    if (!leadId && !invoiceId && !proposalId) {
       if (req.file) fs.unlink(req.file.path, () => {})
-      sendError(res, 400, 'leadId or invoiceId is required.')
+      sendError(res, 400, 'leadId, invoiceId or proposalId is required.')
       return
     }
     if (!req.file) {
@@ -140,7 +159,15 @@ router.post('/', (req: AuthRequest, res: Response) => {
       return
     }
     const admin = await isAdmin(req.userId)
-    if (invoiceId) {
+    if (proposalId) {
+      const proposal = await findProposalFor(proposalId, req.userId, admin)
+      if (!proposal) {
+        fs.unlink(req.file.path, () => {})
+        sendError(res, 404, 'Proposal not found.')
+        return
+      }
+      leadId = proposal.leadId
+    } else if (invoiceId) {
       const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
       if (!invoice) {
         fs.unlink(req.file.path, () => {})
@@ -159,7 +186,8 @@ router.post('/', (req: AuthRequest, res: Response) => {
       const document = await prisma.document.create({
         data: {
           leadId,
-          invoiceId: invoiceId || null,
+          invoiceId: proposalId ? null : invoiceId || null,
+          proposalId: proposalId || null,
           fileName: req.file.originalname,
           storedFileName: req.file.filename,
           fileSize: req.file.size,

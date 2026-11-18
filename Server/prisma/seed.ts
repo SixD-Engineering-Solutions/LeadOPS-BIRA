@@ -117,11 +117,11 @@ async function main() {
   }
 
   const statuses = {
-    submitted: await ensureStatus('Submitted', 'Open', 1),
-    qualified: await ensureStatus('Qualified', 'Open', 2),
-    inProcess: await ensureStatus('In Process', 'In Progress', 3),
-    won:       await ensureStatus('Won', 'Closed Won', 4),
-    dead:      await ensureStatus('Dead', 'Closed Lost', 5),
+    submitted: await ensureStatus('Cold call', 'Open', 1),
+    qualified: await ensureStatus('Qualified', 'Open', 4),
+    inProcess: await ensureStatus('Follow-up', 'In Progress', 5),
+    won:       await ensureStatus('Won', 'Closed Won', 7),
+    dead:      await ensureStatus('Lost', 'Closed Lost', 6),
   }
 
   console.log('seeding catalog lookups (client categories, lead sources, service types)...')

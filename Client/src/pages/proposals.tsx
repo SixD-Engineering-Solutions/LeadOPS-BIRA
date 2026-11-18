@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { api, PROPOSAL_SYNC_EVENT, PROPOSAL_STATUSES } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { api, uploadDocument, PROPOSAL_SYNC_EVENT, PROPOSAL_STATUSES } from '../lib/api'
+import { ProposalDocuments } from '../components/InvoiceDocuments'
 import type { Proposal, ProposalStatus, Lead, EmployeeUser } from '../lib/api'
 import { Modal } from '../components/Modal'
 import { LostReasonModal } from '../components/LostReasonModal'
@@ -32,7 +33,10 @@ const fmtValue = (v: number | null) => (v == null ? <span className="text-gray-3
 const OPEN: readonly string[] = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Hold']
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { leadId: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' }
+const emptyForm = { leadId: '', projectName: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' }
+// Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
+const DOC_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
+const dayOf = (iso: string | null) => (iso ? iso.slice(0, 10) : '')
 
 export default function Proposals() {
   const [proposals, setProposals] = useState<Proposal[]>([])
@@ -46,6 +50,12 @@ export default function Proposals() {
   const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<'leadId'>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
+  // The proposal being corrected in the panel (null = the panel is "New proposal").
+  const [editing, setEditing] = useState<Proposal | null>(null)
+  // Documents picked while raising the proposal; uploaded right after it's saved.
+  const [files, setFiles] = useState<File[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function load() {
     api<{ proposals: Proposal[] }>('/proposals', { auth: true })
@@ -72,8 +82,70 @@ export default function Proposals() {
   const leadsWithProposal = new Set(proposals.map(p => p.leadId))
   const availableLeads = leads.filter(l => !leadsWithProposal.has(l.id))
 
+  function openCreate() {
+    if (editing) { setEditing(null); setForm({ ...emptyForm }); setFormError(null); setFieldErrors({}) }
+    setFiles([])
+    setFileError(null)
+    setShowCreate(true)
+  }
+  // Opens the panel filled with the proposal's current values.
+  function openEdit(p: Proposal) {
+    setForm({
+      leadId: p.leadId,
+      projectName: p.projectName ?? '',
+      value: p.value != null ? String(p.value) : '',
+      submissionDate: dayOf(p.submissionDate),
+      probabilityPct: p.probabilityPct != null ? String(p.probabilityPct) : '',
+      expectedOrderDate: dayOf(p.expectedOrderDate),
+    })
+    setFormError(null)
+    setFieldErrors({})
+    setEditing(p)
+    setShowCreate(true)
+  }
+  function closePanel() {
+    setShowCreate(false)
+    if (editing) { setEditing(null); setForm({ ...emptyForm }); setFormError(null) }
+  }
+  async function saveEdit() {
+    if (!editing) return
+    setFormError(null)
+    const pct = form.probabilityPct.trim() === '' ? null : Number(form.probabilityPct)
+    if (pct != null && (!Number.isInteger(pct) || pct < 0 || pct > 100)) { setFormError('Probability must be a whole number from 0 to 100.'); return }
+    const value = form.value.trim() === '' ? null : Number(form.value)
+    if (value != null && (Number.isNaN(value) || value < 0)) { setFormError('Enter a valid value.'); return }
+    setCreating(true)
+    try {
+      const { proposal } = await api<{ proposal: Proposal }>(`/proposals/${editing.id}`, {
+        method: 'PATCH', auth: true,
+        body: { projectName: form.projectName.trim() || null, value, submissionDate: form.submissionDate || null, probabilityPct: pct, expectedOrderDate: form.expectedOrderDate || null },
+      })
+      setProposals(prev => prev.map(x => (x.id === proposal.id ? proposal : x)))
+      setEditing(null)
+      setForm({ ...emptyForm })
+      setShowCreate(false)
+      toast(`${proposal.proposalNumber} updated`)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Could not update proposal.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? [])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    const bad = picked.find(f => !DOC_EXTENSIONS.some(ext => f.name.toLowerCase().endsWith(ext)))
+      ? 'Only PDF, Excel (.xlsx/.xls) or CSV files are accepted.'
+      : picked.find(f => f.size > 10 * 1024 * 1024) ? 'Each file must be 10MB or smaller.' : null
+    setFileError(bad)
+    if (bad) return
+    setFiles(prev => [...prev, ...picked.filter(f => !prev.some(p => p.name === f.name && p.size === f.size))].slice(0, 10))
+  }
+
   async function createProposal(e: React.FormEvent) {
     e.preventDefault()
+    if (editing) { await saveEdit(); return }
     setFormError(null)
     if (!form.leadId) { setFieldErrors({ leadId: 'Choose the lead this proposal is for.' }); focusFirstInvalid(); return }
     setFieldErrors({})
@@ -91,9 +163,18 @@ export default function Proposals() {
         },
       })
       setProposals(prev => [proposal, ...prev])
+      // The proposal exists now — attach the chosen documents to it.
+      const failed: string[] = []
+      for (const f of files) {
+        try { await uploadDocument({ proposalId: proposal.id }, f) } catch { failed.push(f.name) }
+      }
+      const attached = files.length - failed.length
+      setFiles([])
+      setFileError(null)
       setForm({ ...emptyForm })
       setShowCreate(false)
-      toast(`Proposal ${proposal.proposalNumber} added`, { action: { label: 'View', onClick: () => setOpenLeadId(proposal.leadId) } })
+      if (failed.length) toast(`Proposal added, but these files didn’t upload: ${failed.join(', ')}. Add them from Edit proposal.`, { tone: 'error' })
+      else toast(`Proposal ${proposal.proposalNumber} added${attached ? ` · ${attached} document${attached > 1 ? 's' : ''} attached` : ''}`, { action: { label: 'View', onClick: () => setOpenLeadId(proposal.leadId) } })
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Could not create proposal.')
     } finally {
@@ -214,7 +295,7 @@ export default function Proposals() {
   return (
     <div className={PAGE_CLASS}>
       <PageHeader title="Proposals" subtitle="Quote value and probability against a lead, and track it through to Won or Lost.">
-        <NewButton label="New proposal" onClick={() => setShowCreate(true)} />
+        <NewButton label="New proposal" onClick={openCreate} />
       </PageHeader>
 
       {/* list */}
@@ -228,7 +309,7 @@ export default function Proposals() {
         {loading && proposals.length === 0 ? (
           <SkeletonRows />
         ) : proposals.length === 0 && !error ? (
-          <EmptyState icon="document" title="No proposals yet" message="Quote a value against one of your leads to start tracking it to Won or Lost." action={{ label: 'Create proposal', onClick: () => setShowCreate(true) }} />
+          <EmptyState icon="document" title="No proposals yet" message="Quote a value against one of your leads to start tracking it to Won or Lost." action={{ label: 'Create proposal', onClick: openCreate }} />
         ) : (
           <>
             <DataGrid
@@ -238,7 +319,10 @@ export default function Proposals() {
               view={view}
               onRowClick={p => setOpenLeadId(p.leadId)}
               rowLabel={p => `Open the lead for ${p.proposalNumber}`}
-              actions={p => <RowMenu label={p.proposalNumber} actions={[{ label: 'Open lead', onSelect: () => setOpenLeadId(p.leadId) }]} />}
+              actions={p => <RowMenu label={p.proposalNumber} actions={[
+                { label: 'Open lead', onSelect: () => setOpenLeadId(p.leadId) },
+                { label: 'Edit proposal', disabled: savingId === p.id, onSelect: () => openEdit(p) },
+              ]} />}
               empty={<NoMatches noun="proposals" onClear={view.clearFilters} />}
               minWidth={920}
             />
@@ -271,16 +355,28 @@ export default function Proposals() {
       )}
       {showCreate && (
         <CreatePanel
-          title="New proposal"
-          subtitle="One proposal per lead — revise an existing one from its row instead."
-          onClose={() => setShowCreate(false)}
+          title={editing ? editing.proposalNumber : 'New proposal'}
+          subtitle={editing ? undefined : 'One proposal per lead — revise an existing one from its row instead.'}
+          onClose={closePanel}
           onSubmit={createProposal}
           saving={creating}
-          submitLabel="Add proposal"
+          submitLabel={editing ? 'Save changes' : 'Add proposal'}
           savingLabel="Saving…"
           error={formError}
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {editing ? (
+              <>
+                <div className="sm:col-span-2 text-sm text-gray-700 dark:text-gray-200">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Lead</p>
+                  <p className="mt-1">{editing.lead?.plant?.plantName ?? '—'}{editing.lead?.plant?.client?.clientName ? ` · ${editing.lead.plant.client.clientName}` : ''}</p>
+                </div>
+                <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
+                  Project name
+                  <input value={form.projectName} onChange={e => setForm({ ...form, projectName: e.target.value })} placeholder="Optional" className={inputCls} />
+                </label>
+              </>
+            ) : (
             <Field label="Lead" required error={fieldErrors.leadId} hint="Only leads without a proposal are listed — one proposal per lead." className="sm:col-span-2">
               <SearchSelect
                 value={form.leadId}
@@ -291,6 +387,7 @@ export default function Proposals() {
                 label="Lead"
               />
             </Field>
+            )}
             <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
               Value (₹)
               <input type="number" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} placeholder="e.g. 500000" className={inputCls} />
@@ -307,6 +404,31 @@ export default function Proposals() {
               Expected order date
               <DatePicker value={form.expectedOrderDate} onChange={v => setForm({ ...form, expectedOrderDate: v })} />
             </label>
+            {editing ? (
+              <div className="sm:col-span-2">
+                <p className="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">Documents</p>
+                <ProposalDocuments proposalId={editing.id} proposalNumber={editing.proposalNumber} />
+              </div>
+            ) : (
+              <div className="sm:col-span-2">
+                <input ref={fileInputRef} type="file" multiple accept={DOC_EXTENSIONS.join(',')} onChange={addFiles} className="sr-only" tabIndex={-1} aria-hidden="true" />
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-xl border border-dashed border-orange-300 bg-orange-50/60 px-4 py-2 text-sm font-semibold text-orange-600 outline-none hover:bg-orange-50 focus-visible:ring-2 focus-visible:ring-orange-300 dark:border-orange-800 dark:bg-orange-950/20 dark:text-orange-300">
+                  + Add documentation
+                </button>
+                <span className="ml-2 text-[11px] text-gray-400">PDF, Excel or CSV, up to 10MB each.</span>
+                {fileError && <p role="alert" className="mt-1 text-xs text-red-500 dark:text-red-400">{fileError}</p>}
+                {files.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {files.map((f, i) => (
+                      <li key={`${f.name}:${f.size}`} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-xs dark:bg-gray-800/60">
+                        <span className="min-w-0 truncate font-medium text-gray-800 dark:text-gray-100">{f.name}</span>
+                        <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="shrink-0 font-semibold text-red-500 hover:text-red-600">Remove</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </CreatePanel>
       )}

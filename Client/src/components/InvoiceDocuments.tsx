@@ -11,9 +11,18 @@ const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1
 // Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
 const EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
 
-// The paper copy of an invoice: an "Add invoice document" button, and the
-// files already attached with download / remove.
+// Files attached to an invoice or a proposal: an "Add" button, and the files
+// already attached with download / remove.
+type Target = { invoiceId: string } | { proposalId: string }
 export function InvoiceDocuments({ invoiceId, invoiceNumber }: { invoiceId: string; invoiceNumber: string }) {
+  return <AttachedDocuments target={{ invoiceId }} subject={invoiceNumber} addLabel="+ Add invoice document" />
+}
+export function ProposalDocuments({ proposalId, proposalNumber }: { proposalId: string; proposalNumber: string }) {
+  return <AttachedDocuments target={{ proposalId }} subject={proposalNumber} addLabel="+ Add documentation" />
+}
+
+function AttachedDocuments({ target, subject, addLabel }: { target: Target; subject: string; addLabel: string }) {
+  const query = 'proposalId' in target ? `proposalId=${target.proposalId}` : `invoiceId=${target.invoiceId}`
   const [documents, setDocuments] = useState<LeadDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -23,11 +32,11 @@ export function InvoiceDocuments({ invoiceId, invoiceNumber }: { invoiceId: stri
 
   useEffect(() => {
     setLoading(true)
-    api<{ documents: LeadDocument[] }>(`/documents?invoiceId=${invoiceId}`, { auth: true })
+    api<{ documents: LeadDocument[] }>(`/documents?${query}`, { auth: true })
       .then(({ documents }) => { setDocuments(documents); setError(null) })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load documents.'))
       .finally(() => setLoading(false))
-  }, [invoiceId])
+  }, [query])
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? [])
@@ -42,17 +51,17 @@ export function InvoiceDocuments({ invoiceId, invoiceNumber }: { invoiceId: stri
     const failed: string[] = []
     for (const file of picked) {
       try {
-        const document = await uploadDocument({ invoiceId }, file)
+        const document = await uploadDocument(target, file)
         setDocuments(prev => [{ ...document, canDelete: true }, ...prev])
       } catch { failed.push(file.name) }
     }
     setUploading(false)
     if (failed.length) setError(`Could not upload: ${failed.join(', ')}.`)
-    else toast(`${picked.length === 1 ? 'Document' : `${picked.length} documents`} added to ${invoiceNumber}`)
+    else toast(`${picked.length === 1 ? 'Document' : `${picked.length} documents`} added to ${subject}`)
   }
 
   async function remove(doc: LeadDocument) {
-    const ok = await confirm({ title: `Remove ${doc.fileName}?`, message: `It will no longer be attached to ${invoiceNumber}.`, confirmLabel: 'Remove', danger: true })
+    const ok = await confirm({ title: `Remove ${doc.fileName}?`, message: `It will no longer be attached to ${subject}.`, confirmLabel: 'Remove', danger: true })
     if (!ok) return
     try {
       await api(`/documents/${doc.id}`, { method: 'DELETE', auth: true })
@@ -68,7 +77,7 @@ export function InvoiceDocuments({ invoiceId, invoiceNumber }: { invoiceId: stri
       <input ref={inputRef} type="file" multiple accept={EXTENSIONS.join(',')} onChange={onPick} className="sr-only" tabIndex={-1} aria-hidden="true" />
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className={btn('secondary', 'sm')}>
-          {uploading ? 'Uploading…' : '+ Add invoice document'}
+          {uploading ? 'Uploading…' : addLabel}
         </button>
         <span className="text-[11px] text-gray-400 dark:text-gray-500">PDF, Excel or CSV, up to 10MB each.</span>
       </div>
