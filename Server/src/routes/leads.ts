@@ -23,9 +23,9 @@ const leadInclude = {
   source: { select: { id: true, sourceName: true } },
   serviceType: { select: { id: true, serviceTypeName: true } },
   event: { select: { id: true, eventName: true } },
-  contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true, isPrimaryContact: true } },
+  contact: { select: { id: true, contactPersonName: true, designation: true, department: true, contactPersonNumber: true, alternateNumber: true, mailId: true, isPrimaryContact: true } },
   // Further people contacted, beyond the primary one above.
-  extraContacts: { orderBy: { createdAt: 'asc' as const }, select: { contact: { select: { id: true, contactPersonName: true, designation: true, contactPersonNumber: true, alternateNumber: true, mailId: true } } } },
+  extraContacts: { orderBy: { createdAt: 'asc' as const }, select: { contact: { select: { id: true, contactPersonName: true, designation: true, department: true, contactPersonNumber: true, alternateNumber: true, mailId: true } } } },
   assignedToUser: { select: { id: true, userName: true, email: true } },
   assignedByUser: { select: { id: true, userName: true, email: true } },
   bmUser: { select: { id: true, userName: true, email: true } },
@@ -102,16 +102,17 @@ async function forePlant(name: string, locationId: string | null, clientId: stri
   }
   return prisma.plant.create({ data: { plantName: name, locationId, clientId } })
 }
-async function foreContact(name: string, plantId: string, email: string | null, phone: string | null, designation: string | null = null) {
+async function foreContact(name: string, plantId: string, email: string | null, phone: string | null, designation: string | null = null, department: string | null = null) {
   const existing = await prisma.contact.findFirst({ where: { plantId, contactPersonName: ci(name) } })
   if (existing) {
-    const data: { mailId?: string; contactPersonNumber?: string; designation?: string } = {}
+    const data: { mailId?: string; contactPersonNumber?: string; designation?: string; department?: string } = {}
     if (designation && !existing.designation) data.designation = designation
+    if (department && !existing.department) data.department = department
     if (email && !existing.mailId) data.mailId = email
     if (phone && !existing.contactPersonNumber) data.contactPersonNumber = phone
     return Object.keys(data).length ? prisma.contact.update({ where: { id: existing.id }, data }) : existing
   }
-  return prisma.contact.create({ data: { plantId, contactPersonName: name, designation, mailId: email, contactPersonNumber: phone } })
+  return prisma.contact.create({ data: { plantId, contactPersonName: name, designation, department, mailId: email, contactPersonNumber: phone } })
 }
 // Vertical / sector / source / service type: reuse an active one whose name is
 // this one written any way ("Oil and Gas" = "Oil & Gas" = "oil & gas"), so a
@@ -162,12 +163,14 @@ const createSchema = z.object({
   state: z.string().optional(),
   contactName: z.string().optional(),
   contactDesignation: z.string().optional(),
+  contactDepartment: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   // More people contacted at the same plant — each needs a name.
   extraContacts: z.array(z.object({
     name: z.string(),
     designation: z.string().optional(),
+    department: z.string().optional(),
     email: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
     phone: z.string().optional(),
   })).max(10, 'At most 10 additional contacts.').optional(),
@@ -218,12 +221,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const location = clean(d.city) ? await foreLocation(clean(d.city), clean(d.state)) : null
     const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
     const plant = await forePlant(clean(d.plantName), location?.id ?? null, client?.id ?? null)
-    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null) : null
+    const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null, clean(d.contactDepartment) || null) : null
     // Each extra person is found-or-created like the primary; the same person
     // listed twice (or also as the primary) is only linked once.
     const extraIds = new Set<string>()
     for (const c of extras) {
-      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null, clean(c.designation) || null)
+      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null, clean(c.designation) || null, clean(c.department) || null)
       if (person.id !== contact?.id) extraIds.add(person.id)
     }
     const vertical = clean(d.verticalName) ? await foreVertical(clean(d.verticalName)) : null
@@ -287,11 +290,13 @@ const updateSchema = z.object({
   state: z.string().optional(),
   contactName: z.string().optional(),
   contactDesignation: z.string().optional(),
+  contactDepartment: z.string().optional(),
   contactEmail: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   extraContacts: z.array(z.object({
     name: z.string(),
     designation: z.string().optional(),
+    department: z.string().optional(),
     email: z.string().email('Contact email must be a valid email address.').optional().or(z.literal('')),
     phone: z.string().optional(),
   })).max(10, 'At most 10 additional contacts.').optional(),
@@ -305,7 +310,7 @@ type LeadUpdate = z.infer<typeof updateSchema>
 // Applies the descriptive-field edits onto `data`. Plants, contacts and the
 // lookups are shared records, so they're re-pointed (found or created by name)
 // rather than renamed under other leads; correcting the *same* plant's client
-// or city, or the same contact's email/phone/designation, updates that record.
+// or city, or the same contact's email/phone/designation/department, updates that record.
 // Returns an error message, or null.
 async function applyDetailEdits(existing: { plantId: string; contactId: string | null }, d: LeadUpdate, data: Prisma.LeadUncheckedUpdateInput): Promise<string | null> {
   if (d.plantName !== undefined && !clean(d.plantName)) return 'Plant is required.'
@@ -336,7 +341,7 @@ async function applyDetailEdits(existing: { plantId: string; contactId: string |
   }
   if (plant.id !== existing.plantId) data.plantId = plant.id
 
-  const contactFields = d.contactName !== undefined || d.contactDesignation !== undefined || d.contactEmail !== undefined || d.contactNumber !== undefined
+  const contactFields = d.contactName !== undefined || d.contactDesignation !== undefined || d.contactDepartment !== undefined || d.contactEmail !== undefined || d.contactNumber !== undefined
   let primaryId = existing.contactId
   if (contactFields) {
     const current = existing.contactId ? await prisma.contact.findUnique({ where: { id: existing.contactId } }) : null
@@ -347,12 +352,13 @@ async function applyDetailEdits(existing: { plantId: string; contactId: string |
       const patch = {
         ...(name !== current.contactPersonName && { contactPersonName: name }),
         ...(d.contactDesignation !== undefined && { designation: clean(d.contactDesignation) || null }),
+        ...(d.contactDepartment !== undefined && { department: clean(d.contactDepartment) || null }),
         ...(d.contactEmail !== undefined && { mailId: clean(d.contactEmail) || null }),
         ...(d.contactNumber !== undefined && { contactPersonNumber: clean(d.contactNumber) || null }),
       }
       if (Object.keys(patch).length) await prisma.contact.update({ where: { id: current.id }, data: patch })
     } else {
-      const person = await foreContact(name, plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null)
+      const person = await foreContact(name, plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null, clean(d.contactDepartment) || null)
       primaryId = person.id
     }
     data.contactId = primaryId
@@ -361,7 +367,7 @@ async function applyDetailEdits(existing: { plantId: string; contactId: string |
   if (extras) {
     const ids = new Set<string>()
     for (const c of extras) {
-      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null, clean(c.designation) || null)
+      const person = await foreContact(clean(c.name), plant.id, clean(c.email) || null, clean(c.phone) || null, clean(c.designation) || null, clean(c.department) || null)
       if (person.id !== primaryId) ids.add(person.id)
     }
     data.extraContacts = { deleteMany: {}, create: [...ids].map(contactId => ({ contactId })) }

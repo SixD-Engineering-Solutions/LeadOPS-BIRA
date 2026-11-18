@@ -103,6 +103,7 @@ const contactSchema = z.object({
   plantId: z.string().min(1),
   contactPersonName: z.string().min(1),
   designation: z.string().optional(),
+  department: z.string().optional(),
   contactPersonNumber: z.string().optional(),
   alternateNumber: z.string().optional(),
   mailId: z.string().email().optional().or(z.literal('')),

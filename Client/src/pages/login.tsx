@@ -4,7 +4,7 @@ import Button from '../components/Button'
 import { api, setToken } from '../lib/api'
 import type { AuthUser, AuthResponse } from '../lib/api'
 import ThemeToggle from '../components/ThemeToggle'
-import { microsoftRedirectIdToken, startMicrosoftSignIn } from '../lib/microsoft'
+import { microsoftRedirectIdToken, forgetMicrosoftRedirectToken, startMicrosoftSignIn } from '../lib/microsoft'
 import type { MicrosoftConfig } from '../lib/microsoft'
 
 // ─── icons ────────────────────────────────────────────────────────────────────
@@ -335,6 +335,8 @@ export default function Login({ onAuthed }: { onAuthed: (user: AuthUser) => void
         setMsLoading(true)
         const res = await api<AuthResponse>('/auth/microsoft', { method: 'POST', body: { idToken } })
         setToken(res.accessToken)
+        // Used up: signing out must not find it again and sign straight back in.
+        forgetMicrosoftRedirectToken()
         onAuthed(res.user)
       })
       .catch(err => {

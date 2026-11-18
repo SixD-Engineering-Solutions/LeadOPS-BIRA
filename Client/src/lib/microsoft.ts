@@ -37,6 +37,16 @@ export function microsoftRedirectIdToken(config: MicrosoftConfig): Promise<strin
   return redirectIdToken
 }
 
+/**
+ * Call once the token above has been used to sign in. It's kept for the life of
+ * the page (so React's double-run of effects can share it), which means that
+ * without this, the login page shown after Sign out would find the same token
+ * and sign the person straight back in.
+ */
+export function forgetMicrosoftRedirectToken(): void {
+  redirectIdToken = Promise.resolve(null)
+}
+
 /** Sends the browser to Microsoft's account picker. Doesn't return. */
 export async function startMicrosoftSignIn(config: MicrosoftConfig): Promise<void> {
   const app = await msal(config)

@@ -8,6 +8,8 @@ const AMBER = 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/20
 const ORANGE = 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-200 dark:border-orange-500/50'
 const VIOLET = 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/20 dark:text-violet-200 dark:border-violet-500/50'
 const EMERALD = 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/50'
+const TEAL = 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-500/20 dark:text-teal-200 dark:border-teal-500/50'
+const INDIGO = 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-200 dark:border-indigo-500/50'
 const ROSE = 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-500/50'
 
 export const DEFAULT_STATUS_STYLE = GRAY
@@ -28,6 +30,8 @@ export const LEAD_STATUS_STYLES: Record<string, string> = {
 export const PROPOSAL_STATUS_STYLES: Record<string, string> = {
   Draft: GRAY,
   Submitted: SKY,
+  'Proposal submitted': TEAL,
+  'Tender submitted': INDIGO,
   'Follow-up': AMBER,
   Negotiation: VIOLET,
   Won: EMERALD,

@@ -30,7 +30,7 @@ import { DatePicker } from '../components/form/DatePicker'
 
 const statusStyle = (name: string) => PROPOSAL_STATUS_STYLES[name] ?? DEFAULT_STATUS_STYLE
 const fmtValue = (v: number | null) => (v == null ? <span className="text-gray-300 dark:text-gray-600">—</span> : formatINR(v))
-const OPEN: readonly string[] = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Hold']
+const OPEN: readonly string[] = ['Draft', 'Submitted', 'Proposal submitted', 'Tender submitted', 'Follow-up', 'Negotiation', 'Hold']
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 const emptyForm = { leadId: '', projectName: '', value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' }

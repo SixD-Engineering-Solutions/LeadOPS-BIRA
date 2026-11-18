@@ -34,13 +34,13 @@ const person = (u?: { userName: string | null; email: string } | null) => (u ? u
 const statusOf = (l: Lead) => l.status?.statusName ?? 'Cold call'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', state: '', contactName: '', contactDesignation: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Cold call', lostReason: '' }
+const emptyForm = { plantName: '', clientName: '', city: '', state: '', contactName: '', contactDesignation: '', contactDepartment: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Cold call', lostReason: '' }
 const INDIAN_STATES = ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
 const DOC_EXTENSIONS = ['.pdf', '.xlsx', '.xls', '.csv']
-type ExtraContact = { name: string; designation: string; email: string; phone: string }
-const emptyExtra: ExtraContact = { name: '', designation: '', email: '', phone: '' }
+type ExtraContact = { name: string; designation: string; department: string; email: string; phone: string }
+const emptyExtra: ExtraContact = { name: '', designation: '', department: '', email: '', phone: '' }
 const MAX_EXTRA_CONTACTS = 10
 
 export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: boolean; currentUserId?: string }) {
@@ -138,7 +138,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
   const setExtra = (i: number, k: keyof ExtraContact, v: string) => {
     setExtras(prev => prev.map((c, j) => (j === i ? { ...c, [k]: v } : c)))
-    if (k !== 'phone' && k !== 'designation') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
+    if (k !== 'phone' && k !== 'designation' && k !== 'department') setExtraErrors(prev => prev.map((x, j) => (j === i ? { ...x, [k]: undefined } : x)))
   }
 
   function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -168,7 +168,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   }
   // Opens the panel filled with the lead's current values so a mistake can be fixed.
   function openEdit(lead: Lead) {
-    const others = (lead.extraContacts ?? []).map(x => ({ name: x.contact.contactPersonName ?? '', designation: x.contact.designation ?? '', email: x.contact.mailId ?? '', phone: x.contact.contactPersonNumber ?? '' }))
+    const others = (lead.extraContacts ?? []).map(x => ({ name: x.contact.contactPersonName ?? '', designation: x.contact.designation ?? '', department: x.contact.department ?? '', email: x.contact.mailId ?? '', phone: x.contact.contactPersonNumber ?? '' }))
     resetForm()
     setForm({
       ...emptyForm,
@@ -178,6 +178,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       state: lead.plant?.location?.state ?? '',
       contactName: lead.contact?.contactPersonName ?? '',
       contactDesignation: lead.contact?.designation ?? '',
+      contactDepartment: lead.contact?.department ?? '',
       contactEmail: lead.contact?.mailId ?? '',
       contactNumber: lead.contact?.contactPersonNumber ?? '',
       verticalName: lead.vertical?.verticalName ?? '',
@@ -206,7 +207,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
         method: 'PATCH', auth: true,
         body: {
           plantName: form.plantName, clientName: form.clientName, city: form.city, state: form.state,
-          contactName: form.contactName, contactDesignation: form.contactDesignation, contactEmail: form.contactEmail, contactNumber: form.contactNumber,
+          contactName: form.contactName, contactDesignation: form.contactDesignation, contactDepartment: form.contactDepartment, contactEmail: form.contactEmail, contactNumber: form.contactNumber,
           extraContacts: multiContact ? extras.filter(c => c.name.trim() || c.email.trim() || c.phone.trim()) : [],
           verticalName: form.verticalName, sectorName: form.sectorName, sourceName: form.sourceName, serviceTypeName: form.serviceTypeName,
           remark: form.remark.trim() ? form.remark : null,
@@ -537,7 +538,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
               <datalist id="lead-states">{INDIAN_STATES.map(st => <option key={st} value={st} />)}</datalist>
             </label>
             {field('Contact', 'contactName', 'Contact person name')}
-            {field('Contact designation', 'contactDesignation', 'e.g. DGM Maintenance')}
+            {field('Contact designation', 'contactDesignation', 'e.g. DGM')}
+            {field('Contact department', 'contactDepartment', 'e.g. Maintenance')}
             <Field label="Contact email" error={fieldErrors.contactEmail}>
               <input
                 type="email"
@@ -569,8 +571,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
                         <Field label="Name" required error={extraErrors[i]?.name} className="sm:col-span-2">
                           <input value={c.name} onChange={e => setExtra(i, 'name', e.target.value)} placeholder="Contact person name" aria-invalid={!!extraErrors[i]?.name || undefined} className={fieldCls(!!extraErrors[i]?.name)} />
                         </Field>
-                        <Field label="Designation" className="sm:col-span-2">
-                          <input value={c.designation} onChange={e => setExtra(i, 'designation', e.target.value)} placeholder="e.g. DGM Maintenance" className={fieldCls(false)} />
+                        <Field label="Designation">
+                          <input value={c.designation} onChange={e => setExtra(i, 'designation', e.target.value)} placeholder="e.g. DGM" className={fieldCls(false)} />
+                        </Field>
+                        <Field label="Department">
+                          <input value={c.department} onChange={e => setExtra(i, 'department', e.target.value)} placeholder="e.g. Maintenance" className={fieldCls(false)} />
                         </Field>
                         <Field label="Email" error={extraErrors[i]?.email}>
                           <input type="email" value={c.email} onChange={e => setExtra(i, 'email', e.target.value)} placeholder="e.g. name@company.com" aria-invalid={!!extraErrors[i]?.email || undefined} className={fieldCls(!!extraErrors[i]?.email)} />

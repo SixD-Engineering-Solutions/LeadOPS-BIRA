@@ -139,6 +139,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
             <DetailSection title="Contact person">
               <DetailRow label="Name" value={lead.contact?.contactPersonName} />
               <DetailRow label="Designation" value={lead.contact?.designation} />
+              <DetailRow label="Department" value={lead.contact?.department} />
               <DetailRow label="Email" value={lead.contact?.mailId} href={lead.contact?.mailId ? `mailto:${lead.contact.mailId}` : undefined} />
               <DetailRow label="Phone" value={lead.contact?.contactPersonNumber} href={lead.contact?.contactPersonNumber ? `tel:${lead.contact.contactPersonNumber.replace(/\s/g, '')}` : undefined} />
               <DetailRow label="Alternate phone" value={lead.contact?.alternateNumber} />
@@ -149,6 +150,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
               <DetailSection key={c.id} title={`Contact person ${i + 2}`}>
                 <DetailRow label="Name" value={c.contactPersonName} />
                 <DetailRow label="Designation" value={c.designation} />
+                <DetailRow label="Department" value={c.department} />
                 <DetailRow label="Email" value={c.mailId} href={c.mailId ? `mailto:${c.mailId}` : undefined} />
                 <DetailRow label="Phone" value={c.contactPersonNumber} href={c.contactPersonNumber ? `tel:${c.contactPersonNumber.replace(/\s/g, '')}` : undefined} />
               </DetailSection>

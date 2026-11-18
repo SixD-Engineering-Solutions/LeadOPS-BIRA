@@ -20,7 +20,7 @@ export type PipelineStage =
 // Typed against the app's status lists, so adding a status there without
 // placing it here is a type error rather than a silently mis-sorted row.
 const PROPOSAL_STAGE: Record<ProposalStatus, PipelineStage> = {
-  Draft: 'quoted', Submitted: 'quoted', 'Follow-up': 'negotiation', Negotiation: 'negotiation',
+  Draft: 'quoted', Submitted: 'quoted', 'Proposal submitted': 'quoted', 'Tender submitted': 'quoted', 'Follow-up': 'negotiation', Negotiation: 'negotiation',
   Won: 'won', Lost: 'lost', Hold: 'onHold',
 }
 const PROJECT_STAGE: Record<ProjectStatus, PipelineStage> = {

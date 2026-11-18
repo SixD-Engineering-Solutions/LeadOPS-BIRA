@@ -8,7 +8,7 @@ export type Location = { id: string; city: string; state: string | null; country
 export type ClientCategory = { id: string; categoryName: string; description: string | null; isActive: boolean }
 export type Client = { id: string; clientName: string; industryType: string | null; website: string | null; linkedIn: string | null; categoryId: string | null; category?: { id: string; categoryName: string } | null; country: string | null; region: string | null; isActive: boolean }
 export type Plant = { id: string; plantName: string; companyName: string | null; clientId: string | null; client?: { id: string; clientName: string } | null; locationId: string; plantCode: string | null; isActive: boolean; location?: { id: string; city: string; state: string | null }; createdAt: string; updatedAt: string }
-export type Contact = { id: string; plantId: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean; createdAt: string; updatedAt: string }
+export type Contact = { id: string; plantId: string; contactPersonName: string; designation: string | null; department?: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean; createdAt: string; updatedAt: string }
 export type Vertical = { id: string; verticalName: string; description: string | null; isActive: boolean }
 export type Sector = { id: string; sectorName: string; description: string | null; isActive: boolean }
 export type LeadSource = { id: string; sourceName: string; description: string | null; isActive: boolean }
@@ -35,9 +35,9 @@ export type Lead = {
   eventId: string | null
   event?: { id: string; eventName: string } | null
   contactId: string | null
-  contact?: { id: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean } | null
+  contact?: { id: string; contactPersonName: string; designation: string | null; department?: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null; isPrimaryContact: boolean } | null
   /** Further people contacted, beyond the primary contact above. */
-  extraContacts?: { contact: { id: string; contactPersonName: string; designation: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null } }[]
+  extraContacts?: { contact: { id: string; contactPersonName: string; designation: string | null; department?: string | null; contactPersonNumber: string | null; alternateNumber: string | null; mailId: string | null } }[]
   assignedToUserId: string | null
   assignedToUser?: { id: string; userName: string | null; email: string } | null
   assignedByUserId: string | null
@@ -73,7 +73,7 @@ export type Activity = {
 }
 
 // ─── Proposal (a quoted opportunity raised against a lead) ──────────────────
-export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
+export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Proposal submitted', 'Tender submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 export type Proposal = {
   id: string

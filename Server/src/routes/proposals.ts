@@ -13,7 +13,7 @@ import { logActivity, proposalSnapshot, proposalLabel, projectSnapshot, projectL
 const router = Router()
 router.use(authenticate)
 
-export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
+export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Proposal submitted', 'Tender submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
 
 const proposalInclude = {
   lead: { select: { id: true, plant: { select: { id: true, plantName: true, client: { select: { id: true, clientName: true } } } } } },

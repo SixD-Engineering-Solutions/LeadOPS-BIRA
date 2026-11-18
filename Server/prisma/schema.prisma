@@ -153,6 +153,7 @@ model Contact {
   plant               Plant    @relation(fields: [plantId], references: [id])
   contactPersonName   String   @map("contact_person_name")
   designation         String?
+  department          String?
   contactPersonNumber String?  @map("contact_person_number")
   alternateNumber     String?  @map("alternate_number")
   mailId              String?  @map("mail_id")
