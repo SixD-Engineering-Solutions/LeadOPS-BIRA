@@ -1,4 +1,4 @@
-// Daily pull of the live business tracker workbook (SharePoint / OneDrive)
+// Scheduled pull of the live business tracker workbook (SharePoint / OneDrive)
 // into the Tracker's sheet rows.
 //
 // The workbook is the source of truth for the Tracker's *sheet* rows: each
@@ -29,10 +29,8 @@ import { notifyUser } from './notify'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
-const CHECK_EVERY_MS = 30 * 60 * 1000 // how often the scheduler looks whether a run is due
-const RETRY_AFTER_MS = 60 * 60 * 1000 // a failed run is retried an hour later
+const CHECK_EVERY_MS = 5 * 60 * 1000 // how often the scheduler looks whether a run is due
 const STALE_RUN_MS = 30 * 60 * 1000 // a "running" row older than this was cut off (restart) — counts as failed
-const IST_OFFSET_MIN = 330 // India Standard Time, UTC+5:30, no daylight saving
 
 // ─── configuration ──────────────────────────────────────────────────────────
 
@@ -58,10 +56,11 @@ export function sheetSyncSource(): Source | null {
   }
 }
 
-// The hour of day (India time) the daily sync runs; default 02:00.
-export function sheetSyncHour(): number {
-  const h = Number(env('SHEET_SYNC_HOUR') ?? 2)
-  return Number.isInteger(h) && h >= 0 && h <= 23 ? h : 2
+// How often the sync runs, in minutes: SHEET_SYNC_EVERY_MINUTES, default 60,
+// never less than 15 (each run downloads and re-reads the whole workbook).
+export function sheetSyncEveryMinutes(): number {
+  const m = Number(env('SHEET_SYNC_EVERY_MINUTES') ?? 60)
+  return Number.isFinite(m) ? Math.max(15, Math.round(m)) : 60
 }
 
 // ─── fetching the workbook ──────────────────────────────────────────────────
@@ -255,7 +254,7 @@ async function alertAdminsOnce(runId: string, message: string) {
     const previous = await prisma.sheetSyncRun.findFirst({ where: { id: { not: runId }, status: { not: 'running' } }, orderBy: { startedAt: 'desc' } })
     if (previous?.status === 'failed') return
     const admins = await prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } })
-    for (const a of admins) await notifyUser(a.id, `The daily sync from the SharePoint tracker sheet failed — the Tracker still shows the last synced data. ${message}`.slice(0, 1000))
+    for (const a of admins) await notifyUser(a.id, `The sync from the SharePoint tracker sheet failed — the Tracker still shows the last synced data. ${message}`.slice(0, 1000))
   } catch (err) {
     console.error('[sheet sync] could not notify admins:', err instanceof Error ? err.message : err)
   }
@@ -263,33 +262,22 @@ async function alertAdminsOnce(runId: string, message: string) {
 
 // ─── schedule ───────────────────────────────────────────────────────────────
 
-// The most recent moment at SHEET_SYNC_HOUR:00 India time, at or before `now`.
-export function lastScheduledTime(now: Date, hour = sheetSyncHour()): Date {
-  const ist = new Date(now.getTime() + IST_OFFSET_MIN * 60000)
-  const at = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), hour) - IST_OFFSET_MIN * 60000
-  return new Date(at <= now.getTime() ? at : at - 24 * 3600000)
-}
-
-// Due when no run has succeeded since the last scheduled time — so a server
-// that was down at that hour catches up when it's back — and nothing was
-// tried in the past hour (a failure is retried hourly, not every check).
+// Due when no run (successful or not) has started within the sync interval —
+// so a server that was down catches up when it's back, and a failure is
+// retried once per interval rather than on every check.
 async function syncDue(now: Date): Promise<boolean> {
   await prisma.sheetSyncRun.updateMany({
     where: { status: 'running', startedAt: { lt: new Date(now.getTime() - STALE_RUN_MS) } },
     data: { status: 'failed', finishedAt: now, message: 'Interrupted (the server restarted mid-sync). Nothing was changed.' },
   })
-  const since = lastScheduledTime(now)
-  const [ok, recent] = await Promise.all([
-    prisma.sheetSyncRun.findFirst({ where: { status: 'success', startedAt: { gte: since } } }),
-    prisma.sheetSyncRun.findFirst({ where: { startedAt: { gte: new Date(now.getTime() - RETRY_AFTER_MS) } } }),
-  ])
-  return !ok && !recent
+  const recent = await prisma.sheetSyncRun.findFirst({ where: { startedAt: { gte: new Date(now.getTime() - sheetSyncEveryMinutes() * 60000) } } })
+  return !recent
 }
 
 export function startSheetSyncJob(): void {
   const source = sheetSyncSource()
   if (!source) { console.log('[sheet sync] off (no SHEET_SYNC_* source configured)'); return }
-  console.log(`[sheet sync] on — daily at ${String(sheetSyncHour()).padStart(2, '0')}:00 India time, from ${source.kind === 'file' ? source.path : source.driveId ? 'SharePoint (drive/item id)' : 'SharePoint (sharing link)'}`)
+  console.log(`[sheet sync] on — every ${sheetSyncEveryMinutes()} minutes, from ${source.kind === 'file' ? source.path : source.driveId ? 'SharePoint (drive/item id)' : 'SharePoint (sharing link)'}`)
   const tick = () => {
     syncDue(new Date())
       .then(due => (due && !running ? runSheetSync('schedule') : null))

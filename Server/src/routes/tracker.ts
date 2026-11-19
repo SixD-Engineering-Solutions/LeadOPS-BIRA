@@ -3,7 +3,7 @@ import { prisma } from '../prisma'
 import { z } from 'zod'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { sendError } from '../utils/errors'
-import { runSheetSync, sheetSyncSource, sheetSyncHour } from '../services/sheetSync'
+import { runSheetSync, sheetSyncSource, sheetSyncEveryMinutes } from '../services/sheetSync'
 import { SheetError } from '../services/trackerSheet'
 
 const router = Router()
@@ -41,7 +41,7 @@ router.get('/sheet-sync', requireAdmin, async (_req: AuthRequest, res: Response)
   res.json({
     enabled: !!source,
     source: source ? (source.kind === 'file' ? 'file' : 'sharepoint') : null,
-    dailyAtIst: `${String(sheetSyncHour()).padStart(2, '0')}:00`,
+    everyMinutes: sheetSyncEveryMinutes(),
     lastSuccess,
     runs,
   })

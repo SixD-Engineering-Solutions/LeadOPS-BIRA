@@ -169,7 +169,7 @@ the sync is off.
 | --- | --- |
 | `SHEET_SYNC_SHARE_URL` | The workbook's sharing link (as copied from SharePoint's *Share → Copy link*) |
 | `SHEET_SYNC_CLIENT_SECRET` | The client secret value from step 2 |
-| `SHEET_SYNC_HOUR` | Optional; hour of day in India time, `0`–`23`. Default `2` (02:00) |
+| `SHEET_SYNC_EVERY_MINUTES` | Optional; how often the sync runs, in minutes. Default `60` (hourly), minimum `15` |
 | `SHEET_SYNC_DRIVE_ID`, `SHEET_SYNC_ITEM_ID` | Optional, recommended once known: the file's permanent ids. After the first successful sync the API log prints them (`[sheet sync] file ids — …`). With them set, the sync keeps working even if the sharing link is changed or switched off; then `SHEET_SYNC_SHARE_URL` can be removed |
 | `SHEET_SYNC_TENANT_ID`, `SHEET_SYNC_CLIENT_ID` | Optional; default to `MS_TENANT_ID` / `MS_CLIENT_ID` |
 
