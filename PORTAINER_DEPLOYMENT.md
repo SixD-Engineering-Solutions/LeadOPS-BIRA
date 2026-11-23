@@ -170,14 +170,28 @@ the sync is off.
 | `SHEET_SYNC_SHARE_URL` | The workbook's sharing link (as copied from SharePoint's *Share → Copy link*) |
 | `SHEET_SYNC_CLIENT_SECRET` | The client secret value from step 2 |
 | `SHEET_SYNC_EVERY_MINUTES` | Optional; how often the sync runs, in minutes. Default `60` (hourly), minimum `15` |
+| `SHEET_SYNC_CREATE_LEADS` | Optional; `off` stops the sync creating leads, proposals and projects from the sheet's deals (see below). Default on |
 | `SHEET_SYNC_DRIVE_ID`, `SHEET_SYNC_ITEM_ID` | Optional, recommended once known: the file's permanent ids. After the first successful sync the API log prints them (`[sheet sync] file ids — …`). With them set, the sync keeps working even if the sharing link is changed or switched off; then `SHEET_SYNC_SHARE_URL` can be removed |
 | `SHEET_SYNC_TENANT_ID`, `SHEET_SYNC_CLIENT_ID` | Optional; default to `MS_TENANT_ID` / `MS_CLIENT_ID` |
 
-Restart the API. Its log shows `[sheet sync] on — daily at 02:00 India time`,
-and the first sync runs about a minute after start (then daily; a server that
-was down at that hour catches up when it's back; a failed run is retried an
-hour later). Each run logs `[sheet sync] schedule: Pipeline 152 · Invoices 96 …`
+Restart the API. Its log shows `[sheet sync] on — every 60 minutes`,
+and the first sync runs about a minute after start (then every interval; a
+server that was down catches up when it's back; a failed run is retried an
+interval later). Each run logs `[sheet sync] schedule: Pipeline 152 · Invoices 96 …`
 or the reason it failed.
+
+**Leads from the sheet.** After each sync, every deal in the Pipeline rows also
+becomes a Lead (with a Proposal, and a Project when the sheet says PO Received)
+in the app, assigned to the user whose first name is the sheet's Owner, with the
+BM/Contact column's first matching user as BM — so it shows on that person's
+dashboard, Leads, Proposals and Projects pages and on every admin's. A row is
+found again by client + location + description; it is updated only when its
+sheet row changed, and a lead deleted in the app is not brought back. Owners
+that match nobody (or only an admin) leave the lead unassigned. To undo it:
+set `SHEET_SYNC_CREATE_LEADS=off`, then run
+`npx ts-node prisma/removeSheetLeads.ts --apply` inside the API container's
+source (or ask for the equivalent SQL) — it removes those leads, their proposals
+and projects, and skips any that have since gained invoices or documents.
 
 Admins can also check and trigger it through the API:
 `GET /api/tracker/sheet-sync` (status and recent runs) and

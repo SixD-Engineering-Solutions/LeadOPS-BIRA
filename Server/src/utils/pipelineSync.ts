@@ -58,6 +58,13 @@ export async function syncLeadToPipeline(db: Db, leadId: string): Promise<void> 
     },
   })
 
+  // A lead made from a sheet row already has its row in the Tracker (the sheet's
+  // own) — mirroring it too would list it twice.
+  if (lead?.sheetKey) {
+    await db.pipelineTrackerItem.deleteMany({ where: { sourceLeadId: leadId } })
+    return
+  }
+
   if (!lead || lead.deletedAt) {
     await db.pipelineTrackerItem.deleteMany({ where: { sourceLeadId: leadId } })
     return

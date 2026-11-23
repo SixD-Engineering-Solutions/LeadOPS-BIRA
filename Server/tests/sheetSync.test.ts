@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { adminToken, employeeToken, api, projectDetails, dbRows } from './helpers'
+import { adminToken, employeeToken, api, projectDetails, dbRows, leadOwners } from './helpers'
 
 // The daily SharePoint sheet sync (services/sheetSync.ts), run by hand through
 // POST /tracker/sheet-sync/run. Needs the API started with a sync source — e.g.
@@ -22,7 +22,7 @@ describe('Sheet sync', async () => {
 
   beforeAll(async () => {
     if (!enabled) return
-    const lead = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: 'Steel' } })
+    const lead = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: 'Steel', ...(await leadOwners(admin)) } })
     leadId = lead.body.lead.id
     const prop = (await api<{ proposal: { id: string } }>('/proposals', { method: 'POST', token: admin, body: { leadId, value: 500000 } })).body.proposal
     await api(`/proposals/${prop.id}`, { method: 'PATCH', token: admin, body: { status: 'Won', project: await projectDetails(admin) } })

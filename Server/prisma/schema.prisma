@@ -280,6 +280,12 @@ model Lead {
   // Mandatory whenever the status is "Dead" — why the lead was lost. Cleared
   // if the lead is revived. (Proposal.lostReason is the same for "Lost".)
   lostReason       String?        @map("lost_reason")
+  // Set only on a lead the Tracker sheet sync created (see services/sheetLeads.ts):
+  // sheetKey identifies the sheet row it came from (so a later sync updates
+  // this lead instead of making another); sheetHash is the sheet row as last
+  // applied, so the sync only overwrites the lead when the sheet row changed.
+  sheetKey         String?        @unique @map("sheet_key")
+  sheetHash        String?        @map("sheet_hash")
   createdByUserId  String         @map("created_by_user_id")
   createdByUser    User           @relation("CreatedBy", fields: [createdByUserId], references: [id])
   createdAt        DateTime       @default(now()) @map("created_at")

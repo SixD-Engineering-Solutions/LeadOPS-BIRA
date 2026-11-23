@@ -1,5 +1,6 @@
 import type { LeadStats } from '../../hooks/useLeadStats'
 import type { ProposalStats } from '../../hooks/useProposalStats'
+import type { ProjectStats } from '../../hooks/useProjectStats'
 import { ErrorBanner } from '../ErrorBanner'
 import { formatCount, formatINR, formatINRCompact } from '../../lib/format'
 import type { Insights } from '../../hooks/useDashboardInsights'
@@ -34,17 +35,18 @@ function Ring({ pct }: { pct: number }) {
   )
 }
 
-// The 5 stat tiles on the dashboard home view — lead stats (Total Leads,
-// Conversion Rate) and proposal stats (Pipeline Value,
-// Orders Received, Lost Deals). Each source fetches independently (see
+// The 6 stat tiles on the dashboard home view — lead stats (Total Leads,
+// Conversion Rate), proposal stats (Pipeline Value, Orders Received, Lost
+// Deals) and Active Projects. Each source fetches independently (see
 // useLeadStats/useProposalStats), so one failing doesn't block the other —
 // a failed source shows a dismissable-by-retry error banner above the grid
 // instead of the tiles it feeds silently going stale.
 export function StatTiles({
-  stats, proposalStats, insights, leadStatsError, proposalStatsError, onRetryLeadStats, onRetryProposalStats,
-  onOpenAssignments, onOpenProposals, onOpenPipeline,
+  stats, proposalStats, projectStats, insights, leadStatsError, proposalStatsError, onRetryLeadStats, onRetryProposalStats,
+  onOpenAssignments, onOpenProposals, onOpenPipeline, onOpenProjects,
 }: {
   stats: LeadStats
+  projectStats: ProjectStats
   insights: Insights
   proposalStats: ProposalStats
   leadStatsError: string | null
@@ -54,13 +56,14 @@ export function StatTiles({
   onOpenAssignments: () => void
   onOpenProposals: () => void
   onOpenPipeline: () => void
+  onOpenProjects: () => void
 }) {
   return (
     <>
       {leadStatsError && <ErrorBanner message={leadStatsError} onRetry={onRetryLeadStats} className="mb-4" />}
       {proposalStatsError && <ErrorBanner message={proposalStatsError} onRetry={onRetryProposalStats} className="mb-4" />}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {/* Total Leads — upward sparkline. Click to see who each lead is
             assigned to (admin), or the details of your own leads (employee). */}
         <button
@@ -159,6 +162,24 @@ export function StatTiles({
           </p>
           <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400" title={proposalStats.loaded ? formatINR(proposalStats.lostValue) : undefined}>
             {proposalStats.loaded ? `${formatINRCompact(proposalStats.lostValue)} lost value` : ' '}
+          </p>
+        </button>
+
+        {/* Active Projects — every project not yet Completed (orders being delivered) */}
+        <button
+          type="button"
+          onClick={() => projectStats.loaded && onOpenProjects()}
+          disabled={!projectStats.loaded}
+          className="w-full rounded-2xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md disabled:cursor-default disabled:hover:translate-y-0 disabled:hover:border-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-orange-900"
+        >
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Active Projects</p>
+          <p className="mt-1 text-2xl font-bold text-teal-600 dark:text-teal-400">
+            {projectStats.loaded ? String(projectStats.active) : '—'}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-gray-400 dark:text-gray-400">
+            {projectStats.loaded
+              ? `${projectStats.inProgress} in progress · ${projectStats.notStarted} not started${projectStats.onHold ? ` · ${projectStats.onHold} on hold` : ''}`
+              : ' '}
           </p>
         </button>
       </div>

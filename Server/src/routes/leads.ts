@@ -153,7 +153,9 @@ async function foreUser(input: string) {
 async function activeUser(id: string) {
   return prisma.user.findFirst({ where: { id, isActive: true }, select: { id: true } })
 }
-const BM_INVALID = 'Branch manager must be an active team member.'
+const BM_INVALID = 'BM (business manager) must be an active team member.'
+const BM_REQUIRED = 'Choose the BM (business manager).'
+const ASSIGNEE_REQUIRED = 'Choose who this lead is assigned to.'
 
 // POST /leads — accepts typed names; reuses or creates the linked records.
 const createSchema = z.object({
@@ -212,8 +214,16 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, 'Enter a name for every additional contact.')
     return
   }
-  const bm = clean(d.bmUserId) ? await activeUser(clean(d.bmUserId)) : null
-  if (clean(d.bmUserId) && !bm) {
+  if (!clean(d.bmUserId)) {
+    sendError(res, 400, BM_REQUIRED)
+    return
+  }
+  if (!clean(d.assignedToName)) {
+    sendError(res, 400, ASSIGNEE_REQUIRED)
+    return
+  }
+  const bm = await activeUser(clean(d.bmUserId))
+  if (!bm) {
     sendError(res, 400, BM_INVALID)
     return
   }
@@ -417,6 +427,10 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     data.lostReason = clean(parse.data.lostReason)
   }
   if ('assignedToUserId' in parse.data) {
+    if (!parse.data.assignedToUserId) {
+      sendError(res, 400, ASSIGNEE_REQUIRED)
+      return
+    }
     if (parse.data.assignedToUserId) {
       const target = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { role: true } })
       if (target?.role === 'admin') {
@@ -430,7 +444,11 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     data.assignedByUserId = data.assignedToUserId ? req.userId! : null
   }
   if ('bmUserId' in parse.data) {
-    if (parse.data.bmUserId && !(await activeUser(parse.data.bmUserId))) {
+    if (!parse.data.bmUserId) {
+      sendError(res, 400, BM_REQUIRED)
+      return
+    }
+    if (!(await activeUser(parse.data.bmUserId))) {
       sendError(res, 400, BM_INVALID)
       return
     }

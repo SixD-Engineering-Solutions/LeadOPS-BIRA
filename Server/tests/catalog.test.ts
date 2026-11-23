@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { adminToken, employeeToken, api, dbRows, dbQuery } from './helpers'
+import { adminToken, employeeToken, api, dbRows, dbQuery, leadOwners } from './helpers'
 
 // Data clean-up (routes/catalog.ts): renaming and merging sectors carries the
 // Tracker along, every change is recorded, and reverting one puts back
@@ -46,7 +46,7 @@ describe('Data clean-up: rename, merge and revert', () => {
     // Two sectors written two ways plus a third, each with a lead; the first
     // two also have register rows and sector-summary rows.
     for (const [i, sector] of [A, B, C].entries()) {
-      const { status, body } = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: `${tag} plant ${i}`, sectorName: sector } })
+      const { status, body } = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: `${tag} plant ${i}`, sectorName: sector, ...(await leadOwners(admin)) } })
       expect(status).toBe(201)
       leadIds.push(body.lead.id)
     }
@@ -154,7 +154,7 @@ describe('Data clean-up: rename, merge and revert', () => {
     // Like the live case: the app's sector is lower case, the sheet's summary
     // and register rows use the proper spelling.
     const lower = `${tag} metal`, proper = `${tag} Metal`
-    const { body } = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: `${tag} metal plant`, sectorName: lower } })
+    const { body } = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: `${tag} metal plant`, sectorName: lower, ...(await leadOwners(admin)) } })
     leadIds.push(body.lead.id)
     await dbQuery(`INSERT INTO invoice_sector_summary (id, sort_order, sector, apr, fy_target, updated_at) VALUES ($1, 99995, $2, 7, 50, now())`, [`${tag}-sum-metal`, proper])
     await dbQuery(`INSERT INTO invoice_register_items (id, sort_order, sector, updated_at) VALUES ($1, 99995, $2, now())`, [`${tag}-reg-metal`, proper])

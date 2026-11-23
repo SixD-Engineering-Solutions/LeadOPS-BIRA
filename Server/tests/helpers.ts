@@ -116,11 +116,20 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
 // up everything it created — same discipline used throughout this project's
 // manual verification, just automated now.
 
+// Every lead needs a BM (any active user) and an assignee (an active non-admin).
+export async function leadOwners(token: string): Promise<{ bmUserId: string; assignedToName: string }> {
+  const { body } = await api<{ users: { id: string; email: string; role: string; isActive: boolean }[] }>('/users', { token })
+  const bm = body.users.find(u => u.isActive)
+  const employee = body.users.find(u => u.role !== 'admin' && u.isActive)
+  if (!bm || !employee) throw new Error('Tests need at least one active employee to own leads.')
+  return { bmUserId: bm.id, assignedToName: employee.email }
+}
+
 export async function createTestLead(token: string, plantName: string): Promise<string> {
   const { status, body } = await api<{ lead: { id: string } }>('/leads', {
     method: 'POST',
     token,
-    body: { plantName, city: 'Vitest City' },
+    body: { plantName, city: 'Vitest City', ...(await leadOwners(token)) },
   })
   if (status !== 201) throw new Error(`Failed to create test lead: ${JSON.stringify(body)}`)
   return body.lead.id

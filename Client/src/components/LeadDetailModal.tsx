@@ -47,7 +47,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
       {place && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{place}</p>}
       <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
         <Meta label="Assigned to"><PersonChip name={who(lead.assignedToUser)} /></Meta>
-        <Meta label="BM/Contact"><PersonChip name={who(lead.bmUser)} empty="None" /></Meta>
+        <Meta label="BM"><PersonChip name={who(lead.bmUser)} empty="None" /></Meta>
         {lead.vertical && <Meta label="Vertical"><span className="text-xs text-gray-700 dark:text-gray-200">{lead.vertical.verticalName}</span></Meta>}
         {lead.sector && <Meta label="Sector"><span className="text-xs text-gray-700 dark:text-gray-200">{lead.sector.sectorName}</span></Meta>}
         <Meta label="Created"><time dateTime={lead.createdAt} title={formatDateTime(lead.createdAt)} className="text-xs text-gray-700 dark:text-gray-200">{formatRelative(lead.createdAt)}</time></Meta>
@@ -168,7 +168,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
             <DetailSection title="Ownership">
               <DetailRow label="Assigned to" value={who(lead.assignedToUser)} />
               <DetailRow label="Assigned by" value={who(lead.assignedByUser)} />
-              <DetailRow label="BM/Contact" value={who(lead.bmUser)} />
+              <DetailRow label="BM" value={who(lead.bmUser)} />
               <DetailRow label="Created by" value={who(lead.createdByUser)} />
               <DetailRow label="Created" value={formatDateTime(lead.createdAt)} />
               <DetailRow label="Last updated" value={`${formatRelative(lead.updatedAt)} · ${formatDateTime(lead.updatedAt)}`} />

@@ -61,7 +61,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'plantName' | 'contactEmail' | 'lostReason'>>({})
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<'plantName' | 'contactEmail' | 'lostReason' | 'bmUserId' | 'assignedToName'>>({})
   const lookups = useLookups(showCreate)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -119,6 +119,9 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   function validate() {
     const errs: typeof fieldErrors = {}
     if (!form.plantName.trim()) errs.plantName = 'Plant is required.'
+    // BM and assignee are chosen when a lead is created; afterwards they can be changed but not cleared.
+    if (!editing && !form.bmUserId) errs.bmUserId = 'Choose the BM (business manager).'
+    if (!editing && !form.assignedToName) errs.assignedToName = 'Choose who this lead is assigned to.'
     if (form.contactEmail.trim() && !EMAIL_RE.test(form.contactEmail.trim())) errs.contactEmail = 'Enter an email like name@company.com.'
     if (form.statusName === 'Lost' && form.lostReason.trim().length < 3) errs.lostReason = 'Say why it was lost (at least 3 characters).'
     // Every additional person needs a name; a half-filled row is not ignored.
@@ -306,9 +309,9 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       setLeads(prev => prev.map(l => (l.id === id ? lead : l)))
       setSelectedLead(prev => (prev && prev.id === id ? lead : prev))
       setError(null)
-      toast(lead.bmUser ? `BM set to ${person(lead.bmUser)}` : 'BM cleared', undoable ? { action: { label: 'Undo', onClick: () => setBm(id, before, false) } } : {})
+      toast(lead.bmUser ? `BM set to ${person(lead.bmUser)}` : 'BM changed', undoable ? { action: { label: 'Undo', onClick: () => setBm(id, before, false) } } : {})
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not set the branch manager.')
+      setError(e instanceof Error ? e.message : 'Could not set the BM.')
     } finally {
       setSavingId(null)
     }
@@ -416,7 +419,6 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       cell: l => (
         <MenuSelect
           variant="person"
-          allowEmpty
           label={`Assignee of ${l.plant?.plantName ?? 'lead'}`}
           value={l.assignedToUserId ?? ''}
           options={employeeOptions}
@@ -431,9 +433,8 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       cell: l => (
         <MenuSelect
           variant="person"
-          allowEmpty
-          emptyLabel="None"
-          label={`Branch manager of ${l.plant?.plantName ?? 'lead'}`}
+          emptyLabel="Choose a BM"
+          label={`BM (business manager) of ${l.plant?.plantName ?? 'lead'}`}
           value={l.bmUserId ?? ''}
           options={bmOptionsFor(l)}
           busy={savingId === l.id}
@@ -605,11 +606,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
               <Combobox value={form.serviceTypeName} onChange={v => setForm(p => ({ ...p, serviceTypeName: v }))} options={lookups.serviceTypes} placeholder="e.g. Laser scanning / BIM" noun="service type" />
             </Field>
             {!editing && <>
-            <Field label="BM/Contact (branch manager)">
-              <SearchSelect value={form.bmUserId} onChange={v => setForm(p => ({ ...p, bmUserId: v }))} options={team.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="None" allowEmpty label="Branch manager" />
+            <Field label="BM (business manager)" required error={fieldErrors.bmUserId}>
+              <SearchSelect value={form.bmUserId} onChange={v => { setForm(p => ({ ...p, bmUserId: v })); setFieldErrors(p => ({ ...p, bmUserId: undefined })) }} options={team.map(u => ({ value: u.id, label: u.userName || u.email, hint: u.email }))} emptyLabel="Choose a BM" label="BM (business manager)" />
             </Field>
-            <Field label="Assign to">
-              <SearchSelect value={form.assignedToName} onChange={v => setForm(p => ({ ...p, assignedToName: v }))} options={employees.map(u => ({ value: u.email, label: u.userName || u.email, hint: u.email }))} emptyLabel="Unassigned" allowEmpty label="Assign to" />
+            <Field label="Assign to" required error={fieldErrors.assignedToName}>
+              <SearchSelect value={form.assignedToName} onChange={v => { setForm(p => ({ ...p, assignedToName: v })); setFieldErrors(p => ({ ...p, assignedToName: undefined })) }} options={employees.map(u => ({ value: u.email, label: u.userName || u.email, hint: u.email }))} emptyLabel="Choose who to assign to" label="Assign to" />
             </Field>
             <Field label="Status">
               <SearchSelect value={form.statusName} onChange={v => setForm(p => ({ ...p, statusName: v }))} options={STATUSES.map(st => ({ value: st, label: st }))} label="Status" />

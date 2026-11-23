@@ -18,25 +18,32 @@ export function Popover({ anchor, onClose, align = 'start', minWidth = 200, labe
   children: ReactNode
 }) {
   const panel = useRef<HTMLDivElement | null>(null)
+  // Callers pass a fresh onClose every render (a search box re-renders on every
+  // keystroke). Keep the latest one in a ref so the effect below runs once per
+  // open — otherwise its cleanup would move focus back to the anchor mid-typing.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose })
+  const focusedFirst = useRef(false)
   useEscapeStack(onClose)
 
   useEffect(() => {
+    const close = () => onCloseRef.current()
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node
-      if (!panel.current?.contains(t) && !anchor.contains(t)) onClose()
+      if (!panel.current?.contains(t) && !anchor.contains(t)) close()
     }
-    const onScroll = (e: Event) => { if (!panel.current?.contains(e.target as Node)) onClose() }
+    const onScroll = (e: Event) => { if (!panel.current?.contains(e.target as Node)) close() }
     document.addEventListener('mousedown', onDown)
     window.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', onClose)
+    window.addEventListener('resize', close)
     return () => {
       document.removeEventListener('mousedown', onDown)
       window.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', onClose)
+      window.removeEventListener('resize', close)
       // Back to the button that opened it, so keyboard users don't lose their place.
       if (document.activeElement === document.body || panel.current?.contains(document.activeElement)) anchor.focus({ preventScroll: true })
     }
-  }, [anchor, onClose])
+  }, [anchor])
 
   // Placed by measuring once it's in the DOM (no state round-trip, so no flicker).
   const place = (el: HTMLDivElement | null) => {
@@ -50,8 +57,12 @@ export function Popover({ anchor, onClose, align = 'start', minWidth = 200, labe
     el.style.top = `${top}px`
     el.style.left = `${left}px`
     el.style.visibility = 'visible'
-    const first = el.querySelector<HTMLElement>('input, [role^=menuitem]:not([disabled])')
-    first?.focus({ preventScroll: true })
+    // Focus the first control only when it opens — not on every re-render, which
+    // would pull focus off whatever the person is typing into.
+    if (!focusedFirst.current) {
+      focusedFirst.current = true
+      el.querySelector<HTMLElement>('input, [role^=menuitem]:not([disabled])')?.focus({ preventScroll: true })
+    }
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {

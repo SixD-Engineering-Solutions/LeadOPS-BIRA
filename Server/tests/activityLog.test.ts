@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { adminToken, employeeToken, api, projectDetails, dbQuery } from './helpers'
+import { adminToken, employeeToken, api, projectDetails, dbQuery, leadOwners } from './helpers'
 
 // The admin Activity log (utils/auditLog.ts, routes/activityLog.ts): every
 // create / change / delete of a lead, proposal, project or invoice — and each
@@ -25,7 +25,7 @@ describe('Activity log', () => {
     const meId = (await api<{ user: { id: string } }>('/auth/me', { token: employee })).body.user.id
     const me = (await api<{ users: { id: string; userName: string | null; email: string }[] }>('/users', { token: admin })).body.users.find(u => u.id === meId)!
     employeeName = me.userName || me.email
-    const created = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: `${tag} sector`, assignedToName: me.email } })
+    const created = await api<{ lead: { id: string } }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, sectorName: `${tag} sector`, ...(await leadOwners(admin)), assignedToName: me.email } })
     expect(created.status).toBe(201)
     leadId = created.body.lead.id
   })

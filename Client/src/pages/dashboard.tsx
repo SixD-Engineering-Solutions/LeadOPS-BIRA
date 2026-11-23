@@ -22,6 +22,7 @@ import { TasksPanel } from '../components/dashboard/TasksPanel'
 import { LeadAssignmentsModal } from '../components/dashboard/LeadAssignmentsModal'
 import { useLeadStats } from '../hooks/useLeadStats'
 import { useProposalStats } from '../hooks/useProposalStats'
+import { useProjectStats } from '../hooks/useProjectStats'
 import { usePendingInvoices } from '../hooks/usePendingInvoices'
 import { useMyTasks } from '../hooks/useMyTasks'
 import { useFollowUps } from '../hooks/useFollowUps'
@@ -136,6 +137,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard, isAdmin)
   const { proposalStats, proposals, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
+  const { projectStats } = useProjectStats(onDashboard)
   const { pendingInvoices, error: pendingInvoicesError, reload: reloadPendingInvoices } = usePendingInvoices(onDashboard)
   const { myTasks, loaded: myTasksLoaded, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
   const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard)
@@ -259,6 +261,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           <StatTiles
             stats={stats}
             proposalStats={proposalStats}
+            projectStats={projectStats}
             insights={insights}
             leadStatsError={leadStatsError}
             proposalStatsError={proposalStatsError}
@@ -267,6 +270,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             onOpenAssignments={() => setShowAssignments(true)}
             onOpenProposals={() => openModule({ key: 'proposals', label: 'Proposals' })}
             onOpenPipeline={() => openModule({ key: 'tracker', label: 'Tracker' })}
+            onOpenProjects={() => openModule({ key: 'projects', label: 'Projects' })}
           />
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">

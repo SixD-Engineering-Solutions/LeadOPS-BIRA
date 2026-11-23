@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { adminToken, api, dbQuery, deleteLead } from './helpers'
+import { adminToken, api, dbQuery, deleteLead, leadOwners } from './helpers'
 
 // A lead can name more than one person contacted: the main contact plus
 // extraContacts. Each extra needs a name; the same person is linked once.
@@ -12,8 +12,8 @@ describe('Leads with several contacts', () => {
   const tag = `Vitest contacts ${Date.now()}`
   const leadIds: string[] = []
 
-  const create = (body: Record<string, unknown>) =>
-    api<{ lead: Lead; error?: string }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, ...body } })
+  const create = async (body: Record<string, unknown>) =>
+    api<{ lead: Lead; error?: string }>('/leads', { method: 'POST', token: admin, body: { plantName: tag, ...(await leadOwners(admin)), ...body } })
 
   beforeAll(async () => { admin = await adminToken() })
 

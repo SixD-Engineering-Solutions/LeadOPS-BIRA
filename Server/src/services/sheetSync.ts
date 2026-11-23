@@ -26,6 +26,7 @@ import { Prisma } from '../generated/prisma/client'
 import { parseTrackerWorkbook, SheetError, TrackerSheetData } from './trackerSheet'
 import { reapplyAppInvoiceContributions } from '../utils/invoiceTrackerSync'
 import { notifyUser } from './notify'
+import { syncLeadsFromSheet } from './sheetLeads'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -223,7 +224,11 @@ export async function runSheetSync(trigger: 'schedule' | 'manual' | 'script', op
       const data = parseTrackerWorkbook(buf)
       const changes = await applySheetData(data, { force: opts.force })
       const modified = info.modified ? ` (file last changed ${new Date(info.modified).toISOString().slice(0, 16).replace('T', ' ')} UTC)` : ''
-      const message = `${describe(changes)}${modified}`
+      // The sheet's deals become leads / proposals / projects for the people named
+      // in it. A failure here never fails the sync itself.
+      const leads = await syncLeadsFromSheet().catch(err => { console.error('[sheet leads] failed:', err instanceof Error ? err.message : err); return null })
+      const leadsNote = leads ? ` · Leads: ${leads.created} new, ${leads.updated} updated${leads.unassigned ? `, ${leads.unassigned} with no matching owner` : ''}` : ''
+      const message = `${describe(changes)}${modified}${leadsNote}`
       await prisma.sheetSyncRun.update({
         where: { id: run.id },
         data: { status: 'success', finishedAt: new Date(), message, fileHash: crypto.createHash('sha256').update(buf).digest('hex'), changes: changes as unknown as Prisma.InputJsonValue },
@@ -285,5 +290,12 @@ export function startSheetSyncJob(): void {
   }
   // First look a minute after start-up, once the app's own start-up re-syncs are done.
   setTimeout(tick, 60 * 1000)
+  // The Tracker rows may already be there (an earlier sync or import) — turn them
+  // into leads without waiting for the next sheet sync.
+  setTimeout(() => {
+    syncLeadsFromSheet()
+      .then(r => { if (r) console.log(`[sheet leads] ${r.created} new, ${r.updated} updated, ${r.unchanged} unchanged, ${r.unassigned} with no matching owner`) })
+      .catch(err => console.error('[sheet leads] failed:', err instanceof Error ? err.message : err))
+  }, 90 * 1000)
   setInterval(tick, CHECK_EVERY_MS)
 }

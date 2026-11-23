@@ -67,6 +67,8 @@ services:
       SHEET_SYNC_TENANT_ID: ${SHEET_SYNC_TENANT_ID:-}
       SHEET_SYNC_CLIENT_ID: ${SHEET_SYNC_CLIENT_ID:-}
       SHEET_SYNC_EVERY_MINUTES: ${SHEET_SYNC_EVERY_MINUTES:-60}
+      # "off" stops the sync turning the sheet's deals into leads, proposals and projects.
+      SHEET_SYNC_CREATE_LEADS: ${SHEET_SYNC_CREATE_LEADS:-on}
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
     volumes:
       - leadops-uploads:/app/uploads
