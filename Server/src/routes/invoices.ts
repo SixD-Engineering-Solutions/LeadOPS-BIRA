@@ -1,11 +1,11 @@
-import { Router, Response } from 'express'
+import { Router, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { getAccess, canAccessProject, canManageInvoices, invoiceScope, Access } from '../utils/access'
 import { broadcastInvoiceUpdate } from '../services/notify'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
-import { isAdmin, canAccessProject } from '../utils/access'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { syncInvoiceToTracker } from '../utils/invoiceTrackerSync'
@@ -21,6 +21,16 @@ class ValidationError extends Error {}
 const router = Router()
 router.use(authenticate)
 
+// Raising invoices and recording payments is the Accounts team's work (and admins').
+// BD can see the invoices on their own projects, but not change them.
+async function requireInvoiceWriter(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  if (!canManageInvoices(await getAccess(req.userId))) {
+    sendError(res, 403, 'Invoices are managed by the Accounts team.')
+    return
+  }
+  next()
+}
+
 export const INVOICE_STATUSES = ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue'] as const
 
 const invoiceInclude = {
@@ -28,10 +38,11 @@ const invoiceInclude = {
   payments: { where: { deletedAt: null }, orderBy: { paymentDate: 'desc' as const }, include: { recordedByUser: { select: { id: true, userName: true, email: true } } } },
 } as const
 
-// Same visibility rule as elsewhere: employees only see invoices on their own leads' projects, admins see all.
-async function findAccessibleInvoice(id: string, userId: string | undefined, admin: boolean) {
+// Visibility (utils/access.ts invoiceScope): admins and Accounts see every invoice,
+// BD only those on their own leads' projects — and BD read, never write.
+async function findAccessibleInvoice(id: string, userId: string | undefined, access: Access) {
   return prisma.invoice.findFirst({
-    where: { id, deletedAt: null, ...(admin ? {} : { project: { lead: { assignedToUserId: userId } } }) },
+    where: { id, deletedAt: null, ...invoiceScope(access, userId) },
     include: invoiceInclude,
   })
 }
@@ -106,13 +117,13 @@ async function recomputeStatus(db: Db, invoiceId: string): Promise<void> {
 
 // GET /invoices?projectId=xxx
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
   const projectId = req.query.projectId ? String(req.query.projectId) : undefined
   const invoices = await prisma.invoice.findMany({
     where: {
       deletedAt: null,
       ...(projectId ? { projectId } : {}),
-      ...(admin ? {} : { project: { lead: { assignedToUserId: req.userId } } }),
+      ...invoiceScope(access, req.userId),
     },
     include: invoiceInclude,
     orderBy: { createdAt: 'desc' },
@@ -121,8 +132,8 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 })
 
 router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
-  const invoice = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
+  const access = await getAccess(req.userId)
+  const invoice = await findAccessibleInvoice(String(req.params.id), req.userId, access)
   if (!invoice) {
     sendError(res, 404, 'Invoice not found.')
     return
@@ -138,15 +149,15 @@ const createSchema = z.object({
   dueDate: z.coerce.date().optional(),
 })
 
-router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', requireInvoiceWriter, async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid invoice data.')
     return
   }
   const d = parse.data
-  const admin = await isAdmin(req.userId)
-  const project = await canAccessProject(d.projectId, req.userId, admin)
+  const access = await getAccess(req.userId)
+  const project = await canAccessProject(d.projectId, req.userId, access)
   if (!project) {
     sendError(res, 404, 'Project not found.')
     return
@@ -195,14 +206,14 @@ const updateSchema = z.object({
   status: z.enum(INVOICE_STATUSES).optional(),
 })
 
-router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+router.patch('/:id', requireInvoiceWriter, async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = updateSchema.safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, 'Invalid update data.')
     return
   }
-  const admin = await isAdmin(req.userId)
-  const existing = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
+  const access = await getAccess(req.userId)
+  const existing = await findAccessibleInvoice(String(req.params.id), req.userId, access)
   if (!existing) {
     sendError(res, 404, 'Invoice not found.')
     return
@@ -251,14 +262,14 @@ const paymentSchema = z.object({
   notes: z.string().optional(),
 })
 
-router.post('/:id/payments', async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/payments', requireInvoiceWriter, async (req: AuthRequest, res: Response): Promise<void> => {
   const parse = paymentSchema.safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid payment data.')
     return
   }
-  const admin = await isAdmin(req.userId)
-  const existing = await findAccessibleInvoice(String(req.params.id), req.userId, admin)
+  const access = await getAccess(req.userId)
+  const existing = await findAccessibleInvoice(String(req.params.id), req.userId, access)
   if (!existing) {
     sendError(res, 404, 'Invoice not found.')
     return

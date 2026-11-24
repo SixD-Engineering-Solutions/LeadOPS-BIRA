@@ -5,7 +5,7 @@ import multer from 'multer'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../prisma'
 import { authenticate, AuthRequest } from '../middleware/authenticate'
-import { isAdmin, canAccessLead } from '../utils/access'
+import { getAccess, canAccessLead, invoiceScope, Access } from '../utils/access'
 import { sendError } from '../utils/errors'
 
 const router = Router()
@@ -82,10 +82,10 @@ const documentSelect = {
   uploadedByUser: { select: { id: true, userName: true, email: true } },
 } as const
 
-// An invoice the caller may see: admins any, employees only on their own leads' projects.
-async function findInvoiceFor(id: string, userId: string | undefined, admin: boolean) {
+// An invoice the caller may see (utils/access.ts invoiceScope): admins and Accounts any, BD only on their own leads' projects.
+async function findInvoiceFor(id: string, userId: string | undefined, access: Access) {
   return prisma.invoice.findFirst({
-    where: { id, deletedAt: null, ...(admin ? {} : { project: { lead: { assignedToUserId: userId } } }) },
+    where: { id, deletedAt: null, ...invoiceScope(access, userId) },
     select: { id: true, project: { select: { leadId: true } } },
   })
 }
@@ -102,7 +102,8 @@ async function findProposalFor(id: string, userId: string | undefined, admin: bo
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const invoiceId = req.query.invoiceId ? String(req.query.invoiceId) : undefined
   const proposalId = req.query.proposalId ? String(req.query.proposalId) : undefined
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
+  const admin = access.admin
   let leadId = req.query.leadId ? String(req.query.leadId) : undefined
   if (proposalId) {
     // A proposal's documents: same visibility as the proposal itself.
@@ -114,7 +115,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     leadId = proposal.leadId
   } else if (invoiceId) {
     // An invoice's documents: same visibility as the invoice itself.
-    const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
+    const invoice = await findInvoiceFor(invoiceId, req.userId, access)
     if (!invoice) {
       sendError(res, 404, 'Invoice not found.')
       return
@@ -125,7 +126,8 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, 'leadId, invoiceId or proposalId is required.')
     return
   }
-  const lead = await canAccessLead(leadId, req.userId, admin)
+  // An invoice's files are open to whoever can see the invoice (Accounts have no lead access).
+  const lead = invoiceId && access.accounts ? { id: leadId } : await canAccessLead(leadId, req.userId, admin)
   if (!lead) {
     sendError(res, 404, 'Lead not found.')
     return
@@ -158,7 +160,8 @@ router.post('/', (req: AuthRequest, res: Response) => {
       sendError(res, 400, 'A file is required.')
       return
     }
-    const admin = await isAdmin(req.userId)
+    const access = await getAccess(req.userId)
+    const admin = access.admin
     if (proposalId) {
       const proposal = await findProposalFor(proposalId, req.userId, admin)
       if (!proposal) {
@@ -168,7 +171,7 @@ router.post('/', (req: AuthRequest, res: Response) => {
       }
       leadId = proposal.leadId
     } else if (invoiceId) {
-      const invoice = await findInvoiceFor(invoiceId, req.userId, admin)
+      const invoice = await findInvoiceFor(invoiceId, req.userId, access)
       if (!invoice) {
         fs.unlink(req.file.path, () => {})
         sendError(res, 404, 'Invoice not found.')
@@ -176,7 +179,7 @@ router.post('/', (req: AuthRequest, res: Response) => {
       }
       leadId = invoice.project.leadId
     }
-    const lead = await canAccessLead(leadId, req.userId, admin)
+    const lead = invoiceId && !proposalId && access.accounts ? { id: leadId } : await canAccessLead(leadId, req.userId, admin)
     if (!lead) {
       fs.unlink(req.file.path, () => {})
       sendError(res, 404, 'Lead not found.')
@@ -205,9 +208,14 @@ router.post('/', (req: AuthRequest, res: Response) => {
 
 // GET /documents/:id/download — streams the PDF back with its original filename.
 router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
   const document = await prisma.document.findFirst({
-    where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
+    where: {
+      id: String(req.params.id),
+      deletedAt: null,
+      // Accounts can open the files attached to invoices, nothing else.
+      ...(access.admin ? {} : access.accounts ? { invoiceId: { not: null } } : { lead: { assignedToUserId: req.userId } }),
+    },
   })
   if (!document) {
     sendError(res, 404, 'Document not found.')
@@ -224,7 +232,8 @@ router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<voi
 // can remove any document; an employee only one they uploaded themselves,
 // and only while the lead is still assigned to them.
 router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
+  const admin = access.admin
   const existing = await prisma.document.findFirst({ where: { id: String(req.params.id), deletedAt: null } })
   if (!existing) {
     sendError(res, 404, 'Document not found.')
@@ -234,7 +243,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => 
     sendError(res, 403, 'Only an admin or the person who uploaded this document can remove it.')
     return
   }
-  if (!admin && !(await canAccessLead(existing.leadId, req.userId, false))) {
+  if (!admin && !(access.accounts && existing.invoiceId) && !(await canAccessLead(existing.leadId, req.userId, false))) {
     sendError(res, 404, 'Document not found.')
     return
   }

@@ -5,7 +5,9 @@ import { Prisma } from '../generated/prisma/client'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { broadcastProjectUpdate } from '../services/notify'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
-import { isAdmin, canAccessLead } from '../utils/access'
+import { getAccess, canAccessLead, projectScope } from '../utils/access'
+import { isAssignableRole } from '../utils/roles'
+import { handOffToAccounts, withdrawHandoff } from '../services/billingHandoff'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 import { logActivity, projectSnapshot, projectLabel } from '../utils/auditLog'
@@ -23,7 +25,9 @@ const projectInclude = {
   proposal: { select: { id: true, proposalNumber: true, value: true } },
 } as const
 
-// Same visibility rule as leads.ts: employees only see projects on their own leads, admins see all.
+// Visibility (utils/access.ts projectScope): BD see projects on their own leads,
+// Accounts the ones handed over for invoicing, admins all. Accounts can only
+// move a project's billing stage; everything else is BD / admin.
 
 // Pass a transaction client when creating a project in the same transaction,
 // so reserving the number and creating the row succeed or fail together.
@@ -33,13 +37,13 @@ export function nextWorkOrderNo(client: typeof prisma | Prisma.TransactionClient
 
 // GET /projects
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
   const leadId = req.query.leadId ? String(req.query.leadId) : undefined
   const projects = await prisma.project.findMany({
     where: {
       deletedAt: null,
       ...(leadId ? { leadId } : {}),
-      ...(admin ? {} : { lead: { assignedToUserId: req.userId } }),
+      ...projectScope(access, req.userId),
     },
     include: projectInclude,
     orderBy: { createdAt: 'desc' },
@@ -48,9 +52,9 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 })
 
 router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
   const project = await prisma.project.findFirst({
-    where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
+    where: { id: String(req.params.id), deletedAt: null, ...projectScope(access, req.userId) },
     include: projectInclude,
   })
   if (!project) {
@@ -75,24 +79,28 @@ const createSchema = z.object({
   billingStage: z.enum(BILLING_STAGES).optional(),
 }).refine(d => d.completionDate >= d.startDate, { message: 'Completion date can’t be before the start date.' })
 
-/** Checks a would-be project engineer: must be an active, non-admin user.
+/** Checks a would-be project engineer: must be an active BD team member.
  *  Returns an error message, or null when fine. */
 export async function checkEngineer(userId: string): Promise<string | null> {
   const engineer = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true } })
   if (!engineer || !engineer.isActive) return 'Responsible engineer not found.'
-  if (engineer.role === 'admin') return 'Projects cannot be assigned to an admin user.'
+  if (!isAssignableRole(engineer.role)) return 'Projects can only be assigned to BD team members.'
   return null
 }
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
+  const access = await getAccess(req.userId)
+  if (access.accounts) {
+    sendError(res, 403, 'Accounts can’t create projects — they pick up completed ones for invoicing.')
+    return
+  }
   const parse = createSchema.safeParse(req.body)
   if (!parse.success) {
     sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid project data.')
     return
   }
   const d = parse.data
-  const admin = await isAdmin(req.userId)
-  const lead = await canAccessLead(d.leadId, req.userId, admin)
+  const lead = await canAccessLead(d.leadId, req.userId, access.admin)
   if (!lead) {
     sendError(res, 404, 'Lead not found.')
     return
@@ -136,6 +144,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     // Refreshes the lead's Pipeline row with the new project's status.
     // After the transaction, not inside it.
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, d.leadId))
+    if (project.status === 'Completed') await handOffToAccounts(project)
     broadcastProjectUpdate(project.id)
     await logActivity({ userId: req.userId, entity: 'project', entityId: project.id, label: projectLabel(project), leadId: project.leadId, action: 'created', after: projectSnapshot(project) })
     res.status(201).json({ project })
@@ -170,9 +179,9 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, parse.error.issues[0]?.message ?? 'Invalid update data.')
     return
   }
-  const admin = await isAdmin(req.userId)
+  const access = await getAccess(req.userId)
   const existing = await prisma.project.findFirst({
-    where: { id: String(req.params.id), deletedAt: null, ...(admin ? {} : { lead: { assignedToUserId: req.userId } }) },
+    where: { id: String(req.params.id), deletedAt: null, ...projectScope(access, req.userId) },
     include: projectInclude,
   })
   if (!existing) {
@@ -181,6 +190,16 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 
   const d = parse.data
+  // The billing stage is Accounts' (and admins'); the rest of the project is BD's (and admins').
+  const onlyBilling = Object.keys(d).every(k => k === 'billingStage')
+  if (access.accounts && !onlyBilling) {
+    sendError(res, 403, 'Accounts can only update a project’s billing stage.')
+    return
+  }
+  if (access.bd && d.billingStage !== undefined) {
+    sendError(res, 403, 'The billing stage is updated by the Accounts team.')
+    return
+  }
   if (d.responsibleUserId) {
     const engineerError = await checkEngineer(d.responsibleUserId)
     if (engineerError) {
@@ -216,7 +235,13 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if (d.billingStage) data.billingStage = d.billingStage
 
   try {
-    const project = await prisma.project.update({ where: { id: existing.id }, data, include: projectInclude })
+    let project = await prisma.project.update({ where: { id: existing.id }, data, include: projectInclude })
+    // Completing hands invoicing to Accounts; reopening before any invoice takes it back.
+    const completed = d.status === 'Completed' && existing.status !== 'Completed'
+    const reopened = !!d.status && d.status !== 'Completed' && existing.status === 'Completed'
+    if (completed) await handOffToAccounts(project)
+    else if (reopened) await withdrawHandoff(project.id)
+    if (completed || reopened) project = (await prisma.project.findUnique({ where: { id: project.id }, include: projectInclude })) ?? project
     await syncTrackerBestEffort(() => syncLeadToPipeline(prisma, existing.leadId))
     broadcastProjectUpdate(project.id)
     await logActivity({ userId: req.userId, entity: 'project', entityId: project.id, label: projectLabel(project), leadId: project.leadId, action: 'updated', before: projectSnapshot(existing), after: projectSnapshot(project) })

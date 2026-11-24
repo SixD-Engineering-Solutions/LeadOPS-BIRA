@@ -68,7 +68,7 @@ export async function employeeToken(): Promise<string> {
   try {
     const email = process.env.TEST_EMPLOYEE_EMAIL
     const { rows } = await db.query<{ id: string }>(
-      `SELECT id FROM users WHERE role <> 'admin' AND is_active ${email ? 'AND email = $1' : ''} ORDER BY created_at LIMIT 1`,
+      `SELECT id FROM users WHERE role = 'bd' AND is_active ${email ? 'AND email = $1' : ''} ORDER BY created_at LIMIT 1`,
       email ? [email] : [],
     )
     if (!rows[0]) throw new Error(`No active employee found${email ? ` with email ${email}` : ''} to run the tests as.`)
@@ -116,11 +116,11 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
 // up everything it created — same discipline used throughout this project's
 // manual verification, just automated now.
 
-// Every lead needs a BM (any active user) and an assignee (an active non-admin).
+// Every lead needs a BM (any active user) and an assignee (an active BD team member).
 export async function leadOwners(token: string): Promise<{ bmUserId: string; assignedToName: string }> {
   const { body } = await api<{ users: { id: string; email: string; role: string; isActive: boolean }[] }>('/users', { token })
   const bm = body.users.find(u => u.isActive)
-  const employee = body.users.find(u => u.role !== 'admin' && u.isActive)
+  const employee = body.users.find(u => u.role === 'bd' && u.isActive)
   if (!bm || !employee) throw new Error('Tests need at least one active employee to own leads.')
   return { bmUserId: bm.id, assignedToName: employee.email }
 }
@@ -135,11 +135,11 @@ export async function createTestLead(token: string, plantName: string): Promise<
   return body.lead.id
 }
 
-// Every project needs a responsible engineer (an active non-admin user) and
+// Every project needs a responsible engineer (an active BD team member) and
 // start/completion dates — whichever employee exists is fine for tests.
 export async function projectDetails(token: string): Promise<{ responsibleUserId: string; startDate: string; completionDate: string }> {
   const { body } = await api<{ users: { id: string; role: string; isActive: boolean }[] }>('/users', { token })
-  const engineer = body.users.find(u => u.role !== 'admin' && u.isActive)
+  const engineer = body.users.find(u => u.role === 'bd' && u.isActive)
   if (!engineer) throw new Error('Tests need at least one active employee to assign projects to.')
   return { responsibleUserId: engineer.id, startDate: '2026-10-01', completionDate: '2026-10-31' }
 }
@@ -172,4 +172,33 @@ export const voidPayment = (token: string, invoiceId: string, paymentId: string)
 export async function deleteInvoiceAndPayments(token: string, invoice: { id: string; payments: { id: string }[] }) {
   for (const payment of invoice.payments) await voidPayment(token, invoice.id, payment.id)
   await deleteInvoice(token, invoice.id)
+}
+
+// A signed token for a given user (by email) — e.g. the BD member a test lead was assigned to.
+export async function tokenForEmail(email: string): Promise<string> {
+  const { config } = await import('dotenv')
+  config()
+  const jwt = await import('jsonwebtoken')
+  const rows = await dbRows<{ id: string }>('SELECT id FROM users WHERE email = $1 AND is_active', [email])
+  if (!rows[0]) throw new Error(`No active user ${email}`)
+  return jwt.default.sign({ sub: rows[0].id }, process.env.JWT_SECRET!, { expiresIn: '30m' })
+}
+
+// The Accounts user the tests act as (the test database may have none): one fixed
+// account, reactivated for each run so repeated runs don't pile up users.
+// Call removeAccountsUser afterwards (it deactivates it again).
+export async function createAccountsUser(): Promise<{ id: string; email: string; token: string }> {
+  const { config } = await import('dotenv')
+  config()
+  const jwt = await import('jsonwebtoken')
+  const email = 'vitest-accounts@example.test'
+  const rows = await dbRows<{ id: string }>(
+    "INSERT INTO users (id, email, user_name, role, is_active, updated_at) VALUES ('vt' || md5(random()::text), $1, 'Vitest Accounts', 'accounts', true, now()) ON CONFLICT (email) DO UPDATE SET is_active = true, role = 'accounts' RETURNING id",
+    [email],
+  )
+  return { id: rows[0].id, email, token: jwt.default.sign({ sub: rows[0].id }, process.env.JWT_SECRET!, { expiresIn: '30m' }) }
+}
+export async function removeAccountsUser(id: string): Promise<void> {
+  await dbQuery('DELETE FROM notifications WHERE user_id = $1', [id])
+  await dbQuery('UPDATE users SET is_active = false WHERE id = $1', [id])
 }

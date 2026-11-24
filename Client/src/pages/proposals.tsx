@@ -1,3 +1,4 @@
+import { isAssignableRole } from '../lib/roles'
 import { useEffect, useRef, useState } from 'react'
 import { api, uploadDocument, PROPOSAL_SYNC_EVENT, PROPOSAL_STATUSES } from '../lib/api'
 import { ProposalDocuments } from '../components/InvoiceDocuments'
@@ -446,7 +447,7 @@ function MarkWonModal({ proposal, onClose, onWon }: { proposal: Proposal; onClos
 
   useEffect(() => {
     api<{ users: EmployeeUser[] }>('/users', { auth: true })
-      .then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin' && u.isActive)))
+      .then(({ users }) => setEmployees(users.filter(u => isAssignableRole(u.role) && u.isActive)))
       .catch(() => {})
   }, [])
 

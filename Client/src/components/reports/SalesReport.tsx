@@ -1,3 +1,4 @@
+import { isAssignableRole } from '../../lib/roles'
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import type { Lead, Proposal, EmployeeUser } from '../../lib/api'
@@ -169,7 +170,7 @@ export function SalesReport({ months, weeks }: { months: number; weeks: number }
       .then(([{ leads }, { proposals }, { users }]) => {
         setLeads(leads)
         setProposals(proposals)
-        setEmployees(users.filter(u => u.role !== 'admin'))
+        setEmployees(users.filter(u => isAssignableRole(u.role)))
         setError(null)
       })
       .catch(e => {

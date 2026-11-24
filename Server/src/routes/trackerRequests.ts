@@ -1,3 +1,4 @@
+import { ROLES } from '../utils/roles'
 import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
@@ -101,7 +102,7 @@ router.post('/requests', async (req: AuthRequest, res: Response): Promise<void> 
 
   const [me, admin] = await Promise.all([currentUser(req.userId), currentUser(adminId)])
   if (!me) { sendError(res, 401, 'Not authenticated.'); return }
-  if (!admin || !admin.isActive || admin.role !== 'admin') {
+  if (!admin || !admin.isActive || admin.role !== ROLES.admin) {
     sendError(res, 400, 'Pick an active admin to send this request to.')
     return
   }
@@ -140,7 +141,7 @@ router.post('/requests', async (req: AuthRequest, res: Response): Promise<void> 
 // Requests an admin can decide: those sent to them, plus any whose chosen
 // admin has since been removed or made an employee — so none get stranded.
 async function decidableBy(adminId: string): Promise<Prisma.TrackerChangeRequestWhereInput> {
-  return { status: REQUEST_STATUS.pending, OR: [{ adminId }, { admin: { OR: [{ isActive: false }, { role: { not: 'admin' } }] } }] }
+  return { status: REQUEST_STATUS.pending, OR: [{ adminId }, { admin: { OR: [{ isActive: false }, { role: { not: ROLES.admin } }] } }] }
 }
 
 // GET /tracker/requests/incoming — admin: pending requests to decide, each

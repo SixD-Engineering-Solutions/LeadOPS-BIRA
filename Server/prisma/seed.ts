@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { prisma } from '../src/prisma'
 import bcrypt from 'bcryptjs'
+import { DEFAULT_ROLE } from '../src/utils/roles'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ async function ensureUser(email: string, opts: { userName: string; role?: string
     data: {
       email,
       userName: opts.userName,
-      role: opts.role ?? 'employee',
+      role: opts.role ?? DEFAULT_ROLE,
       department: opts.department,
       phoneNumber: opts.phone,
       passwordHash: opts.password ? await bcrypt.hash(opts.password, 12) : null,

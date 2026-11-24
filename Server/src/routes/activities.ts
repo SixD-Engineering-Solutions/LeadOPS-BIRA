@@ -1,14 +1,15 @@
 import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
-import { authenticate, AuthRequest } from '../middleware/authenticate'
+import { authenticate, denyRoles, AuthRequest } from '../middleware/authenticate'
+import { ROLES } from '../utils/roles'
 import { broadcastActivityUpdate } from '../services/notify'
 import { isAdmin, canAccessLead } from '../utils/access'
 import { sendError } from '../utils/errors'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
 
 const router = Router()
-router.use(authenticate)
+router.use(authenticate, denyRoles(ROLES.accounts))
 
 const ACTIVITY_TYPES = ['Call', 'Visit', 'Meeting', 'Mail', 'Proposal'] as const
 

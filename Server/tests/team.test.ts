@@ -32,9 +32,9 @@ describe('Team actions', () => {
   })
 
   it('adds an employee', async () => {
-    const res = await api<{ user: User }>('/users', { method: 'POST', token: admin, body: { email: `${tag}@leadops.local`, userName: `${tag} Tester`, role: 'employee', department: 'QA' } })
+    const res = await api<{ user: User }>('/users', { method: 'POST', token: admin, body: { email: `${tag}@leadops.local`, userName: `${tag} Tester`, role: 'bd', department: 'QA' } })
     expect(res.status).toBe(201)
-    expect(res.body.user).toMatchObject({ email: `${tag}@leadops.local`, role: 'employee', isActive: true })
+    expect(res.body.user).toMatchObject({ email: `${tag}@leadops.local`, role: 'bd', isActive: true })
     user = res.body.user
   })
 
@@ -54,7 +54,7 @@ describe('Team actions', () => {
     expect(res.body.user.email).toBe(`${tag}.new@leadops.local`)
   })
 
-  it('making them admin unassigns their leads; making them employee again works', async () => {
+  it('making them admin unassigns their leads; making them BD again works', async () => {
     leadId = await createTestLead(admin, `${tag} plant`)
     expect((await api(`/leads/${leadId}`, { method: 'PATCH', token: admin, body: { assignedToUserId: user.id } })).status).toBe(200)
 
@@ -66,13 +66,13 @@ describe('Team actions', () => {
     expect(lead.body.lead.assignedToUserId).toBeNull()
 
     expect((await api(`/users/${user.id}/role`, { method: 'PATCH', token: admin, body: { role: 'admin' } })).status).toBe(409) // already
-    const demoted = await api<{ user: User }>(`/users/${user.id}/role`, { method: 'PATCH', token: admin, body: { role: 'employee' } })
+    const demoted = await api<{ user: User }>(`/users/${user.id}/role`, { method: 'PATCH', token: admin, body: { role: 'bd' } })
     expect(demoted.status).toBe(200)
-    expect(demoted.body.user.role).toBe('employee')
+    expect(demoted.body.user.role).toBe('bd')
   })
 
   it('an admin can’t change their own role or remove themselves', async () => {
-    expect((await api(`/users/${adminId}/role`, { method: 'PATCH', token: admin, body: { role: 'employee' } })).status).toBe(400)
+    expect((await api(`/users/${adminId}/role`, { method: 'PATCH', token: admin, body: { role: 'bd' } })).status).toBe(400)
     expect((await api(`/users/${adminId}`, { method: 'DELETE', token: admin })).status).toBe(400)
   })
 

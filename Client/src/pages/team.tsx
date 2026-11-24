@@ -26,6 +26,8 @@ import type { FieldErrors } from '../lib/formStyles'
 import { PAGE_CLASS } from '../lib/pageChrome'
 import { btn } from '../lib/ui'
 import { toast } from '../lib/toast'
+import { ROLES, ROLE_INFO, ROLE_LIST, DEFAULT_ROLE, isAssignableRole } from '../lib/roles'
+import type { Role } from '../lib/roles'
 
 /** Turn an email into a display name: "jane.doe@x.com" -> "Jane Doe". */
 function displayName(email: string): string {
@@ -36,14 +38,20 @@ function displayName(email: string): string {
 const nameOf = (u: EmployeeUser) => u.userName || displayName(u.email)
 const statusStyle = (name: string | null | undefined) => LEAD_STATUS_STYLES[name ?? ''] ?? DEFAULT_STATUS_STYLE
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const emptyEmpForm = { email: '', userName: '', role: 'employee' as 'employee' | 'admin', department: '', phoneNumber: '' }
+const emptyEmpForm = { email: '', userName: '', role: DEFAULT_ROLE as Role, department: '', phoneNumber: '' }
+
+const TONES: Record<Role, { pill: string; dot: string }> = {
+  admin: { pill: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300', dot: 'bg-orange-500' },
+  bd: { pill: 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300', dot: 'bg-sky-500' },
+  accounts: { pill: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300', dot: 'bg-emerald-500' },
+}
 
 function RolePill({ role }: { role: string }) {
-  const isAdmin = role === 'admin'
+  const tone = TONES[role as Role] ?? TONES[ROLES.bd]
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${isAdmin ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300'}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${isAdmin ? 'bg-orange-500' : 'bg-sky-500'}`} />
-      {role}
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+      {ROLE_INFO[role as Role]?.label ?? role}
     </span>
   )
 }
@@ -163,28 +171,31 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
     }
   }
 
-  // Two roles: admin (full access) and employee (their own assigned work).
-  // The server enforces it on every request; this just asks for it. Promoting
-  // unassigns the person's leads (admins are never assignees) — the prompt
-  // says so first; the server refuses if they still hold open tasks/projects.
-  async function changeRole(u: EmployeeUser, role: 'admin' | 'employee') {
+  // Three roles (lib/roles.ts): admin (full access), BD (their own assigned
+  // work) and Accounts (invoicing). The server enforces it on every request;
+  // this just asks for it. Moving someone to admin or Accounts unassigns their
+  // leads (only BD are assignees) — the prompt says so first; the server
+  // refuses if they still hold open tasks/projects.
+  async function changeRole(u: EmployeeUser, role: Role) {
     const name = nameOf(u)
     const assignedCount = assignedTo(u).length
-    const ok = await confirm(role === 'admin' ? {
-      title: `Make ${name} an admin?`,
+    const info = ROLE_INFO[role]
+    const unassigns = !isAssignableRole(role) && assignedCount > 0
+    const ok = await confirm({
+      title: `Make ${name} ${info.article}?`,
       message: (
         <>
-          <p>They’ll get full admin access: every lead, Reports, Team, deleting records and managing roles.</p>
-          {assignedCount > 0 && (
-            <p className="mt-2">Their {assignedCount} assigned lead{assignedCount === 1 ? '' : 's'} will become Unassigned — admins aren’t assigned leads — so you can hand {assignedCount === 1 ? 'it' : 'them'} to someone else.</p>
+          <p>{role === ROLES.admin
+            ? 'They’ll get full admin access: every lead, Reports, Team, deleting records and managing roles.'
+            : role === ROLES.accounts
+              ? 'They’ll work on invoicing and payments for completed projects, and lose access to leads and proposals.'
+              : 'They’ll lose any admin or accounts access and work on the leads assigned to them.'}</p>
+          {unassigns && (
+            <p className="mt-2">Their {assignedCount} assigned lead{assignedCount === 1 ? '' : 's'} will become Unassigned — only BD team members are assigned leads — so you can hand {assignedCount === 1 ? 'it' : 'them'} to someone else.</p>
           )}
         </>
       ),
-      confirmLabel: 'Make admin',
-    } : {
-      title: `Make ${name} an employee?`,
-      message: 'They’ll lose admin access and only see the leads assigned to them.',
-      confirmLabel: 'Make employee',
+      confirmLabel: `Make ${info.label}`,
     })
     if (!ok) return
     setBusyId(u.id)
@@ -197,7 +208,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
         setLeads(leads)
       }
       setError(null)
-      toast(`${name} is now ${role === 'admin' ? 'an admin' : 'an employee'}${res.unassignedLeads > 0 ? ` · ${res.unassignedLeads} lead${res.unassignedLeads === 1 ? '' : 's'} unassigned` : ''}`)
+      toast(`${name} is now ${info.article}${res.unassignedLeads > 0 ? ` · ${res.unassignedLeads} lead${res.unassignedLeads === 1 ? '' : 's'} unassigned` : ''}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not change the role.')
     } finally {
@@ -232,7 +243,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
       { id: 'all', label: 'All' },
     ],
     filters: [
-      { id: 'role', label: 'Role', value: u => (u.role === 'admin' ? 'Admin' : 'Employee'), order: ['Admin', 'Employee'] },
+      { id: 'role', label: 'Role', value: u => ROLE_INFO[u.role as Role]?.label ?? u.role, order: ROLE_LIST.map(r => ROLE_INFO[r].label) },
       { id: 'department', label: 'Department', value: u => u.department },
     ],
     sorts: {
@@ -275,8 +286,8 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
 
   const actionsFor = (u: EmployeeUser): (RowAction | false)[] => u.isActive ? [
     { label: 'Change email…', onSelect: () => setEmailFor(u) },
-    u.id !== currentUserId && { label: u.role === 'admin' ? 'Make employee' : 'Make admin', disabled: busyId === u.id, onSelect: () => changeRole(u, u.role === 'admin' ? 'employee' : 'admin') },
-    u.role !== 'admin' && { label: 'Remove…', danger: true, disabled: busyId === u.id, onSelect: () => removeEmployee(u) },
+    ...(u.id !== currentUserId ? ROLE_LIST.filter(r => r !== u.role).map(r => ({ label: `Make ${ROLE_INFO[r].label}`, disabled: busyId === u.id, onSelect: () => changeRole(u, r) })) : []),
+    u.role !== ROLES.admin && { label: 'Remove…', danger: true, disabled: busyId === u.id, onSelect: () => removeEmployee(u) },
   ] : [
     { label: 'Reactivate', disabled: busyId === u.id, onSelect: () => reactivateEmployee(u) },
   ]
@@ -361,7 +372,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
           </h3>
           {assignedTo(open).length === 0 ? (
             <p className="rounded-xl bg-gray-50 px-3 py-3 text-sm text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
-              {open.role === 'admin' ? 'Admins aren’t assigned leads.' : 'No leads assigned yet.'}
+              {!isAssignableRole(open.role) ? `${ROLE_INFO[open.role as Role]?.label ?? 'This role'} team members aren’t assigned leads.` : 'No leads assigned yet.'}
             </p>
           ) : (
             <ul className="divide-y divide-gray-100 rounded-xl border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
@@ -416,7 +427,7 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
               <input value={empForm.userName} onChange={e => setEmpForm({ ...empForm, userName: e.target.value })} placeholder="Full name" className={inputCls()} />
             </Field>
             <Field label="Role">
-              <SearchSelect value={empForm.role} onChange={v => setEmpForm({ ...empForm, role: v as 'employee' | 'admin' })} options={[{ value: 'employee', label: 'Employee', hint: 'Sees their own assigned work' }, { value: 'admin', label: 'Admin', hint: 'Full access' }]} label="Role" />
+              <SearchSelect value={empForm.role} onChange={v => setEmpForm({ ...empForm, role: v as Role })} options={ROLE_LIST.map(r => ({ value: r, label: ROLE_INFO[r].label, hint: ROLE_INFO[r].hint }))} label="Role" />
             </Field>
             <Field label="Department">
               <input value={empForm.department} onChange={e => setEmpForm({ ...empForm, department: e.target.value })} placeholder="e.g. Sales" className={inputCls()} />

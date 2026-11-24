@@ -4,6 +4,7 @@ import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { notifyUser, broadcastTaskUpdate } from '../services/notify'
 import { isAdmin } from '../utils/access'
+import { isAssignableRole } from '../utils/roles'
 import { sendError } from '../utils/errors'
 import { logActivity, taskSnapshot, taskLabel } from '../utils/auditLog'
 
@@ -70,8 +71,8 @@ router.post('/', requireAdmin, async (req: AuthRequest, res: Response): Promise<
     sendError(res, 400, 'Assignee not found.')
     return
   }
-  if (assignee.role === 'admin') {
-    sendError(res, 400, 'Tasks cannot be assigned to an admin user.')
+  if (!isAssignableRole(assignee.role)) {
+    sendError(res, 400, 'Tasks can only be assigned to BD team members.')
     return
   }
 
@@ -136,8 +137,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         sendError(res, 400, 'Assignee not found.')
         return
       }
-      if (assignee.role === 'admin') {
-        sendError(res, 400, 'Tasks cannot be assigned to an admin user.')
+      if (!isAssignableRole(assignee.role)) {
+        sendError(res, 400, 'Tasks can only be assigned to BD team members.')
         return
       }
       data.assignedToUserId = assignee.id

@@ -1,3 +1,5 @@
+import { ROLES, isAssignableRole } from '../lib/roles'
+import type { Role } from '../lib/roles'
 import { useEffect, useState } from 'react'
 import { api, PROJECT_SYNC_EVENT, INVOICE_SYNC_EVENT, PROJECT_STATUSES, BILLING_STAGES } from '../lib/api'
 import type { Project, ProjectStatus, BillingStage, Lead, Location, EmployeeUser, Invoice } from '../lib/api'
@@ -39,7 +41,12 @@ const person = (u?: { userName: string | null; email: string } | null) => (u ? u
 
 const emptyForm = { leadId: '', projectName: '', locationId: '', startDate: '', completionDate: '', responsibleUserId: '' }
 
-export default function Projects() {
+// BD (and admins) run the project; once it is completed the Accounts team
+// pick up the billing stage — and only that, they can't change the work itself.
+export default function Projects({ role }: { role: Role }) {
+  const isAccounts = role === ROLES.accounts
+  const canEditWork = !isAccounts
+  const canEditBilling = role === ROLES.admin || isAccounts
   const [projects, setProjects] = useState<Project[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
   const [locations, setLocations] = useState<Location[]>([])
@@ -64,10 +71,10 @@ export default function Projects() {
   const reload = () => { setLoading(true); load() }
   useEffect(() => { load() }, [])
   useEffect(() => {
-    api<{ leads: Lead[] }>('/leads', { auth: true }).then(({ leads }) => setLeads(leads)).catch(() => {})
+    if (!isAccounts) api<{ leads: Lead[] }>('/leads', { auth: true }).then(({ leads }) => setLeads(leads)).catch(() => {})
     api<{ locations: Location[] }>('/locations', { auth: true }).then(({ locations }) => setLocations(locations)).catch(() => {})
-    api<{ users: EmployeeUser[] }>('/users', { auth: true }).then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin'))).catch(() => {})
-  }, [])
+    api<{ users: EmployeeUser[] }>('/users', { auth: true }).then(({ users }) => setEmployees(users.filter(u => isAssignableRole(u.role)))).catch(() => {})
+  }, [isAccounts])
 
   // Live updates — a project created/updated by anyone (including the
   // auto-create when a proposal is marked Won) resyncs this list.
@@ -223,8 +230,8 @@ export default function Projects() {
       id: 'engineer', header: 'Engineer',
       // Mandatory: can be changed, not cleared.
       cell: p => p.responsibleUserId ? (
-        <MenuSelect variant="person" label={`Engineer for ${p.workOrderNo}`} value={p.responsibleUserId} options={employeeOptions(p)} busy={savingId === p.id} onChange={v => v && patchProject(p.id, { responsibleUserId: v })} />
-      ) : (
+        <MenuSelect variant="person" label={`Engineer for ${p.workOrderNo}`} value={p.responsibleUserId} options={employeeOptions(p)} busy={savingId === p.id} disabled={!canEditWork} onChange={v => v && patchProject(p.id, { responsibleUserId: v })} />
+      ) : !canEditWork ? <span className="text-xs text-gray-400">Not assigned</span> : (
         <button type="button" onClick={e => { e.stopPropagation(); setEditing(p) }} className="rounded-full border border-dashed border-rose-300 px-2.5 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-500/50 dark:text-rose-400 dark:hover:bg-rose-500/10">
           Assign engineer
         </button>
@@ -256,11 +263,11 @@ export default function Projects() {
     },
     {
       id: 'status', header: 'Status',
-      cell: p => <MenuSelect variant="pill" label={`Status of ${p.workOrderNo}`} value={p.status} options={PROJECT_STATUSES.map(s => ({ value: s, label: s }))} toneOf={statusStyle} busy={savingId === p.id} onChange={v => patchProject(p.id, { status: v as ProjectStatus })} />,
+      cell: p => <MenuSelect variant="pill" label={`Status of ${p.workOrderNo}`} value={p.status} options={PROJECT_STATUSES.map(s => ({ value: s, label: s }))} toneOf={statusStyle} busy={savingId === p.id} disabled={!canEditWork} onChange={v => patchProject(p.id, { status: v as ProjectStatus })} />,
     },
     {
       id: 'billing', header: 'Billing stage',
-      cell: p => <MenuSelect variant="pill" label={`Billing stage of ${p.workOrderNo}`} value={p.billingStage} options={BILLING_STAGES.map(s => ({ value: s, label: s }))} toneOf={billingStyle} busy={savingId === p.id} onChange={v => patchProject(p.id, { billingStage: v as BillingStage })} />,
+      cell: p => <MenuSelect variant="pill" label={`Billing stage of ${p.workOrderNo}`} value={p.billingStage} options={BILLING_STAGES.map(s => ({ value: s, label: s }))} toneOf={billingStyle} busy={savingId === p.id} disabled={!canEditBilling} onChange={v => patchProject(p.id, { billingStage: v as BillingStage })} />,
     },
     {
       id: 'owed', header: 'Outstanding', align: 'right',
@@ -274,8 +281,8 @@ export default function Projects() {
 
   return (
     <div className={PAGE_CLASS}>
-      <PageHeader title="Projects" subtitle="Work orders raised directly, or auto-created when a proposal is marked Won.">
-        <NewButton label="New project" onClick={() => setShowCreate(true)} />
+      <PageHeader title="Projects" subtitle={isAccounts ? 'Completed projects handed over for invoicing — update the billing stage as you bill.' : 'Work orders raised directly, or auto-created when a proposal is marked Won.'}>
+        {canEditWork && <NewButton label="New project" onClick={() => setShowCreate(true)} />}
       </PageHeader>
 
       {/* list */}
@@ -289,7 +296,7 @@ export default function Projects() {
         {loading && projects.length === 0 ? (
           <SkeletonRows />
         ) : projects.length === 0 && !error ? (
-          <EmptyState icon="briefcase" title="No projects yet" message="Marking a proposal Won creates its project automatically — or add one by hand." action={{ label: 'Create project', onClick: () => setShowCreate(true) }} />
+          <EmptyState icon="briefcase" title={isAccounts ? 'Nothing to invoice yet' : 'No projects yet'} message={isAccounts ? 'Projects appear here the moment they are completed.' : 'Marking a proposal Won creates its project automatically — or add one by hand.'} action={canEditWork ? { label: 'Create project', onClick: () => setShowCreate(true) } : undefined} />
         ) : (
           <>
             <DataGrid
@@ -297,9 +304,9 @@ export default function Projects() {
               rows={view.rows}
               getKey={p => p.id}
               view={view}
-              onRowClick={p => setOpenLeadId(p.leadId)}
+              onRowClick={canEditWork ? p => setOpenLeadId(p.leadId) : undefined}
               rowLabel={p => `Open the lead for ${p.workOrderNo}`}
-              actions={p => (
+              actions={canEditWork ? p => (
                 <RowMenu
                   label={p.workOrderNo}
                   actions={[
@@ -307,7 +314,7 @@ export default function Projects() {
                     { label: 'Open lead', onSelect: () => setOpenLeadId(p.leadId) },
                   ]}
                 />
-              )}
+              ) : undefined}
               empty={<NoMatches noun="projects" onClear={view.clearFilters} />}
               minWidth={1080}
             />

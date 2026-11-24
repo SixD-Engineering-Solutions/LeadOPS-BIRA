@@ -3,21 +3,16 @@ import { api, PROPOSAL_SYNC_EVENT } from '../../lib/api'
 import type { Proposal } from '../../lib/api'
 import { ErrorBanner } from '../ErrorBanner'
 import { DetailSection } from './shared'
-import { INPUT_CLS as inputCls } from '../../lib/formStyles'
 import { formatINR } from '../../lib/format'
 import { PROPOSAL_STATUS_STYLES, DEFAULT_STATUS_STYLE } from '../../lib/statusStyles'
 import { EmptyState } from '../EmptyState'
 import { SkeletonRows } from '../Skeleton'
-import { btn } from '../../lib/ui'
-import { DatePicker } from '../form/DatePicker'
 
-// Proposals raised against a lead — quick-add form and list.
+// The proposal raised against a lead — read-only here. Proposals are created
+// and edited on the Proposals page.
 export function LeadProposalsSection({ leadId }: { leadId: string }) {
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [proposalsError, setProposalsError] = useState<string | null>(null)
-  const [propForm, setPropForm] = useState({ value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
-  const [creatingProp, setCreatingProp] = useState(false)
-  const [propError, setPropError] = useState<string | null>(null)
 
   // Loading until the list on screen is for this lead and the latest refresh.
   const [attempt, setAttempt] = useState(0)
@@ -38,66 +33,16 @@ export function LeadProposalsSection({ leadId }: { leadId: string }) {
     return () => window.removeEventListener(PROPOSAL_SYNC_EVENT, loadProposals)
   }, [])
 
-  async function createProposal(e: React.FormEvent) {
-    e.preventDefault()
-    setPropError(null)
-    setCreatingProp(true)
-    try {
-      await api('/proposals', {
-        method: 'POST',
-        auth: true,
-        body: {
-          leadId,
-          value: propForm.value ? Number(propForm.value) : undefined,
-          submissionDate: propForm.submissionDate || undefined,
-          probabilityPct: propForm.probabilityPct ? Number(propForm.probabilityPct) : undefined,
-          expectedOrderDate: propForm.expectedOrderDate || undefined,
-        },
-      })
-      setPropForm({ value: '', submissionDate: '', probabilityPct: '', expectedOrderDate: '' })
-      loadProposals()
-    } catch (e) {
-      setPropError(e instanceof Error ? e.message : 'Could not create proposal.')
-    } finally {
-      setCreatingProp(false)
-    }
-  }
-
-  // One proposal per lead (enforced server-side too): the quick-add form is
-  // only offered until this lead has one.
-  const canAdd = !loadingProposals && !proposalsError && proposals.length === 0
-
   return (
     <DetailSection title="Proposals">
-      {canAdd && (
-      <form onSubmit={createProposal} className="mb-3 grid grid-cols-2 gap-2">
-        <input type="number" value={propForm.value} onChange={e => setPropForm({ ...propForm, value: e.target.value })} placeholder="Value (₹)" className={inputCls} />
-        <input type="number" min={0} max={100} value={propForm.probabilityPct} onChange={e => setPropForm({ ...propForm, probabilityPct: e.target.value })} placeholder="Probability %" className={inputCls} />
-        <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-          Submission date
-          <DatePicker value={propForm.submissionDate} onChange={v => setPropForm({ ...propForm, submissionDate: v })} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
-          Expected order date
-          <DatePicker value={propForm.expectedOrderDate} onChange={v => setPropForm({ ...propForm, expectedOrderDate: v })} />
-        </label>
-        {propError && <p className="col-span-2 text-xs text-red-500 dark:text-red-400">{propError}</p>}
-        <div className="col-span-2">
-          <button disabled={creatingProp} className={btn('primary', 'sm')}>
-            {creatingProp ? 'Saving…' : 'Add proposal'}
-          </button>
-        </div>
-      </form>
-      )}
-
       {proposalsError ? (
         <ErrorBanner message={proposalsError} onRetry={loadProposals} className="my-2" />
       ) : loadingProposals ? (
         <SkeletonRows rows={2} compact />
       ) : proposals.length === 0 ? (
-        <EmptyState compact icon="document" title="No proposal raised yet" message="Add one with the form above — each lead has one proposal." />
+        <EmptyState compact icon="document" title="No proposal raised yet" message="Raise one from the Proposals page." />
       ) : (
-        <ul className="space-y-2 border-t border-gray-50 pt-3 dark:border-gray-800/60">
+        <ul className="space-y-2">
           {proposals.map(p => (
             <li key={p.id} className="text-xs">
               <div className="flex items-center justify-between gap-2">

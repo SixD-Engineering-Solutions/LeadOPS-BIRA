@@ -6,7 +6,7 @@ Work top to bottom — every step is either a ☐ to tick or a check with an exp
 **Verdict: not ready to deploy yet.** There were **8 blockers** (Section 1).
 **Update 30 Sep: all 8 blockers (B1–B8) are fixed and verified** (see "Status" in Section 1),
 the Docker files in Section 3 are in the repo, and admins can now promote/demote users from the
-Team page (two roles: admin / employee). Everything after Section 1 is setup.
+Team page (three roles: admin / BD / accounts). Everything after Section 1 is setup.
 
 ---
 

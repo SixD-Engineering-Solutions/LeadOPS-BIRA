@@ -1,3 +1,4 @@
+import { isAssignableRole } from '../lib/roles'
 import { useEffect, useState } from 'react'
 import { api, TASK_SYNC_EVENT } from '../lib/api'
 import type { Task, EmployeeUser } from '../lib/api'
@@ -73,7 +74,7 @@ export default function Tasks({ isAdmin = false }: { isAdmin?: boolean }) {
   useEffect(() => {
     if (!isAdmin) return
     api<{ users: EmployeeUser[] }>('/users', { auth: true })
-      .then(({ users }) => setEmployees(users.filter(u => u.role !== 'admin')))
+      .then(({ users }) => setEmployees(users.filter(u => isAssignableRole(u.role))))
       .catch(() => {})
   }, [isAdmin])
 

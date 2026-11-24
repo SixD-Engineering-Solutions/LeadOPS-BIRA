@@ -27,6 +27,7 @@ import { parseTrackerWorkbook, SheetError, TrackerSheetData } from './trackerShe
 import { reapplyAppInvoiceContributions } from '../utils/invoiceTrackerSync'
 import { notifyUser } from './notify'
 import { syncLeadsFromSheet } from './sheetLeads'
+import { ROLES } from '../utils/roles'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -258,7 +259,7 @@ async function alertAdminsOnce(runId: string, message: string) {
   try {
     const previous = await prisma.sheetSyncRun.findFirst({ where: { id: { not: runId }, status: { not: 'running' } }, orderBy: { startedAt: 'desc' } })
     if (previous?.status === 'failed') return
-    const admins = await prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } })
+    const admins = await prisma.user.findMany({ where: { role: ROLES.admin, isActive: true }, select: { id: true } })
     for (const a of admins) await notifyUser(a.id, `The sync from the SharePoint tracker sheet failed — the Tracker still shows the last synced data. ${message}`.slice(0, 1000))
   } catch (err) {
     console.error('[sheet sync] could not notify admins:', err instanceof Error ? err.message : err)

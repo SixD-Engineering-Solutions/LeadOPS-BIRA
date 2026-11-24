@@ -25,6 +25,7 @@ import crypto from 'crypto'
 import { prisma } from '../prisma'
 import { Prisma } from '../generated/prisma/client'
 import { nextSequenceNumber, TX_OPTS } from '../utils/sequence'
+import { ROLES, isAssignableRole } from '../utils/roles'
 
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim()
 const ci = (value: string) => ({ equals: value, mode: 'insensitive' as const })
@@ -111,7 +112,7 @@ export async function syncLeadsFromSheet(): Promise<SheetLeadsResult | null> {
     const [users, statuses, admin] = await Promise.all([
       prisma.user.findMany({ where: { isActive: true }, select: { id: true, userName: true, email: true, role: true } }),
       prisma.leadStatus.findMany(),
-      prisma.user.findFirst({ where: { role: 'admin', isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true } }),
+      prisma.user.findFirst({ where: { role: ROLES.admin, isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true } }),
     ])
     if (!admin) { console.error('[sheet leads] no active admin to create leads as — skipped'); return null }
     const statusId = (name: string) => statuses.find(s => s.statusName.toLowerCase() === name.toLowerCase())?.id ?? null
@@ -122,7 +123,7 @@ export async function syncLeadsFromSheet(): Promise<SheetLeadsResult | null> {
         const key = keys[i]
         const valueRupees = r.valueLakhs != null ? Math.round(r.valueLakhs * 100000) : null
         const out = mapSheetStatus(r.status, valueRupees != null)
-        const owner = matchUser(r.owner, users, u => u.role !== 'admin')
+        const owner = matchUser(r.owner, users, u => isAssignableRole(u.role))
         const bm = matchUser(r.bmContact, users)
         const hash = crypto.createHash('sha1').update(JSON.stringify([r.client, r.location, r.description, r.valueLakhs, r.status, r.probabilityPct, r.owner, r.bmContact, r.expectedClose, r.followUpDate, r.notes])).digest('hex')
 

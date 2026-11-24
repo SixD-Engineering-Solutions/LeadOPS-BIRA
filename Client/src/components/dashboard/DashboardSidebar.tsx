@@ -1,3 +1,4 @@
+import { roleLabel } from '../../lib/roles'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './icons'
@@ -111,7 +112,7 @@ export function DashboardSidebar({
             {!narrow && (
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</span>
-                <span className="block truncate text-[11px] capitalize text-gray-500 dark:text-gray-400">{role}</span>
+                <span className="block truncate text-[11px] text-gray-500 dark:text-gray-400">{roleLabel(role)}</span>
               </span>
             )}
             {!narrow && <Icon d="M8 9l4-4 4 4m0 6l-4 4-4-4" className="h-4 w-4 shrink-0 text-gray-400" />}
@@ -121,9 +122,9 @@ export function DashboardSidebar({
               <div className="px-2.5 pb-2 pt-1.5">
                 <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">{email}</p>
-                <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${isAdmin ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300'}`}>
+                <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${isAdmin ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300'}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${isAdmin ? 'bg-orange-500' : 'bg-sky-500'}`} />
-                  {role}
+                  {roleLabel(role)}
                 </span>
               </div>
               <MenuDivider />

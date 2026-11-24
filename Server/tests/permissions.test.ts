@@ -32,10 +32,10 @@ describe('Permissions (Phase 1)', () => {
     const email = `vitest-user-${Date.now()}@leadops.local`
     const { status, body } = await api<{ user: { id: string; email: string; role: string; department: string | null; isActive: boolean } }>(
       '/users',
-      { method: 'POST', token: admin, body: { email, role: 'employee', department: 'QA' } }
+      { method: 'POST', token: admin, body: { email, role: 'bd', department: 'QA' } }
     )
     expect(status).toBe(201)
-    expect(body.user).toMatchObject({ email, role: 'employee', department: 'QA', isActive: true })
+    expect(body.user).toMatchObject({ email, role: 'bd', department: 'QA', isActive: true })
     createdUserIds.push(body.user.id)
   })
 

@@ -220,7 +220,7 @@ Internal employees **and** login accounts (unified). Leads are assigned to / cre
 | `userName` | String? | display name |
 | `email` | String (unique) | login + identity |
 | `phoneNumber` | String? | |
-| `role` | String | `admin` or `employee` (default `employee`) |
+| `role` | String | `admin`, `bd` or `accounts` (default `bd`) — see `src/utils/roles.ts` |
 | `department` | String? | |
 | `passwordHash` | String? | bcrypt (nullable — admins can add an employee before they set login) |
 | `isActive` | Boolean | default `true` |
@@ -341,12 +341,22 @@ List + create for each supporting table (used to populate dropdowns and manage d
 
 ## Roles & Permissions
 
-`user.role` is `admin` or `employee`. `src/utils/access.ts` is the one place the shared checks
+`user.role` is `admin`, `bd` (leads to projects) or `accounts` (invoicing, once a project is completed). `src/utils/access.ts` is the one place the shared checks
 (`isAdmin`, `canAccessLead`, `canAccessProject`) are defined — every route imports from there
 rather than redefining its own copy.
 
-- **Visibility:** admins see every lead/proposal/project/invoice/document/activity; employees only
-  see the ones on leads currently assigned to them. Reference/lookup data (locations, plants,
+- **Roles:** the names live in `src/utils/roles.ts` (nothing else hardcodes them). BD own leads →
+  proposals → projects; Accounts own invoices and payments; only BD can be assigned leads, tasks and
+  projects. Accounts are refused on leads, proposals and activities (`denyRoles`), may change only a
+  project's billing stage, and BD may read but not change invoices.
+- **Billing handoff:** when a project's status changes to Completed in the app,
+  `services/billingHandoff.ts` stamps `projects.billing_handoff_at` (that puts it in the Accounts
+  queue — see `projectScope`) and notifies every active user with the accounts role, or the admins
+  if there are none. Reopening it before anything is invoiced takes it back out. Projects that arrive
+  completed through the sheet sync are history and are not handed over.
+- **Visibility:** admins see every lead/proposal/project/invoice/document/activity; BD only
+  see the ones on leads currently assigned to them; Accounts see every invoice and the projects
+  handed over to them. Reference/lookup data (locations, plants,
   verticals, etc.) is visible to everyone.
 - **Admin-only actions:** every delete (soft delete — rows persist for audit until removed),
   creating/editing reference data from the Catalog page, managing users (create, role, deactivate/

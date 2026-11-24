@@ -16,7 +16,7 @@ model User {
   userName     String?  @map("user_name")
   email        String   @unique
   phoneNumber  String?  @map("phone_number")
-  role         String   @default("employee")
+  role         String   @default("bd")
   department   String?
   passwordHash String?  @map("password_hash")
   // Microsoft Entra object id (`oid`), saved on first "Sign in with Microsoft".
@@ -403,6 +403,9 @@ model Project {
   responsibleUser   User?     @relation("ProjectResponsible", fields: [responsibleUserId], references: [id])
   status            String    @default("Not Started")
   billingStage      String    @default("Not Started") @map("billing_stage")
+  // Set when the project is completed and handed to the Accounts team for
+  // invoicing; cleared if it is reopened before anything was invoiced.
+  billingHandoffAt  DateTime? @map("billing_handoff_at")
   createdByUserId   String    @map("created_by_user_id")
   createdByUser     User      @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id])
   createdAt         DateTime  @default(now()) @map("created_at")
@@ -414,6 +417,7 @@ model Project {
   @@index([leadId])
   @@index([status])
   @@index([deletedAt])
+  @@index([billingHandoffAt])
   @@map("projects")
 }
 

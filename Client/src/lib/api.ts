@@ -1,5 +1,6 @@
 
-export type Role = 'admin' | 'employee'
+export type { Role } from './roles'
+import type { Role } from './roles'
 export type AuthUser = { id: string; email: string; role?: Role }
 export type AuthResponse = { accessToken: string; user: AuthUser }
 
@@ -118,6 +119,8 @@ export type Project = {
   responsibleUser?: { id: string; userName: string | null; email: string } | null
   status: string
   billingStage: string
+  /** Set when the project was completed and handed to the Accounts team for invoicing. */
+  billingHandoffAt?: string | null
   createdByUserId: string
   createdAt: string
   updatedAt: string

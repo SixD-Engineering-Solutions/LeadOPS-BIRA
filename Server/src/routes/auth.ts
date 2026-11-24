@@ -1,3 +1,4 @@
+import { ROLES } from '../utils/roles'
 import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
@@ -19,7 +20,7 @@ const router = Router()
 const MICROSOFT_ONLY = 'Please use "Sign in with Microsoft".'
 const adminPasswordLogin = process.env.ADMIN_PASSWORD_LOGIN === 'true'
 const passwordLogin: 'everyone' | 'admins' | 'off' = !microsoftEnabled ? 'everyone' : adminPasswordLogin ? 'admins' : 'off'
-const passwordAllowed = (role: string) => passwordLogin === 'everyone' || (passwordLogin === 'admins' && role === 'admin')
+const passwordAllowed = (role: string) => passwordLogin === 'everyone' || (passwordLogin === 'admins' && role === ROLES.admin)
 
 const authResponse = (user: { id: string; email: string; role: string }) => ({
   accessToken: signAccessToken(user.id),

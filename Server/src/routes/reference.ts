@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../prisma'
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
 import { isAdmin } from '../utils/access'
+import { ROLES, ROLE_VALUES, ROLE_LABELS, DEFAULT_ROLE, isAssignableRole } from '../utils/roles'
 import { sendError } from '../utils/errors'
 import { TX_OPTS } from '../utils/sequence'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
@@ -170,15 +171,15 @@ const userSchema = z.object({
   userName: z.string().optional(),
   email: z.string().email(),
   phoneNumber: z.string().optional(),
-  role: z.enum(['admin', 'employee']).optional(),
+  role: z.enum(ROLE_VALUES).optional(),
   department: z.string().optional(),
 })
-// POST /users — admin-only: creates an employee (or another admin) account.
+// POST /users — admin-only: creates a team member (BD, Accounts or admin). BD unless a role is given.
 router.post('/users', requireAdmin, async (req, res) => {
   const p = userSchema.safeParse(req.body)
   if (!p.success) return void bad(res, 'A valid email is required.')
   try {
-    const user = await prisma.user.create({ data: p.data })
+    const user = await prisma.user.create({ data: { ...p.data, role: p.data.role ?? DEFAULT_ROLE } })
     await logActivity({ userId: (req as AuthRequest).userId, entity: 'team', entityId: user.id, label: userLabel(user), action: 'created', after: userSnapshot(user) })
     res.status(201).json({ user: { id: user.id, userName: user.userName, email: user.email, role: user.role, department: user.department, phoneNumber: user.phoneNumber, isActive: user.isActive } })
   } catch { bad(res, 'Could not create user. Email may already exist.') }
@@ -202,24 +203,26 @@ router.post('/users/:id/reactivate', requireAdmin, async (req: AuthRequest, res:
   res.json({ user })
 })
 
-// PATCH /users/:id/role — admin-only. Two levels: "admin" (everything) and
-// "employee" (their own assigned work). Every permission check in the API
+// PATCH /users/:id/role — admin-only. Three roles: "admin" (everything), "bd"
+// (their own assigned leads through to projects) and "accounts" (invoicing and
+// payments). Every permission check in the API
 // reads the role from the database on each request, so the change applies to
 // the user's very next request — no other code needs to know about it.
 //
-// Kept consistent with the rule that admins are never assignees (leads, tasks
-// and project engineers are employees only):
-//   • promoting unassigns the user's leads — a lead can be unassigned, and
-//     admins see every lead anyway; they show as "Unassigned" to hand back out;
-//   • promoting is refused while they hold open tasks or are engineer on an
-//     active project — both must always have an (employee) owner, so those are
-//     handed over first.
+// Kept consistent with the rule that only BD team members are assignees (leads,
+// tasks and project engineers):
+//   • moving someone to admin or accounts unassigns their leads — a lead can be
+//     unassigned, and admins see every lead anyway; they show as "Unassigned"
+//     to hand back out;
+//   • that move is refused while they hold open tasks or are engineer on an
+//     active project — both must always have a BD owner, so those are handed
+//     over first.
 // Nobody can change their own role, and the last active admin can't be
 // demoted — so the app can never be left without an admin.
 router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const parse = z.object({ role: z.enum(['admin', 'employee']) }).safeParse(req.body)
+  const parse = z.object({ role: z.enum(ROLE_VALUES) }).safeParse(req.body)
   if (!parse.success) {
-    sendError(res, 400, 'Role must be "admin" or "employee".')
+    sendError(res, 400, `Role must be one of: ${ROLE_VALUES.join(', ')}.`)
     return
   }
   const { role } = parse.data
@@ -234,15 +237,17 @@ router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Resp
     return
   }
   if (target.role === role) {
-    sendError(res, 409, `${target.userName || target.email} is already ${role === 'admin' ? 'an admin' : 'an employee'}.`)
+    sendError(res, 409, `${target.userName || target.email} is already ${ROLE_LABELS[role]}.`)
     return
   }
 
   try {
     const result = await prisma.$transaction(async tx => {
-      if (role === 'employee') {
-        const otherAdmins = await tx.user.count({ where: { role: 'admin', isActive: true, id: { not: id } } })
+      if (target.role === ROLES.admin) {
+        const otherAdmins = await tx.user.count({ where: { role: ROLES.admin, isActive: true, id: { not: id } } })
         if (otherAdmins === 0) throw new RoleChangeRefused(409, 'There must always be at least one admin.')
+      }
+      if (isAssignableRole(role)) {
         return { user: await tx.user.update({ where: { id }, data: { role }, select: userSelect }), unassignedLeadIds: [] as string[] }
       }
       const [openTasks, activeProjects] = await Promise.all([
@@ -251,7 +256,7 @@ router.patch('/users/:id/role', requireAdmin, async (req: AuthRequest, res: Resp
       ])
       if (openTasks || activeProjects) {
         const held = [openTasks && `${openTasks} open task${openTasks === 1 ? '' : 's'}`, activeProjects && `engineer on ${activeProjects} active project${activeProjects === 1 ? '' : 's'}`].filter(Boolean).join(' and ')
-        throw new RoleChangeRefused(409, `Hand over their work first — they have ${held}. Admins can't be assigned tasks or projects.`)
+        throw new RoleChangeRefused(409, `Hand over their work first — they have ${held}. Only BD team members can be assigned tasks or projects.`)
       }
       const leads = await tx.lead.findMany({ where: { assignedToUserId: id, deletedAt: null }, select: { id: true } })
       if (leads.length) {
@@ -344,8 +349,8 @@ router.delete('/users/:id', requireAdmin, async (req: AuthRequest, res: Response
   }
   // Backstop for "never zero admins" (the caller is an admin and can't remove
   // themselves, so in practice another admin always remains).
-  if (existing.role === 'admin') {
-    const otherAdmins = await prisma.user.count({ where: { role: 'admin', isActive: true, id: { not: id } } })
+  if (existing.role === ROLES.admin) {
+    const otherAdmins = await prisma.user.count({ where: { role: ROLES.admin, isActive: true, id: { not: id } } })
     if (otherAdmins === 0) {
       sendError(res, 409, 'There must always be at least one admin.')
       return

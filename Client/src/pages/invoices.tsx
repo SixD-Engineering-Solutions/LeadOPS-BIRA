@@ -1,3 +1,5 @@
+import { ROLES } from '../lib/roles'
+import type { Role } from '../lib/roles'
 import { useEffect, useState } from 'react'
 import { api, INVOICE_SYNC_EVENT, INVOICE_STATUSES } from '../lib/api'
 import type { Invoice, InvoiceStatus, Project } from '../lib/api'
@@ -40,7 +42,11 @@ const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 
 const emptyForm = { projectId: '', amount: '', invoiceDate: '', dueDate: '' }
 const emptyPaymentForm = { amountReceived: '', paymentDate: new Date().toISOString().slice(0, 10), notes: '' }
 
-export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
+// Accounts (and admins) raise invoices and record payments; BD can see the
+// invoices on their own projects but not change them.
+export default function Invoices({ isAdmin, role }: { isAdmin: boolean; role: Role }) {
+  const canManage = role === ROLES.admin || role === ROLES.accounts
+  const canOpenLead = role !== ROLES.accounts
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -239,7 +245,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
     },
     {
       id: 'status', header: 'Status',
-      cell: inv => <MenuSelect variant="pill" label={`Status of ${inv.invoiceNumber}`} value={inv.status} options={INVOICE_STATUSES.map(s => ({ value: s, label: s }))} toneOf={statusStyle} onChange={v => changeStatus(inv.id, v as InvoiceStatus)} />,
+      cell: inv => <MenuSelect variant="pill" label={`Status of ${inv.invoiceNumber}`} value={inv.status} options={INVOICE_STATUSES.map(s => ({ value: s, label: s }))} toneOf={statusStyle} disabled={!canManage} onChange={v => changeStatus(inv.id, v as InvoiceStatus)} />,
     },
   ]
 
@@ -252,14 +258,14 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
         <span>Outstanding <strong className={`font-semibold tabular-nums ${outstandingOf(inv) > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-gray-800 dark:text-gray-100'}`}>{fmtMoney(outstandingOf(inv))}</strong></span>
       </div>
 
-      <form onSubmit={e => logPayment(e, inv.id)} onClick={e => e.stopPropagation()} className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {canManage && <form onSubmit={e => logPayment(e, inv.id)} onClick={e => e.stopPropagation()} className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <input type="number" value={paymentForm.amountReceived} onChange={e => setPaymentForm({ ...paymentForm, amountReceived: e.target.value })} placeholder="Amount received (₹)" aria-label="Amount received" className={inputCls} />
         <DatePicker value={paymentForm.paymentDate} onChange={v => setPaymentForm({ ...paymentForm, paymentDate: v })} label="Payment date" />
         <input value={paymentForm.notes} onChange={e => setPaymentForm({ ...paymentForm, notes: e.target.value })} placeholder="Notes" aria-label="Notes" className={inputCls} />
         <button disabled={payingId === inv.id} className={btn('primary', 'sm')}>
           {payingId === inv.id ? 'Saving…' : 'Log payment'}
         </button>
-      </form>
+      </form>}
       {payError && <p className="mb-2 text-xs text-red-500 dark:text-red-400">{payError}</p>}
 
       <InvoiceDocuments invoiceId={inv.id} invoiceNumber={inv.invoiceNumber} />
@@ -291,8 +297,8 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className={PAGE_CLASS}>
-      <PageHeader title="Invoices" subtitle="Bill a project and track payments received against it.">
-        <NewButton label="New invoice" onClick={() => setShowCreate(true)} />
+      <PageHeader title="Invoices" subtitle={canManage ? 'Bill a completed project and track payments received against it.' : 'Invoices and payments on your projects — managed by the Accounts team.'}>
+        {canManage && <NewButton label="New invoice" onClick={() => setShowCreate(true)} />}
       </PageHeader>
 
       {/* list */}
@@ -306,7 +312,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
         {loading && invoices.length === 0 ? (
           <SkeletonRows />
         ) : invoices.length === 0 && !error ? (
-          <EmptyState icon="receipt" title="No invoices yet" message="Bill a project, then log payments against it as they come in." action={{ label: 'Create invoice', onClick: () => setShowCreate(true) }} />
+          <EmptyState icon="receipt" title="No invoices yet" message={canManage ? 'Bill a project, then log payments against it as they come in.' : 'Once a project is completed, the Accounts team raises its invoice here.'} action={canManage ? { label: 'Create invoice', onClick: () => setShowCreate(true) } : undefined} />
         ) : (
           <>
             <DataGrid
@@ -322,8 +328,8 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
                 <RowMenu
                   label={inv.invoiceNumber}
                   actions={[
-                    { label: expandedId === inv.id ? 'Hide payments' : 'Payments & log a payment', onSelect: () => toggleExpanded(inv.id) },
-                    !!inv.project?.lead?.id && { label: 'Open lead', onSelect: () => setOpenLeadId(inv.project!.lead!.id) },
+                    { label: expandedId === inv.id ? 'Hide payments' : canManage ? 'Payments & log a payment' : 'Payments', onSelect: () => toggleExpanded(inv.id) },
+                    canOpenLead && !!inv.project?.lead?.id && { label: 'Open lead', onSelect: () => setOpenLeadId(inv.project!.lead!.id) },
                   ]}
                 />
               )}
@@ -355,7 +361,7 @@ export default function Invoices({ isAdmin }: { isAdmin: boolean }) {
                 onChange={v => { setForm({ ...form, projectId: v }); setFieldErrors(p => ({ ...p, projectId: undefined })) }}
                 options={projects.map(p => {
                   const h = headroom(p.id)
-                  return { value: p.id, label: `${p.workOrderNo} — ${p.projectName}`, hint: h?.left === 0 ? 'Fully invoiced' : p.lead?.plant?.client?.clientName ?? undefined }
+                  return { value: p.id, label: `${p.workOrderNo} — ${p.projectName}`, hint: h?.left === 0 ? 'Fully invoiced' : !invoices.some(i => i.projectId === p.id) && p.billingHandoffAt ? 'Ready to invoice' : p.lead?.plant?.client?.clientName ?? undefined }
                 })}
                 emptyLabel="Select a project…"
                 invalid={!!fieldErrors.projectId}

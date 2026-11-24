@@ -35,7 +35,8 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
   const collected = records.invoices.reduce((s, i) => s + i.payments.reduce((p, x) => p + x.amountReceived, 0), 0)
   const outstanding = Math.max(0, invoiced - collected)
   const events = buildTimeline(lead, records)
-  const place = [lead.plant?.client?.clientName, lead.plant?.location?.city, lead.contact?.contactPersonName].filter(Boolean).join(' · ')
+  const clientName = lead.plant?.client?.clientName
+  const place = [lead.plant?.plantName, lead.plant?.location?.city, lead.contact?.contactPersonName].filter(Boolean).join(' · ')
 
   const header = (
     <div className="pr-10">
@@ -43,7 +44,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
         <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Lead</span>
         <StatusBadge label={lead.status?.statusName ?? 'Cold call'} tone={LEAD_STATUS_STYLES[lead.status?.statusName ?? ''] ?? DEFAULT_STATUS_STYLE} />
       </div>
-      <h2 className="mt-1.5 truncate text-lg font-bold text-gray-900 dark:text-gray-100">{lead.plant?.plantName ?? 'Lead'}</h2>
+      <h2 className="mt-1.5 truncate text-lg font-bold text-gray-900 dark:text-gray-100">{clientName ?? lead.plant?.plantName ?? 'Lead'}</h2>
       {place && <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{place}</p>}
       <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-3">
         <Meta label="Assigned to"><PersonChip name={who(lead.assignedToUser)} /></Meta>
@@ -56,7 +57,7 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
   )
 
   return (
-    <Drawer label={`Lead: ${lead.plant?.plantName ?? ''}`} onClose={onClose} header={header}>
+    <Drawer label={`Lead: ${clientName ?? lead.plant?.plantName ?? ''}`} onClose={onClose} header={header}>
       {/* the deal at a glance */}
       <div className="grid grid-cols-2 gap-3 px-6 pt-5 sm:grid-cols-4">
         <Stat label="Proposal">

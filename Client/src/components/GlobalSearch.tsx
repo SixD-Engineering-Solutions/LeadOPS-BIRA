@@ -20,7 +20,9 @@ const matches = (text: string, terms: string[]) => { const t = text.toLowerCase(
 // record opens its lead's side panel over whatever page you're on; picking a
 // page goes there. Data is fetched when the box is first used, and again if
 // it's over a minute old.
-export function GlobalSearch({ pages, onNavigate }: { pages: Page[]; onNavigate: (page: Page) => void }) {
+// `canOpenLeads` is false for Accounts, who have no lead access: a project or
+// invoice result then takes them to its page instead of a lead's detail.
+export function GlobalSearch({ pages, onNavigate, canOpenLeads = true }: { pages: Page[]; onNavigate: (page: Page) => void; canOpenLeads?: boolean }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -78,6 +80,7 @@ export function GlobalSearch({ pages, onNavigate }: { pages: Page[]; onNavigate:
   const terms = words(query)
   const close = () => { setOpen(false); setMobileOpen(false); setQuery(''); input.current?.blur() }
   const openLead = (id: string | undefined) => { if (id) { close(); setOpenLeadId(id) } }
+  const goTo = (key: string, label: string) => { close(); onNavigate({ key, label }) }
 
   const results: Result[] = []
   const add = <T,>(group: string, rows: T[], text: (r: T) => string, make: (r: T) => Omit<Result, 'group'>) => {
@@ -98,10 +101,10 @@ export function GlobalSearch({ pages, onNavigate }: { pages: Page[]; onNavigate:
         p => ({ id: `prop-${p.id}`, title: p.proposalNumber, sub: [p.lead?.plant?.plantName, p.value != null ? formatINR(p.value) : null, p.status].filter(Boolean).join(' · '), select: () => openLead(p.leadId) }))
       add('Projects', data.projects,
         p => [p.workOrderNo, p.projectName, p.lead?.plant?.plantName, p.lead?.plant?.client?.clientName].join(' '),
-        p => ({ id: `proj-${p.id}`, title: `${p.workOrderNo} · ${p.projectName}`, sub: [p.lead?.plant?.plantName, p.status].filter(Boolean).join(' · '), select: () => openLead(p.leadId) }))
+        p => ({ id: `proj-${p.id}`, title: `${p.workOrderNo} · ${p.projectName}`, sub: [p.lead?.plant?.plantName, p.status].filter(Boolean).join(' · '), select: () => (canOpenLeads ? openLead(p.leadId) : goTo('projects', 'Projects')) }))
       add('Invoices', data.invoices,
         i => [i.invoiceNumber, i.project?.workOrderNo, i.project?.projectName, i.project?.lead?.plant?.client?.clientName].join(' '),
-        i => ({ id: `inv-${i.id}`, title: i.invoiceNumber, sub: [i.project?.lead?.plant?.client?.clientName ?? i.project?.projectName, formatINR(i.amount), i.status].filter(Boolean).join(' · '), select: () => openLead(i.project?.lead?.id) }))
+        i => ({ id: `inv-${i.id}`, title: i.invoiceNumber, sub: [i.project?.lead?.plant?.client?.clientName ?? i.project?.projectName, formatINR(i.amount), i.status].filter(Boolean).join(' · '), select: () => (canOpenLeads ? openLead(i.project?.lead?.id) : goTo('invoices', 'Invoices')) }))
     }
   }
   const activeIndex = Math.min(active, Math.max(0, results.length - 1))

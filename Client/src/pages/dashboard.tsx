@@ -30,6 +30,10 @@ import { useDashboardInsights } from '../hooks/useDashboardInsights'
 import { TargetCard, FunnelCard, AttentionCard } from '../components/dashboard/InsightCards'
 import type { AttentionItem } from '../components/dashboard/InsightCards'
 import { api } from '../lib/api'
+import { ROLES, DEFAULT_ROLE } from '../lib/roles'
+import type { Role } from '../lib/roles'
+import { useBillingStats } from '../hooks/useBillingStats'
+import { AccountsDashboard } from '../components/dashboard/AccountsDashboard'
 
 // Each page downloads the first time it's opened (the Tracker and Reports
 // carry the chart library), and all of them are fetched in the background
@@ -79,6 +83,9 @@ const CORE_MODULES: Module[] = [
   { key: 'reports', title: 'Reports', desc: 'Sales, pipeline and invoicing charts, monthly and quarterly.', icon: icons.reports, action: 'View', accent: 'from-emerald-400 to-teal-400', glow: 'rgba(52,211,153,0.45)' },
 ]
 
+// The cards Accounts see (CORE_MODULES keys) — projects to pick up, invoices to raise.
+const ACCOUNTS_MODULE_KEYS = ['projects', 'invoices']
+
 const ADMIN_MODULES: Module[] = [
   { key: 'team', title: 'Team Management', desc: 'Manage members, roles and permissions.', icon: icons.team, action: 'Manage', accent: 'from-rose-400 to-pink-400', glow: 'rgba(251,113,133,0.45)' },
 ]
@@ -86,16 +93,23 @@ const ADMIN_MODULES: Module[] = [
 // ─── component ──────────────────────────────────────────────────────────────────
 
 export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignOut: () => void }) {
-  const role = user.role ?? 'employee'
+  const role: Role = user.role ?? DEFAULT_ROLE
   const name = displayName(user.email)
-  const isAdmin = role === 'admin'
+  const isAdmin = role === ROLES.admin
+  // Accounts pick the work up once a project is completed: they have no sales side.
+  const isAccounts = role === ROLES.accounts
 
-  const modules = isAdmin ? [...CORE_MODULES, ...ADMIN_MODULES] : CORE_MODULES
+  const modules = isAccounts
+    ? CORE_MODULES.filter(m => ACCOUNTS_MODULE_KEYS.includes(m.key))
+    : isAdmin ? [...CORE_MODULES, ...ADMIN_MODULES] : CORE_MODULES
 
   // The menu, grouped by what the work is: winning it, delivering it, and
   // looking back at it. Team and Data clean-up are admin-only (Reports shows
-  // its Sales tab to admins only).
-  const navGroups: NavGroup[] = [
+  // its Sales tab to admins only). Accounts see only the billing side.
+  const navGroups: NavGroup[] = isAccounts ? [
+    { items: [{ key: 'dashboard', label: 'Dashboard', icon: icons.dashboard }] },
+    { label: 'Billing', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }] },
+  ] : [
     { items: [{ key: 'dashboard', label: 'Dashboard', icon: icons.dashboard }] },
     { label: 'Sales', items: [{ key: 'lead-gen', label: 'Leads', icon: icons.leadGen }, { key: 'proposals', label: 'Proposals', icon: icons.proposals }] },
     { label: 'Delivery', items: [{ key: 'projects', label: 'Projects', icon: icons.projects }, { key: 'invoices', label: 'Invoices', icon: icons.invoices }, { key: 'tasks', label: 'Tasks', icon: icons.tasks }] },
@@ -108,7 +122,9 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   // Remember the current tab across page refreshes — sessionStorage, scoped to
   // this tab, so a new tab's fresh session doesn't jump to wherever another
   // already-open tab happens to be.
-  const [active, setActive] = useState(() => sessionStorage.getItem('leadops_tab') ?? 'dashboard')
+  const [storedTab, setActive] = useState(() => sessionStorage.getItem('leadops_tab') ?? 'dashboard')
+  // A remembered tab the role can't open (another role's menu) falls back to the dashboard.
+  const active = storedTab === 'leads' || navItems.some(i => i.key === storedTab) ? storedTab : 'dashboard'
   useEffect(() => { sessionStorage.setItem('leadops_tab', active) }, [active])
   useEffect(() => {
     const t = window.setTimeout(() => Object.values(PAGES).forEach(load => load().catch(() => {})), 2500)
@@ -135,13 +151,14 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
   const [showAssignments, setShowAssignments] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
-  const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard, isAdmin)
-  const { proposalStats, proposals, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard)
-  const { projectStats } = useProjectStats(onDashboard)
+  const { stats, allLeads, employees, error: leadStatsError, reload: reloadLeadStats } = useLeadStats(onDashboard && !isAccounts, isAdmin)
+  const { proposalStats, proposals, error: proposalStatsError, reload: reloadProposalStats } = useProposalStats(onDashboard && !isAccounts)
+  const { projectStats } = useProjectStats(onDashboard && !isAccounts)
   const { pendingInvoices, error: pendingInvoicesError, reload: reloadPendingInvoices } = usePendingInvoices(onDashboard)
-  const { myTasks, loaded: myTasksLoaded, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin)
-  const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard)
-  const insights = useDashboardInsights(onDashboard, allLeads, proposals, stats.loaded && proposalStats.loaded)
+  const { myTasks, loaded: myTasksLoaded, error: myTasksError, reload: reloadMyTasks } = useMyTasks(onDashboard, isAdmin || isAccounts)
+  const { followUps, error: followUpsError, reload: reloadFollowUps } = useFollowUps(onDashboard && !isAccounts)
+  const insights = useDashboardInsights(onDashboard && !isAccounts, allLeads, proposals, stats.loaded && proposalStats.loaded)
+  const { stats: billingStats, error: billingError, reload: reloadBilling } = useBillingStats(onDashboard && isAccounts)
 
   // The sidebar's counts, plus proposals gone quiet — each opens its list.
   const attention: AttentionItem[] = [
@@ -215,7 +232,7 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
           </button>
           <div ref={setTitleSlot} className="flex min-w-0 flex-1 items-center md:flex-none md:basis-1/3" />
           <div className="flex flex-1 justify-center">
-            <GlobalSearch pages={navItems} onNavigate={openModule} />
+            <GlobalSearch pages={navItems} onNavigate={openModule} canOpenLeads={!isAccounts} />
           </div>
           <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-3 md:basis-1/3">
             <div ref={setActionSlot} className="flex items-center" />
@@ -243,14 +260,14 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
         ) : active === 'proposals' ? (
           <Proposals />
         ) : active === 'projects' ? (
-          <Projects />
+          <Projects role={role} />
         ) : active === 'invoices' ? (
-          <Invoices isAdmin={isAdmin} />
+          <Invoices isAdmin={isAdmin} role={role} />
         ) : active === 'tracker' ? (
           <Tracker isAdmin={isAdmin} currentUserId={user.id} />
         ) : (
         <div className={PAGE_CLASS}>
-          <PageHeader title={`Welcome back, ${name.split(' ')[0]}`} phoneTitle={`Hi, ${name.split(' ')[0]}`} subtitle="Here’s what’s happening in your workspace today." />
+          <PageHeader title={`Welcome back, ${name.split(' ')[0]}`} phoneTitle={`Hi, ${name.split(' ')[0]}`} subtitle={isAccounts ? 'Projects ready to invoice, and the payments still to come in.' : 'Here’s what’s happening in your workspace today.'} />
           {demoNote && (
             <div className="mb-5 flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
               <span>{demoNote}</span>
@@ -258,6 +275,16 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             </div>
           )}
 
+          {isAccounts ? (
+            <AccountsDashboard
+              stats={billingStats}
+              error={billingError}
+              onRetry={reloadBilling}
+              onOpenProjects={() => openModule({ key: 'projects', label: 'Projects' })}
+              onOpenInvoices={() => openModule({ key: 'invoices', label: 'Invoices' })}
+            />
+          ) : (
+          <>
           <StatTiles
             stats={stats}
             proposalStats={proposalStats}
@@ -309,6 +336,8 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
             onRetry={reloadMyTasks}
             onViewAll={() => openModule({ key: 'tasks', label: 'Tasks' })}
           />
+          </>
+          )}
 
           {/* modules */}
           <div className="mt-8 mb-3 flex items-center justify-between">

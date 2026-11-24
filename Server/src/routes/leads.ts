@@ -2,7 +2,8 @@ import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
 import { Prisma } from '../generated/prisma/client'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { authenticate, requireAdmin, denyRoles, AuthRequest } from '../middleware/authenticate'
+import { ROLES, isAssignableRole } from '../utils/roles'
 import { notifyUser, broadcastLeadUpdate, broadcastProposalUpdate, broadcastProjectUpdate, broadcastInvoiceUpdate } from '../services/notify'
 import { TX_OPTS } from '../utils/sequence'
 import { isAdmin } from '../utils/access'
@@ -13,7 +14,8 @@ import { sendError } from '../utils/errors'
 import { findSameName } from '../utils/names'
 
 const router = Router()
-router.use(authenticate)
+// Accounts work from the project onwards; the sales side isn't theirs.
+router.use(authenticate, denyRoles(ROLES.accounts))
 
 // Related data attached to every lead we return, with only display-relevant fields.
 const leadInclude = {
@@ -244,8 +246,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const source = clean(d.sourceName) ? await foreSource(clean(d.sourceName)) : null
     const serviceType = clean(d.serviceTypeName) ? await foreServiceType(clean(d.serviceTypeName)) : null
     const assigned = clean(d.assignedToName) ? await foreUser(clean(d.assignedToName)) : null
-    if (assigned?.role === 'admin') {
-      sendError(res, 400, 'Leads cannot be assigned to an admin user.')
+    if (assigned && !isAssignableRole(assigned.role)) {
+      sendError(res, 400, 'Leads can only be assigned to BD team members.')
       return
     }
     const status = await foreStatus(clean(d.statusName) || 'Cold call')
@@ -433,8 +435,8 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     if (parse.data.assignedToUserId) {
       const target = await prisma.user.findUnique({ where: { id: parse.data.assignedToUserId }, select: { role: true } })
-      if (target?.role === 'admin') {
-        sendError(res, 400, 'Leads cannot be assigned to an admin user.')
+      if (target && !isAssignableRole(target.role)) {
+        sendError(res, 400, 'Leads can only be assigned to BD team members.')
         return
       }
     }

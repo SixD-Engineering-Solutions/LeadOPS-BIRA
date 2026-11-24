@@ -1,7 +1,8 @@
 import { Router, Response } from 'express'
 import { z } from 'zod'
 import { prisma } from '../prisma'
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate'
+import { authenticate, requireAdmin, denyRoles, AuthRequest } from '../middleware/authenticate'
+import { ROLES } from '../utils/roles'
 import { broadcastProposalUpdate, broadcastProjectUpdate } from '../services/notify'
 import { nextWorkOrderNo, checkEngineer } from './projects'
 import { syncLeadToPipeline, syncTrackerBestEffort } from '../utils/pipelineSync'
@@ -11,7 +12,7 @@ import { sendError } from '../utils/errors'
 import { logActivity, proposalSnapshot, proposalLabel, projectSnapshot, projectLabel } from '../utils/auditLog'
 
 const router = Router()
-router.use(authenticate)
+router.use(authenticate, denyRoles(ROLES.accounts))
 
 export const PROPOSAL_STATUSES = ['Draft', 'Submitted', 'Proposal submitted', 'Tender submitted', 'Follow-up', 'Negotiation', 'Won', 'Lost', 'Hold'] as const
 

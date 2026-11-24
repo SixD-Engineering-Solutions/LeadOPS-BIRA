@@ -1,3 +1,4 @@
+import { isAssignableRole } from '../lib/roles'
 import { useEffect, useRef, useState } from 'react'
 import { api, uploadDocument, LEAD_SYNC_EVENT } from '../lib/api'
 import type { Lead, EmployeeUser } from '../lib/api'
@@ -110,7 +111,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       .then(({ users }) => setTeam(users))
       .catch(() => {})
   }, [])
-  const employees = team.filter(u => u.role !== 'admin')
+  const employees = team.filter(u => isAssignableRole(u.role))
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }))
@@ -380,11 +381,11 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
 
   const columns: Column<Lead>[] = [
     {
-      id: 'plant', header: 'Plant / Contact', sticky: true, className: 'min-w-[240px] max-w-[300px]',
+      id: 'plant', header: 'Client / Plant', sticky: true, className: 'min-w-[240px] max-w-[300px]',
       cell: l => (
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{l.plant?.plantName ?? '—'}</p>
-          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[l.plant?.client?.clientName, l.contact?.contactPersonName ?? 'No contact', [l.plant?.location?.city, l.plant?.location?.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</p>
+          <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{l.plant?.client?.clientName ?? l.plant?.plantName ?? '—'}</p>
+          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{[l.plant?.plantName, l.contact?.contactPersonName ?? 'No contact', [l.plant?.location?.city, l.plant?.location?.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</p>
         </div>
       ),
     },
