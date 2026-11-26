@@ -29,6 +29,7 @@ import { useFollowUps } from '../hooks/useFollowUps'
 import { useDashboardInsights } from '../hooks/useDashboardInsights'
 import { TargetCard, FunnelCard, AttentionCard } from '../components/dashboard/InsightCards'
 import type { AttentionItem } from '../components/dashboard/InsightCards'
+import { presetTableView } from '../lib/useTableView'
 import { api } from '../lib/api'
 import { ROLES, DEFAULT_ROLE } from '../lib/roles'
 import type { Role } from '../lib/roles'
@@ -162,10 +163,10 @@ export default function Dashboard({ user, onSignOut }: { user: AuthUser; onSignO
 
   // The sidebar's counts, plus proposals gone quiet — each opens its list.
   const attention: AttentionItem[] = [
-    { key: 'tasks', label: badges.tasks?.title ?? '', count: badges.tasks?.count ?? 0, tone: 'rose', onOpen: () => openModule({ key: 'tasks', label: 'Tasks' }) },
-    { key: 'invoices', label: badges.invoices?.title ?? '', count: badges.invoices?.count ?? 0, tone: 'rose', onOpen: () => openModule({ key: 'invoices', label: 'Invoices' }) },
+    { key: 'tasks', label: badges.tasks?.title ?? '', count: badges.tasks?.count ?? 0, tone: 'rose', onOpen: () => { presetTableView('tasks', 'overdue'); openModule({ key: 'tasks', label: 'Tasks' }) } },
+    { key: 'invoices', label: badges.invoices?.title ?? '', count: badges.invoices?.count ?? 0, tone: 'rose', onOpen: () => { presetTableView('invoices', 'overdue'); openModule({ key: 'invoices', label: 'Invoices' }) } },
     { key: 'quiet', label: `proposal${insights.quietProposals === 1 ? '' : 's'} with no update in 14+ days`, count: insights.quietProposals, tone: 'amber', onOpen: () => openModule({ key: 'proposals', label: 'Proposals' }) },
-    { key: 'leads', label: badges['lead-gen']?.title ?? '', count: badges['lead-gen']?.count ?? 0, tone: 'amber', onOpen: () => openModule({ key: 'lead-gen', label: 'Leads' }) },
+    { key: 'leads', label: badges['lead-gen']?.title ?? '', count: badges['lead-gen']?.count ?? 0, tone: 'amber', onOpen: () => { presetTableView('leads', 'unassigned'); openModule({ key: 'lead-gen', label: 'Leads' }) } },
     { key: 'tracker', label: badges.tracker?.title ?? '', count: badges.tracker?.count ?? 0, tone: 'amber', onOpen: () => openModule({ key: 'tracker', label: 'Tracker' }) },
   ]
 

@@ -62,6 +62,14 @@ const sameFilters = (a: Record<string, string[]>, b: Record<string, string[]>) =
   return norm(a) === norm(b)
 }
 
+/** Opens a table on a given view tab (search and filters cleared), the way it
+ *  will be read when the page mounts — used to jump from a dashboard count to
+ *  exactly the rows that were counted. */
+export function presetTableView(id: string, view: string) {
+  const s = load(id)
+  save(id, { view, query: '', filters: {}, sort: s.sort ?? null, pageSize: s.pageSize ?? 50 })
+}
+
 function save(id: string, s: Stored) {
   try { localStorage.setItem(keyOf(id), JSON.stringify(s)) } catch { /* private window etc. — just not remembered */ }
 }

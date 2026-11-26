@@ -379,8 +379,8 @@ export default function Team({ currentUserId }: { currentUserId: string }) {
               {assignedTo(open).map(lead => (
                 <li key={lead.id} className="flex items-center gap-3 px-3 py-2.5">
                   <button type="button" onClick={() => setSelectedLead(lead)} className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300">
-                    <p className="truncate text-sm font-medium text-gray-800 hover:text-orange-600 dark:text-gray-200 dark:hover:text-orange-300">{lead.plant?.plantName ?? '—'}</p>
-                    <p className="truncate text-xs text-gray-400">{lead.plant?.client?.clientName ? `${lead.plant.client.clientName} · ` : ''}Updated <RelTime ts={lead.updatedAt} /></p>
+                    <p className="truncate text-sm font-medium text-gray-800 hover:text-orange-600 dark:text-gray-200 dark:hover:text-orange-300">{lead.plant?.client?.clientName ?? lead.plant?.plantName ?? '—'}</p>
+                    <p className="truncate text-xs text-gray-400">{lead.plant?.client?.clientName && lead.plant.plantName ? `${lead.plant.plantName} · ` : ''}Updated <RelTime ts={lead.updatedAt} /></p>
                   </button>
                   <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(lead.status?.statusName)}`}>
                     {lead.status?.statusName ?? 'Cold call'}

@@ -95,13 +95,13 @@ export function GlobalSearch({ pages, onNavigate, canOpenLeads = true }: { pages
     if (data) {
       add('Leads', data.leads,
         l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.sector?.sectorName].join(' '),
-        l => ({ id: `lead-${l.id}`, title: l.plant?.plantName ?? 'Lead', sub: [l.plant?.client?.clientName, l.plant?.location?.city, l.status?.statusName].filter(Boolean).join(' · '), select: () => openLead(l.id) }))
+        l => ({ id: `lead-${l.id}`, title: l.plant?.client?.clientName ?? l.plant?.plantName ?? 'Lead', sub: [l.plant?.client?.clientName ? l.plant.plantName : null, l.plant?.location?.city, l.status?.statusName].filter(Boolean).join(' · '), select: () => openLead(l.id) }))
       add('Proposals', data.proposals,
         p => [p.proposalNumber, p.projectName, p.lead?.plant?.plantName, p.lead?.plant?.client?.clientName].join(' '),
-        p => ({ id: `prop-${p.id}`, title: p.proposalNumber, sub: [p.lead?.plant?.plantName, p.value != null ? formatINR(p.value) : null, p.status].filter(Boolean).join(' · '), select: () => openLead(p.leadId) }))
+        p => ({ id: `prop-${p.id}`, title: p.proposalNumber, sub: [p.lead?.plant?.client?.clientName ?? p.lead?.plant?.plantName, p.value != null ? formatINR(p.value) : null, p.status].filter(Boolean).join(' · '), select: () => openLead(p.leadId) }))
       add('Projects', data.projects,
         p => [p.workOrderNo, p.projectName, p.lead?.plant?.plantName, p.lead?.plant?.client?.clientName].join(' '),
-        p => ({ id: `proj-${p.id}`, title: `${p.workOrderNo} · ${p.projectName}`, sub: [p.lead?.plant?.plantName, p.status].filter(Boolean).join(' · '), select: () => (canOpenLeads ? openLead(p.leadId) : goTo('projects', 'Projects')) }))
+        p => ({ id: `proj-${p.id}`, title: `${p.workOrderNo} · ${p.projectName}`, sub: [p.lead?.plant?.client?.clientName ?? p.lead?.plant?.plantName, p.status].filter(Boolean).join(' · '), select: () => (canOpenLeads ? openLead(p.leadId) : goTo('projects', 'Projects')) }))
       add('Invoices', data.invoices,
         i => [i.invoiceNumber, i.project?.workOrderNo, i.project?.projectName, i.project?.lead?.plant?.client?.clientName].join(' '),
         i => ({ id: `inv-${i.id}`, title: i.invoiceNumber, sub: [i.project?.lead?.plant?.client?.clientName ?? i.project?.projectName, formatINR(i.amount), i.status].filter(Boolean).join(' · '), select: () => (canOpenLeads ? openLead(i.project?.lead?.id) : goTo('invoices', 'Invoices')) }))

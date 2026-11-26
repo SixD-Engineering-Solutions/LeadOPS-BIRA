@@ -13,7 +13,7 @@ function LeadRow({ lead, onSelect }: { lead: Lead; onSelect: (lead: Lead) => voi
       onClick={() => onSelect(lead)}
       className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-0.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/60"
     >
-      <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.plantName ?? '—'}</span>
+      <span className="truncate text-gray-600 dark:text-gray-400">{lead.plant?.client?.clientName ?? lead.plant?.plantName ?? '—'}</span>
       <span className="flex shrink-0 items-center gap-2">
         <span className="text-gray-400 dark:text-gray-400">{fmtDate(lead.updatedAt)}</span>
         <span className={`rounded-full border px-2 py-0.5 font-semibold ${statusStyle(lead.status?.statusName)}`}>

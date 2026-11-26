@@ -80,16 +80,20 @@ const ci = (value: string) => ({ equals: value, mode: 'insensitive' as const })
 // state filled in; otherwise (the same name in another state) a new one is made.
 // Without a state: any city of that name is reused — unless `exact`, used when
 // editing, where leaving the state blank means "no state" and must be honoured.
-async function foreLocation(city: string, state = '', exact = false) {
+// A country, when given, must match too (a place with no country yet accepts it).
+async function foreLocation(city: string, state = '', country = '', exact = false) {
+  const countryMatch = country ? { OR: [{ country: ci(country) }, { country: null }] } : {}
+  const withCountry = async (loc: Prisma.LocationGetPayload<object>) =>
+    country && !loc.country ? prisma.location.update({ where: { id: loc.id }, data: { country } }) : loc
   if (state) {
-    const same = await prisma.location.findFirst({ where: { city: ci(city), state: ci(state) } })
-    if (same) return same
-    const noState = await prisma.location.findFirst({ where: { city: ci(city), state: null } })
-    if (noState) return prisma.location.update({ where: { id: noState.id }, data: { state } })
-    return prisma.location.create({ data: { city, state } })
+    const same = await prisma.location.findFirst({ where: { city: ci(city), state: ci(state), ...countryMatch } })
+    if (same) return withCountry(same)
+    const noState = await prisma.location.findFirst({ where: { city: ci(city), state: null, ...countryMatch } })
+    if (noState) return prisma.location.update({ where: { id: noState.id }, data: { state, ...(country && { country }) } })
+    return prisma.location.create({ data: { city, state, ...(country && { country }) } })
   }
-  const found = await prisma.location.findFirst({ where: { city: ci(city), ...(exact ? { state: null } : {}) } })
-  return found ?? prisma.location.create({ data: { city } })
+  const found = await prisma.location.findFirst({ where: { city: ci(city), ...(exact ? { state: null } : {}), ...countryMatch } })
+  return found ? withCountry(found) : prisma.location.create({ data: { city, ...(country && { country }) } })
 }
 async function foreClient(name: string) {
   return (await prisma.client.findFirst({ where: { clientName: ci(name) } })) ?? prisma.client.create({ data: { clientName: name } })
@@ -165,6 +169,7 @@ const createSchema = z.object({
   clientName: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  country: z.string().optional(),
   contactName: z.string().optional(),
   contactDesignation: z.string().optional(),
   contactDepartment: z.string().optional(),
@@ -207,8 +212,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     sendError(res, 400, LOST_REASON_REQUIRED)
     return
   }
-  if (clean(d.state) && !clean(d.city)) {
-    sendError(res, 400, 'Enter the city along with the state.')
+  if ((clean(d.state) || clean(d.country)) && !clean(d.city)) {
+    sendError(res, 400, 'Enter the city along with the state and country.')
     return
   }
   const extras = (d.extraContacts ?? []).filter(c => clean(c.name) || clean(c.email) || clean(c.phone))
@@ -230,7 +235,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     return
   }
   try {
-    const location = clean(d.city) ? await foreLocation(clean(d.city), clean(d.state)) : null
+    const location = clean(d.city) ? await foreLocation(clean(d.city), clean(d.state), clean(d.country)) : null
     const client = clean(d.clientName) ? await foreClient(clean(d.clientName)) : null
     const plant = await forePlant(clean(d.plantName), location?.id ?? null, client?.id ?? null)
     const contact = clean(d.contactName) ? await foreContact(clean(d.contactName), plant.id, clean(d.contactEmail) || null, clean(d.contactNumber) || null, clean(d.contactDesignation) || null, clean(d.contactDepartment) || null) : null
@@ -300,6 +305,7 @@ const updateSchema = z.object({
   clientName: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  country: z.string().optional(),
   contactName: z.string().optional(),
   contactDesignation: z.string().optional(),
   contactDepartment: z.string().optional(),
@@ -333,12 +339,13 @@ async function applyDetailEdits(existing: { plantId: string; contactId: string |
   const clientId = d.clientName === undefined ? undefined : clean(d.clientName) ? (await foreClient(clean(d.clientName))).id : null
   // City and state are edited together; whichever isn't sent keeps its current value.
   let locationId: string | null | undefined
-  if (d.city !== undefined || d.state !== undefined) {
+  if (d.city !== undefined || d.state !== undefined || d.country !== undefined) {
     const currentLocation = plant.locationId ? await prisma.location.findUnique({ where: { id: plant.locationId } }) : null
     const city = d.city !== undefined ? clean(d.city) : currentLocation?.city ?? ''
     const state = d.state !== undefined ? clean(d.state) : currentLocation?.state ?? ''
-    if (state && !city) return 'Enter the city along with the state.'
-    locationId = city ? (await foreLocation(city, state, true)).id : null
+    const country = d.country !== undefined ? clean(d.country) : currentLocation?.country ?? ''
+    if ((state || country) && !city) return 'Enter the city along with the state and country.'
+    locationId = city ? (await foreLocation(city, state, country, true)).id : null
   }
   const newName = d.plantName === undefined ? undefined : clean(d.plantName)
   if (newName !== undefined && newName.toLowerCase() !== plant.plantName.toLowerCase()) {

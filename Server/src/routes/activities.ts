@@ -15,7 +15,7 @@ const ACTIVITY_TYPES = ['Call', 'Visit', 'Meeting', 'Mail', 'Proposal'] as const
 
 const activityInclude = {
   user: { select: { id: true, userName: true, email: true } },
-  lead: { select: { id: true, plant: { select: { id: true, plantName: true } } } },
+  lead: { select: { id: true, plant: { select: { id: true, plantName: true, client: { select: { id: true, clientName: true } } } } } },
 } as const
 
 // Same visibility rule as leads.ts: employees only see their own leads, admins see all.

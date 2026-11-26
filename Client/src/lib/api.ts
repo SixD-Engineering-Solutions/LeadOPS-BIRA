@@ -62,7 +62,7 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 export type Activity = {
   id: string
   leadId: string
-  lead?: { id: string; plant?: { id: string; plantName: string } }
+  lead?: { id: string; plant?: { id: string; plantName: string; client?: { id: string; clientName: string } | null } }
   userId: string
   user?: { id: string; userName: string | null; email: string }
   activityType: string

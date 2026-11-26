@@ -40,7 +40,7 @@ export function FollowUpsPanel({ followUps, error, onRetry, onOpenLead }: {
             className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50/60 dark:hover:bg-gray-800/60"
           >
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{a.lead?.plant?.plantName ?? '—'}</p>
+              <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{a.lead?.plant?.client?.clientName ?? a.lead?.plant?.plantName ?? '—'}</p>
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{a.activityType} · next action {fmtDate(a.nextActionDate!)}</p>
             </div>
             <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${followUps.overdue.includes(a) ? BADGE_TONES.rose : BADGE_TONES.sky}`}>

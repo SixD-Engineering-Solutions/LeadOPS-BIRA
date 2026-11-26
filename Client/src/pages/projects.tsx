@@ -221,8 +221,8 @@ export default function Projects({ role }: { role: Role }) {
       id: 'lead', header: 'Lead', className: 'max-w-[200px]',
       cell: p => (
         <>
-          <p className="truncate text-gray-700 dark:text-gray-200">{plantOf(p) ?? '—'}</p>
-          <p className="truncate text-gray-400 dark:text-gray-500">{clientOf(p) ?? ''}</p>
+          <p className="truncate text-gray-700 dark:text-gray-200">{clientOf(p) ?? plantOf(p) ?? '—'}</p>
+          <p className="truncate text-gray-400 dark:text-gray-500">{clientOf(p) ? plantOf(p) ?? '' : ''}</p>
         </>
       ),
     },
@@ -348,7 +348,7 @@ export default function Projects({ role }: { role: Role }) {
               <SearchSelect
                 value={form.leadId}
                 onChange={v => { setForm({ ...form, leadId: v }); setFieldErrors(p => ({ ...p, leadId: undefined })) }}
-                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.plantName ?? 'Unnamed plant', hint: l.plant?.client?.clientName ?? undefined }))}
+                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.client?.clientName ?? l.plant?.plantName ?? 'Unnamed client', hint: l.plant?.client?.clientName ? l.plant.plantName : undefined }))}
                 emptyLabel={leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a project' : 'Select a lead…'}
                 invalid={!!fieldErrors.leadId}
                 label="Lead"

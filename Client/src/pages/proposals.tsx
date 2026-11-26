@@ -265,8 +265,8 @@ export default function Proposals() {
       id: 'lead', header: 'Lead',
       cell: p => (
         <>
-          <p className="text-gray-700 dark:text-gray-200">{plantOf(p) ?? '—'}</p>
-          <p className="text-gray-400 dark:text-gray-500">{clientOf(p) ?? ''}</p>
+          <p className="text-gray-700 dark:text-gray-200">{clientOf(p) ?? plantOf(p) ?? '—'}</p>
+          <p className="text-gray-400 dark:text-gray-500">{clientOf(p) ? plantOf(p) ?? '' : ''}</p>
         </>
       ),
     },
@@ -370,7 +370,7 @@ export default function Proposals() {
               <>
                 <div className="sm:col-span-2 text-sm text-gray-700 dark:text-gray-200">
                   <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Lead</p>
-                  <p className="mt-1">{editing.lead?.plant?.plantName ?? '—'}{editing.lead?.plant?.client?.clientName ? ` · ${editing.lead.plant.client.clientName}` : ''}</p>
+                  <p className="mt-1">{editing.lead?.plant?.client?.clientName ?? editing.lead?.plant?.plantName ?? '—'}{editing.lead?.plant?.client?.clientName && editing.lead.plant.plantName ? ` · ${editing.lead.plant.plantName}` : ''}</p>
                 </div>
                 <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 sm:col-span-2">
                   Project name
@@ -382,7 +382,7 @@ export default function Proposals() {
               <SearchSelect
                 value={form.leadId}
                 onChange={v => { setForm({ ...form, leadId: v }); setFieldErrors({}) }}
-                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.plantName ?? 'Unnamed plant', hint: l.plant?.client?.clientName ?? undefined }))}
+                options={availableLeads.map(l => ({ value: l.id, label: l.plant?.client?.clientName ?? l.plant?.plantName ?? 'Unnamed client', hint: l.plant?.client?.clientName ? l.plant.plantName : undefined }))}
                 emptyLabel={leads.length > 0 && availableLeads.length === 0 ? 'Every lead already has a proposal' : 'Select a lead…'}
                 invalid={!!fieldErrors.leadId}
                 label="Lead"

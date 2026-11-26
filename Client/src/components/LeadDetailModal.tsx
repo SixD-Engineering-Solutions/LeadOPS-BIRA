@@ -132,7 +132,6 @@ export default function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose
               <DetailRow label="Plant code" value={lead.plant?.plantCode} />
               <DetailRow label="City" value={lead.plant?.location?.city} />
               <DetailRow label="State" value={lead.plant?.location?.state} />
-              <DetailRow label="State" value={lead.plant?.location?.state} />
               <DetailRow label="Country" value={lead.plant?.location?.country} />
               <DetailRow label="Address" value={lead.plant?.location?.address} />
             </DetailSection>

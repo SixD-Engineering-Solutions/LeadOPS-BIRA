@@ -35,7 +35,7 @@ const person = (u?: { userName: string | null; email: string } | null) => (u ? u
 const statusOf = (l: Lead) => l.status?.statusName ?? 'Cold call'
 
 const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-orange-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
-const emptyForm = { plantName: '', clientName: '', city: '', state: '', contactName: '', contactDesignation: '', contactDepartment: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Cold call', lostReason: '' }
+const emptyForm = { plantName: '', clientName: '', city: '', state: '', country: '', contactName: '', contactDesignation: '', contactDepartment: '', contactEmail: '', contactNumber: '', verticalName: '', sectorName: '', sourceName: '', serviceTypeName: '', bmUserId: '', assignedToName: '', remark: '', statusName: 'Cold call', lostReason: '' }
 const INDIAN_STATES = ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry']
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Kept in sync with the server's ALLOWED_EXTENSIONS in routes/documents.ts.
@@ -180,6 +180,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       clientName: lead.plant?.client?.clientName ?? '',
       city: lead.plant?.location?.city ?? '',
       state: lead.plant?.location?.state ?? '',
+      country: lead.plant?.location?.country ?? '',
       contactName: lead.contact?.contactPersonName ?? '',
       contactDesignation: lead.contact?.designation ?? '',
       contactDepartment: lead.contact?.department ?? '',
@@ -210,7 +211,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
       const { lead } = await api<{ lead: Lead }>(`/leads/${editing.id}`, {
         method: 'PATCH', auth: true,
         body: {
-          plantName: form.plantName, clientName: form.clientName, city: form.city, state: form.state,
+          plantName: form.plantName, clientName: form.clientName, city: form.city, state: form.state, country: form.country,
           contactName: form.contactName, contactDesignation: form.contactDesignation, contactDepartment: form.contactDepartment, contactEmail: form.contactEmail, contactNumber: form.contactNumber,
           extraContacts: multiContact ? extras.filter(c => c.name.trim() || c.email.trim() || c.phone.trim()) : [],
           verticalName: form.verticalName, sectorName: form.sectorName, sourceName: form.sourceName, serviceTypeName: form.serviceTypeName,
@@ -343,13 +344,13 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
   const view = useTableView<Lead>({
     id: 'leads',
     rows: leads,
-    search: l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.plant?.location?.state, l.vertical?.verticalName,
+    search: l => [l.plant?.plantName, l.plant?.client?.clientName, l.contact?.contactPersonName, l.plant?.location?.city, l.plant?.location?.state, l.plant?.location?.country, l.vertical?.verticalName,
       l.sector?.sectorName, l.source?.sourceName, l.serviceType?.serviceTypeName, person(l.assignedToUser), person(l.bmUser), statusOf(l), l.remark].join(' '),
     views: [
       { id: 'all', label: 'All' },
       ...(!isAdmin && currentUserId ? [{ id: 'mine', label: 'Assigned to me', match: (l: Lead) => l.assignedToUserId === currentUserId }] : []),
       { id: 'open', label: 'Open', match: l => statusOf(l) !== 'Lost' },
-      { id: 'unassigned', label: 'Unassigned', match: l => !l.assignedToUserId },
+      { id: 'unassigned', label: 'Unassigned', match: l => !l.assignedToUserId && statusOf(l) !== 'Lost' },
       { id: 'lost', label: 'Lost', match: l => statusOf(l) === 'Lost' },
     ],
     filters: [
@@ -539,6 +540,7 @@ export default function Leads({ isAdmin = false, currentUserId }: { isAdmin?: bo
               <input list="lead-states" value={form.state} onChange={set('state')} placeholder="e.g. Chhattisgarh" className={inputCls} />
               <datalist id="lead-states">{INDIAN_STATES.map(st => <option key={st} value={st} />)}</datalist>
             </label>
+            {field('Country', 'country', 'e.g. India')}
             {field('Contact', 'contactName', 'Contact person name')}
             {field('Contact designation', 'contactDesignation', 'e.g. DGM')}
             {field('Contact department', 'contactDepartment', 'e.g. Maintenance')}
