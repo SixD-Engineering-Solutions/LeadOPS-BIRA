@@ -1,11 +1,9 @@
-import { isAssignableRole } from '../../lib/roles'
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
-import type { Lead, Proposal, EmployeeUser } from '../../lib/api'
+import type { Lead, Proposal } from '../../lib/api'
 import WeeklyLineChart from '../WeeklyLineChart'
 import { ErrorBanner } from '../ErrorBanner'
 import { formatINR } from '../../lib/format'
-import { EmptyState } from '../EmptyState'
 import { Modal } from '../Modal'
 
 
@@ -132,30 +130,12 @@ function ProposalsListModal({ title, proposals, onClose }: { title: string; prop
   )
 }
 
-type EmployeeRow = { user: EmployeeUser; leadsAssigned: number; won: number; lost: number; conversion: number; wonValue: number }
-
-function employeePerformance(leads: Lead[], proposals: Proposal[], employees: EmployeeUser[]): EmployeeRow[] {
-  const leadOwner = new Map(leads.map(l => [l.id, l.assignedToUserId]))
-  return employees
-    .map(user => {
-      const leadsAssigned = leads.filter(l => l.assignedToUserId === user.id).length
-      const ownProposals = proposals.filter(p => leadOwner.get(p.leadId) === user.id)
-      const won = ownProposals.filter(p => p.status === 'Won')
-      const lost = ownProposals.filter(p => p.status === 'Lost')
-      const conversion = ownProposals.length ? Math.round((won.length / ownProposals.length) * 100) : 0
-      const wonValue = won.reduce((sum, p) => sum + (p.value ?? 0), 0)
-      return { user, leadsAssigned, won: won.length, lost: lost.length, conversion, wonValue }
-    })
-    .filter(row => row.leadsAssigned > 0)
-    .sort((a, b) => b.wonValue - a.wonValue)
-}
-
-// The Sales tab of Reports (admins): leads week by week, won vs lost by
-// month, and how each employee converts — over the chosen period.
+// The Sales tab of Reports (admins): leads week by week and won vs lost by
+// month, over the chosen period. Per-person figures live on the Team
+// comparison tab.
 export function SalesReport({ months, weeks }: { months: number; weeks: number }) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [proposals, setProposals] = useState<Proposal[]>([])
-  const [employees, setEmployees] = useState<EmployeeUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
@@ -165,12 +145,10 @@ export function SalesReport({ months, weeks }: { months: number; weeks: number }
     Promise.all([
       api<{ leads: Lead[] }>('/leads', { auth: true }),
       api<{ proposals: Proposal[] }>('/proposals', { auth: true }),
-      api<{ users: EmployeeUser[] }>('/users', { auth: true }),
     ])
-      .then(([{ leads }, { proposals }, { users }]) => {
+      .then(([{ leads }, { proposals }]) => {
         setLeads(leads)
         setProposals(proposals)
-        setEmployees(users.filter(u => isAssignableRole(u.role)))
         setError(null)
       })
       .catch(e => {
@@ -185,7 +163,6 @@ export function SalesReport({ months, weeks }: { months: number; weeks: number }
 
   const weekly = weeklyTrend(leads, weeks)
   const monthly = monthlyPerformance(proposals, months)
-  const employeeRows = employeePerformance(leads, proposals, employees)
 
   return (
     <div>
@@ -222,42 +199,6 @@ export function SalesReport({ months, weeks }: { months: number; weeks: number }
             onSelect={setSelectedMonth}
           />
 
-          <div className="rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Employee Performance</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Leads, proposal outcomes and conversion by team member.</p>
-            </div>
-            {employeeRows.length === 0 ? (
-              <EmptyState icon="users" title="No leads assigned to anyone yet" message="Employee performance appears once leads are assigned from the Leads page." />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400 dark:border-gray-800 dark:text-gray-400">
-                      <th className="px-5 py-3 font-semibold">Employee</th>
-                      <th className="px-3 py-3 font-semibold">Leads Assigned</th>
-                      <th className="px-3 py-3 font-semibold">Won</th>
-                      <th className="px-3 py-3 font-semibold">Lost</th>
-                      <th className="px-3 py-3 font-semibold">Conversion</th>
-                      <th className="px-3 py-3 font-semibold">Won Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employeeRows.map(row => (
-                      <tr key={row.user.id} className="border-b border-gray-50 dark:border-gray-800">
-                        <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{row.user.userName || row.user.email}</td>
-                        <td className="px-3 py-3 text-gray-600 dark:text-gray-400">{row.leadsAssigned}</td>
-                        <td className="px-3 py-3 text-emerald-600 dark:text-emerald-400">{row.won}</td>
-                        <td className="px-3 py-3 text-rose-500 dark:text-rose-400">{row.lost}</td>
-                        <td className="px-3 py-3 text-gray-600 dark:text-gray-400">{row.conversion}%</td>
-                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-gray-100">{formatINR(row.wonValue)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
